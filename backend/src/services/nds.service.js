@@ -71,16 +71,14 @@ const getAllLswNts = async () => {
   try {
     const netboxDevices = await netboxService.getDevices();
     const filtered = netboxDevices.filter(d => 
-      d.device_role?.name?.toLowerCase().includes('switch') || 
-      d.device_role?.name?.toLowerCase().includes('lsw') ||
-      d.device_role?.name?.toLowerCase().includes('nt') ||
-      d.device_role?.name?.toLowerCase().includes('access')
+      d.device_role?.name?.toLowerCase() === 'lsw_network' ||
+      d.device_role?.name?.toLowerCase() === 'network'
     );
     if (filtered.length > 0) {
       return filtered.map(d => ({
         id: d.id,
         name: d.name,
-        type: d.device_role?.name?.toLowerCase().includes('nt') ? 'NT' : 'LSW',
+        role: d.device_role?.name || 'LSW_Network',
         manufacturer: d.device_type?.manufacturer || 'N/A',
         model: d.device_type?.model || 'N/A',
         ip: d.primary_ip?.address?.split('/')[0] || 'N/A',
@@ -133,8 +131,7 @@ const getAllAGGs = async () => {
   try {
     const netboxDevices = await netboxService.getDevices();
     const filtered = netboxDevices.filter(d => 
-      d.device_role?.name?.toLowerCase().includes('agg') ||
-      d.device_role?.name?.toLowerCase().includes('distribution')
+      d.device_role?.name?.toLowerCase() === 'aggregation'
     );
     if (filtered.length > 0) {
       return filtered.map(d => ({

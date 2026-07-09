@@ -16,7 +16,6 @@ export default function NDSHomePage() {
   const [activeTab, setActiveTab] = useState('sites');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState('');
 
   // Pagination and Search state
   const [currentPage, setCurrentPage] = useState(1);
@@ -31,11 +30,6 @@ export default function NDSHomePage() {
   const [aggs, setAggs] = useState([]);
   const [domains, setDomains] = useState([]);
   const [rings, setRings] = useState([]);
-
-  // Modals state
-  const [modalType, setModalType] = useState(null); // 'create' | 'edit' | 'move' | 'delete'
-  const [currentItem, setCurrentItem] = useState(null);
-  const [formData, setFormData] = useState({});
 
   useEffect(() => {
     let mounted = true;
@@ -74,67 +68,6 @@ export default function NDSHomePage() {
     loadData();
     return () => { mounted = false; };
   }, [activeTab]);
-
-  const showToast = (msg) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(''), 3000);
-  };
-
-  const handleOpenCreateModal = () => {
-    setModalType('create');
-    setFormData({});
-  };
-
-  const handleOpenEditModal = (item) => {
-    setModalType('edit');
-    setCurrentItem(item);
-    setFormData({ ...item });
-  };
-
-  const handleOpenMoveModal = (item) => {
-    setModalType('move');
-    setCurrentItem(item);
-    setFormData({ ...item });
-  };
-
-  const handleOpenDeleteModal = (item) => {
-    setModalType('delete');
-    setCurrentItem(item);
-  };
-
-  const handleModalSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      if (modalType === 'create') {
-        await ndsApi[activeTab].create(formData);
-        showToast(`สร้างข้อมูลใหม่สำเร็จ`);
-      } else if (modalType === 'edit' || modalType === 'move') {
-        await ndsApi[activeTab].update(currentItem.id, formData);
-        showToast(`บันทึกข้อมูลเรียบร้อยแล้ว`);
-      } else if (modalType === 'delete') {
-        await ndsApi[activeTab].delete(currentItem.id);
-        showToast(`นำข้อมูลออก/ยกเลิกเรียบร้อยแล้ว`);
-      }
-
-      // Reload active data
-      const resRefresh = await ndsApi[activeTab].list();
-      if (activeTab === 'sites') setSites(resRefresh.data?.data || []);
-      if (activeTab === 'pes') setPEs(resRefresh.data?.data || []);
-      if (activeTab === 'lsw_nts') setLswNts(resRefresh.data?.data || []);
-      if (activeTab === 'prefixes') setPrefixes(resRefresh.data?.data || []);
-      if (activeTab === 'aggs') setAggs(resRefresh.data?.data || []);
-      if (activeTab === 'domains') setDomains(resRefresh.data?.data || []);
-      if (activeTab === 'rings') setRings(resRefresh.data?.data || []);
-
-      setModalType(null);
-      setCurrentItem(null);
-    } catch (err) {
-      setError('เกิดข้อผิดพลาดในการทำรายการ');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Helper to resolve site name
   const getSiteName = (siteId) => {
@@ -255,8 +188,10 @@ export default function NDSHomePage() {
     );
   };
 
-  // Get active lists & filtered variants
-  const getActiveList = () => {
+  const rawList = getActiveList();
+  const filteredList = getFilteredData(rawList);
+
+  function getActiveList() {
     if (activeTab === 'sites') return sites;
     if (activeTab === 'pes') return pes;
     if (activeTab === 'lsw_nts') return lswNts;
@@ -265,10 +200,7 @@ export default function NDSHomePage() {
     if (activeTab === 'domains') return domains;
     if (activeTab === 'rings') return rings;
     return [];
-  };
-
-  const rawList = getActiveList();
-  const filteredList = getFilteredData(rawList);
+  }
 
   return (
     <div className="flex gap-10">
@@ -288,20 +220,9 @@ export default function NDSHomePage() {
               การบริหารจัดการและสถาปัตยกรรมโครงข่ายทีม Network Design Services (NDS)
             </p>
           </div>
-          <button
-            onClick={handleOpenCreateModal}
-            className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-nds/20 hover:opacity-90 active:scale-[0.97] transition-all"
-          >
-            + Create New
-          </button>
         </div>
 
-        {/* Alerts / Messages */}
-        {successMsg && (
-          <div className="mt-4 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-xs text-green-400 font-mono">
-            ✅ {successMsg}
-          </div>
-        )}
+        {/* Alerts / Error Messages */}
         {error && (
           <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400 font-mono">
             ⚠️ {error}
@@ -336,7 +257,7 @@ export default function NDSHomePage() {
         )}
 
         {/* Loading Spinner */}
-        {loading && !modalType && (
+        {loading && (
           <p className="mt-10 text-sm text-ink-400 animate-pulse text-center">กำลังโหลดข้อมูลระบบ...</p>
         )}
 
@@ -359,7 +280,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Physical Address</th>
                         <th className="px-5 py-3.5">Description</th>
                         <th className="px-5 py-3.5">Last Updated</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -374,15 +294,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.physical_address}</td>
                           <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={10} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -410,7 +326,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Asset Tag</th>
                         <th className="px-5 py-3.5">Status</th>
                         <th className="px-5 py-3.5">Last Updated</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -429,16 +344,11 @@ export default function NDSHomePage() {
                             <span className="rounded bg-green-500/10 px-2 py-0.5 text-xs text-green-400 border border-green-500/20">{item.status}</span>
                           </td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenMoveModal(item)} className="text-xs text-amber-400 hover:underline font-semibold">Move</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={12} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={11} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -456,7 +366,7 @@ export default function NDSHomePage() {
                     <thead className="bg-base-900/50 text-xs font-mono uppercase text-ink-400 border-b border-base-600/50">
                       <tr>
                         <th className="px-5 py-3.5">Device Name</th>
-                        <th className="px-5 py-3.5">Type</th>
+                        <th className="px-5 py-3.5">Device Role</th>
                         <th className="px-5 py-3.5">Vendor/MFG</th>
                         <th className="px-5 py-3.5">Model</th>
                         <th className="px-5 py-3.5">Management IP</th>
@@ -466,14 +376,13 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Serial</th>
                         <th className="px-5 py-3.5">Asset Tag</th>
                         <th className="px-5 py-3.5">Last Updated</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
                       {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.name}</td>
-                          <td className="px-5 py-4 text-ink-400 font-semibold text-xs">{item.type}</td>
+                          <td className="px-5 py-4 text-ink-400 font-semibold text-xs">{item.role}</td>
                           <td className="px-5 py-4 text-ink-400">{item.manufacturer}</td>
                           <td className="px-5 py-4 text-ink-400">{item.model}</td>
                           <td className="px-5 py-4 font-mono text-nds">{item.ip}</td>
@@ -483,16 +392,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 font-mono text-xs text-ink-400">{item.serial}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-400">{item.asset_tag}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenMoveModal(item)} className="text-xs text-amber-400 hover:underline font-semibold">Move</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={12} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={11} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -517,7 +421,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Site Assigned</th>
                         <th className="px-5 py-3.5">Description</th>
                         <th className="px-5 py-3.5">Last Updated</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -531,16 +434,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 text-ink-400">{item.siteName || getSiteName(item.siteId)}</td>
                           <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenMoveModal(item)} className="text-xs text-amber-400 hover:underline font-semibold">Move</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={8} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -567,7 +465,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Serial</th>
                         <th className="px-5 py-3.5">Asset Tag</th>
                         <th className="px-5 py-3.5">Last Updated</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -583,16 +480,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 font-mono text-xs text-ink-400">{item.serial}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-400">{item.asset_tag}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenMoveModal(item)} className="text-xs text-amber-400 hover:underline font-semibold">Move</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={11} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={10} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -612,7 +504,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Domain Name</th>
                         <th className="px-5 py-3.5">Domain Code</th>
                         <th className="px-5 py-3.5">Network Type</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -621,15 +512,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 font-mono text-xs text-nds">{item.code}</td>
                           <td className="px-5 py-4 text-ink-400">{item.type}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={3} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -650,7 +537,6 @@ export default function NDSHomePage() {
                         <th className="px-5 py-3.5">Assigned AGG</th>
                         <th className="px-5 py-3.5">Assigned Domain</th>
                         <th className="px-5 py-3.5">Bandwidth</th>
-                        <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
@@ -660,16 +546,11 @@ export default function NDSHomePage() {
                           <td className="px-5 py-4 text-ink-400">{getAggName(item.aggId)}</td>
                           <td className="px-5 py-4 text-ink-400">{getDomainName(item.domainId)}</td>
                           <td className="px-5 py-4 font-mono text-xs text-nds">{item.bandwidth}</td>
-                          <td className="px-5 py-4 text-right space-x-3">
-                            <button onClick={() => handleOpenEditModal(item)} className="text-xs text-nds hover:underline font-semibold">Edit</button>
-                            <button onClick={() => handleOpenMoveModal(item)} className="text-xs text-amber-400 hover:underline font-semibold">Move</button>
-                            <button onClick={() => handleOpenDeleteModal(item)} className="text-xs text-red-400 hover:underline font-semibold">Terminate</button>
-                          </td>
                         </tr>
                       ))}
                       {filteredList.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                          <td colSpan={4} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -681,370 +562,6 @@ export default function NDSHomePage() {
           </div>
         )}
       </section>
-
-      {/* CRUD Action Modals */}
-      {modalType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 p-6 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-base-600/80 bg-base-900 p-6 shadow-2xl">
-            <h3 className="font-display text-lg font-bold text-ink-100 uppercase tracking-wider mb-4">
-              {modalType === 'create' && `Create new ${activeTab.slice(0, -1)}`}
-              {modalType === 'edit' && `Edit details`}
-              {modalType === 'move' && `Move / Re-assign location`}
-              {modalType === 'delete' && `Confirm Termination`}
-            </h3>
-
-            {modalType === 'delete' ? (
-              <form onSubmit={handleModalSubmit} className="space-y-4">
-                <p className="text-sm text-ink-400 leading-relaxed">
-                  คุณต้องการที่จะทำการยกเลิก (Terminate) รายการ: <b className="text-red-400 font-mono">{currentItem?.name || currentItem?.ringName || currentItem?.prefix}</b> หรือไม่?
-                </p>
-                <div className="flex justify-end gap-3 mt-6">
-                  <button type="button" onClick={() => setModalType(null)} className="rounded-lg border border-base-600 px-4 py-2 text-xs font-semibold text-ink-400 hover:bg-base-800">Cancel</button>
-                  <button type="submit" className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-500">Terminate</button>
-                </div>
-              </form>
-            ) : modalType === 'move' ? (
-              <form onSubmit={handleModalSubmit} className="space-y-4">
-                <p className="text-xs text-ink-400 mb-2">ย้ายกลุ่มหรือปลายทางตำแหน่งเครือข่ายของรายการปัจจุบัน</p>
-                
-                {/* Moving elements dependent selects */}
-                {(activeTab === 'pes' || activeTab === 'lsw_nts' || activeTab === 'prefixes' || activeTab === 'aggs') && (
-                  <div>
-                    <label className="block text-xs text-ink-400 uppercase">Target Site Location</label>
-                    <select
-                      value={formData.siteId || ''}
-                      onChange={(e) => setFormData({ ...formData, siteId: Number(e.target.value) })}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                      required
-                    >
-                      <option value="">-- Select Target Site --</option>
-                      {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                )}
-
-                {activeTab === 'rings' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase">Target AGG Router</label>
-                      <select
-                        value={formData.aggId || ''}
-                        onChange={(e) => setFormData({ ...formData, aggId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Target AGG --</option>
-                        {aggs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="mt-4">
-                      <label className="block text-xs text-ink-400 uppercase">Target Network Domain</label>
-                      <select
-                        value={formData.domainId || ''}
-                        onChange={(e) => setFormData({ ...formData, domainId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Target Domain --</option>
-                        {domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button type="button" onClick={() => setModalType(null)} className="rounded-lg border border-base-600 px-4 py-2 text-xs font-semibold text-ink-400 hover:bg-base-800">Cancel</button>
-                  <button type="submit" className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-white hover:opacity-90">Confirm Move</button>
-                </div>
-              </form>
-            ) : (
-              // Create / Edit modal inputs dynamic fields
-              <form onSubmit={handleModalSubmit} className="space-y-4">
-                {activeTab === 'sites' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Site Name</label>
-                      <input
-                        type="text"
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Location</label>
-                      <input
-                        type="text"
-                        value={formData.location || ''}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Description</label>
-                      <input
-                        type="text"
-                        value={formData.description || ''}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {(activeTab === 'pes' || activeTab === 'aggs') && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Device Name</label>
-                      <input
-                        type="text"
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Hardware Model</label>
-                      <input
-                        type="text"
-                        value={formData.model || ''}
-                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">IP Address</label>
-                      <input
-                        type="text"
-                        value={formData.ip || ''}
-                        onChange={(e) => setFormData({ ...formData, ip: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Site Location</label>
-                      <select
-                        value={formData.siteId || ''}
-                        onChange={(e) => setFormData({ ...formData, siteId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Site --</option>
-                        {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'lsw_nts' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Device Name</label>
-                      <input
-                        type="text"
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Type</label>
-                      <select
-                        value={formData.type || ''}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Type --</option>
-                        <option value="LSW">LSW</option>
-                        <option value="NT">NT</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Hardware Model</label>
-                      <input
-                        type="text"
-                        value={formData.model || ''}
-                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Management IP</label>
-                      <input
-                        type="text"
-                        value={formData.ip || ''}
-                        onChange={(e) => setFormData({ ...formData, ip: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Site Location</label>
-                      <select
-                        value={formData.siteId || ''}
-                        onChange={(e) => setFormData({ ...formData, siteId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Site --</option>
-                        {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'prefixes' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">IP Prefix Block</label>
-                      <input
-                        type="text"
-                        value={formData.prefix || ''}
-                        onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-                        placeholder="e.g. 10.0.0.0/24"
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">VLAN ID</label>
-                      <input
-                        type="number"
-                        value={formData.vlan || ''}
-                        onChange={(e) => setFormData({ ...formData, vlan: Number(e.target.value) })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Site Location</label>
-                      <select
-                        value={formData.siteId || ''}
-                        onChange={(e) => setFormData({ ...formData, siteId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Site --</option>
-                        {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Description</label>
-                      <input
-                        type="text"
-                        value={formData.description || ''}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'domains' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Domain Name</label>
-                      <input
-                        type="text"
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Domain Code</label>
-                      <input
-                        type="text"
-                        value={formData.code || ''}
-                        onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Network Type</label>
-                      <input
-                        type="text"
-                        value={formData.type || ''}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        placeholder="e.g. IGP, OSPF, BGP"
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'rings' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Ring Name</label>
-                      <input
-                        type="text"
-                        value={formData.ringName || ''}
-                        onChange={(e) => setFormData({ ...formData, ringName: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Assigned AGG</label>
-                      <select
-                        value={formData.aggId || ''}
-                        onChange={(e) => setFormData({ ...formData, aggId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select AGG --</option>
-                        {aggs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Assigned Domain</label>
-                      <select
-                        value={formData.domainId || ''}
-                        onChange={(e) => setFormData({ ...formData, domainId: Number(e.target.value) })}
-                        className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Select Domain --</option>
-                        {domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ink-400 uppercase font-mono">Ring Bandwidth</label>
-                      <input
-                        type="text"
-                        value={formData.bandwidth || ''}
-                        onChange={(e) => setFormData({ ...formData, bandwidth: e.target.value })}
-                        placeholder="e.g. 10G, 100G"
-                        className="mt-1 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-                        required
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button type="button" onClick={() => setModalType(null)} className="rounded-lg border border-base-600 px-4 py-2 text-xs font-semibold text-ink-400 hover:bg-base-800">Cancel</button>
-                  <button type="submit" className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-white hover:opacity-90">
-                    {modalType === 'create' ? 'Create' : 'Save Changes'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
