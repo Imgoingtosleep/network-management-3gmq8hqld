@@ -65,28 +65,23 @@ async function getDevices() {
   
   const mapped = rawDevices.map(device => ({
     id: device.id,
+    nodeid: device.custom_fields?.node_id || device.id,
     name: device.name || 'Unnamed Device',
-    status: {
-      value: device.status?.value || 'active',
-      label: device.status?.label || 'Active'
-    },
-    device_role: {
-      name: device.role?.name || device.device_role?.name || 'N/A'
-    },
-    device_type: {
-      model: device.device_type?.model || device.device_type?.name || 'N/A',
-      manufacturer: device.device_type?.manufacturer?.name || 'N/A'
-    },
-    primary_ip: {
-      address: device.primary_ip?.address || 'N/A'
-    },
-    site: {
-      name: device.site?.name || 'N/A'
-    },
+    status: device.status?.label || device.status?.value || 'Active',
+    tenant: device.tenant?.name || 'N/A',
+    site: device.site?.name || 'N/A',
     location: device.location?.name || 'N/A',
     rack: device.rack?.name || 'N/A',
-    serial: device.serial || 'N/A',
-    asset_tag: device.asset_tag || 'N/A',
+    role: (() => {
+      const r = device.role?.name || device.device_role?.name || 'N/A';
+      if (r === 'Aggregation Switch') return 'Aggregation';
+      if (r === 'LSW') return 'Network';
+      return r; // Returns 'Provider Edge', 'Provider' as is
+    })(),
+    manufacturer: device.device_type?.manufacturer?.name || 'N/A',
+    type: device.device_type?.model || device.device_type?.name || 'N/A',
+    ip: device.primary_ip?.address || 'N/A',
+    description: device.description || 'N/A',
     last_updated: device.last_updated ? new Date(device.last_updated).toLocaleString('th-TH') : 'N/A'
   }));
 
