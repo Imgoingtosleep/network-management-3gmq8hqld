@@ -81,12 +81,49 @@ const listRegions = async (req, res, next) => {
   }
 };
 
+const netboxRedirect = (req, res, next) => {
+  try {
+    const { type, id } = req.query;
+    let netboxBaseUrl = process.env.NETBOX_API_URL || 'http://localhost:8000';
+    netboxBaseUrl = netboxBaseUrl.replace(/\/api\/?$/, ''); // Remove trailing /api
+
+    let targetPath = '';
+    switch (type) {
+      case 'site_add':
+        targetPath = '/dcim/sites/add/';
+        break;
+      case 'site_edit':
+        targetPath = `/dcim/sites/${id}/edit/`;
+        break;
+      case 'site_delete':
+        targetPath = `/dcim/sites/${id}/delete/`;
+        break;
+      case 'prefix_add':
+        targetPath = '/ipam/prefixes/add/';
+        break;
+      case 'prefix_edit':
+        targetPath = `/ipam/prefixes/${id}/edit/`;
+        break;
+      case 'prefix_delete':
+        targetPath = `/ipam/prefixes/${id}/delete/`;
+        break;
+      default:
+        targetPath = '/';
+    }
+
+    return res.redirect(`${netboxBaseUrl}${targetPath}`);
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   listProjects,
   getProject,
   createProject,
   listDevices,
   listRegions,
+  netboxRedirect,
   
   // Sites
   listSites: siteHandlers.list, createSite: siteHandlers.create, updateSite: siteHandlers.update, deleteSite: siteHandlers.delete,
