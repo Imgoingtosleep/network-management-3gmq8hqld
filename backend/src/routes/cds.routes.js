@@ -10,8 +10,6 @@ router.get('/projects', cdsController.listProjects);
 router.get('/projects/:id', cdsController.getProject);
 router.post('/projects', cdsController.createProject);
 
-// TODO (ต่อยอด): เพิ่ม route อื่นของทีม CDS ตรงนี้ เช่น
-// router.get('/devices', cdsController.listDevices);
-// router.get('/topology', cdsController.getTopology);
+router.get('/prefixes', cdsController.listPrefixes);
 
 module.exports = router;

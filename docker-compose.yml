@@ -12,6 +12,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - ./.env:/app/.env
     environment:
       - PORT=4000
       - NODE_ENV=development
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./.env:/app/.env
     networks:
       - netops-network
     depends_on:

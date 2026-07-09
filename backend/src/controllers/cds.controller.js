@@ -1,4 +1,5 @@
 const cdsService = require('../services/cds.service');
+const netboxService = require('../services/netbox.service');
 const { ok, created } = require('../utils/apiResponse');
 
 async function listProjects(req, res, next) {
@@ -29,4 +30,13 @@ async function createProject(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject };
+async function listPrefixes(req, res, next) {
+  try {
+    const data = await netboxService.getPrefixes();
+    return ok(res, data, 'ดึงรายการ IP Prefixes จาก Netbox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes };

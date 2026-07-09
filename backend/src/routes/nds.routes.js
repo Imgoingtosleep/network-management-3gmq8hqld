@@ -3,15 +3,28 @@ const ndsController = require('../controllers/nds.controller');
 
 const router = express.Router();
 
-// GET    /api/nds/projects        → รายการโปรเจกต์ทั้งหมดของทีม NDS
-// GET    /api/nds/projects/:id    → รายละเอียดโปรเจกต์เดียว
-// POST   /api/nds/projects        → สร้างโปรเจกต์ใหม่
+// Projects
 router.get('/projects', ndsController.listProjects);
 router.get('/projects/:id', ndsController.getProject);
 router.post('/projects', ndsController.createProject);
 
-// TODO (ต่อยอด): เพิ่ม route อื่นของทีม NDS ตรงนี้ เช่น
-// router.get('/devices', ndsController.listDevices);
-// router.get('/topology', ndsController.getTopology);
+// NetBox Devices (API connection)
+router.get('/devices', ndsController.listDevices);
+
+// NDS CRUD Routes
+const registerCrud = (path, singular, plural) => {
+  router.get(`/${path}`, ndsController[`list${plural}`]);
+  router.post(`/${path}`, ndsController[`create${singular}`]);
+  router.put(`/${path}/:id`, ndsController[`update${singular}`]);
+  router.delete(`/${path}/:id`, ndsController[`delete${singular}`]);
+};
+
+registerCrud('sites', 'Site', 'Sites');
+registerCrud('pes', 'PE', 'PEs');
+registerCrud('lsw_nts', 'LswNt', 'LswNts');
+registerCrud('prefixes', 'Prefix', 'Prefixes');
+registerCrud('aggs', 'AGG', 'AGGs');
+registerCrud('domains', 'Domain', 'Domains');
+registerCrud('rings', 'Ring', 'Rings');
 
 module.exports = router;

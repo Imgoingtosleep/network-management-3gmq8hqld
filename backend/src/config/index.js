@@ -1,5 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+require('dotenv').config();
 
 /**
  * รวมค่า config ทั้งหมดไว้ที่เดียว เพื่อไม่ต้องเรียก process.env กระจายทั่วโปรเจกต์
