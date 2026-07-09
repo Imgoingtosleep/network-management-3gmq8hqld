@@ -72,11 +72,21 @@ const aggHandlers = makeCrudHandlers(ndsService.getAllAGGs, ndsService.createAGG
 const domainHandlers = makeCrudHandlers(ndsService.getAllDomains, ndsService.createDomain, ndsService.updateDomain, ndsService.deleteDomain, 'Domain');
 const ringHandlers = makeCrudHandlers(ndsService.getAllRings, ndsService.createRing, ndsService.updateRing, ndsService.deleteRing, 'Ring Name');
 
+const listRegions = async (req, res, next) => {
+  try {
+    const regions = await ndsService.getRegions();
+    return res.json({ success: true, data: regions });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   listProjects,
   getProject,
   createProject,
   listDevices,
+  listRegions,
   
   // Sites
   listSites: siteHandlers.list, createSite: siteHandlers.create, updateSite: siteHandlers.update, deleteSite: siteHandlers.delete,

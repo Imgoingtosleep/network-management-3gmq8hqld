@@ -10,6 +10,7 @@ router.post('/projects', ndsController.createProject);
 
 // NetBox Devices (API connection)
 router.get('/devices', ndsController.listDevices);
+router.get('/regions', ndsController.listRegions);
 
 // NDS CRUD Routes
 const registerCrud = (path, singular, plural) => {

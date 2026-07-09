@@ -30,8 +30,22 @@ const getAllSites = async () => {
   }
   return ndsModel.findSites();
 };
-const createSite = (payload) => ndsModel.createSite(payload);
-const updateSite = (id, payload) => ndsModel.updateSite(id, payload);
+const createSite = async (payload) => {
+  try {
+    return await netboxService.createSite(payload);
+  } catch (err) {
+    console.log('⚠️ Failed to create Site in NetBox, using local database:', err.message);
+  }
+  return ndsModel.createSite(payload);
+};
+const updateSite = async (id, payload) => {
+  try {
+    return await netboxService.updateSite(id, payload);
+  } catch (err) {
+    console.log('⚠️ Failed to update Site in NetBox, using local database:', err.message);
+  }
+  return ndsModel.updateSite(id, payload);
+};
 const deleteSite = (id) => ndsModel.deleteSite(id);
 
 // PEs (ดึงตรงจาก NetBox)
@@ -272,6 +286,16 @@ const createRing = (payload) => ndsModel.createRing(payload);
 const updateRing = (id, payload) => ndsModel.updateRing(id, payload);
 const deleteRing = (id) => ndsModel.deleteRing(id);
 
+// Regions (NetBox direct)
+const getRegions = async () => {
+  try {
+    return await netboxService.getRegions();
+  } catch (err) {
+    console.log('⚠️ Failed to load Regions from NetBox:', err.message);
+    return [];
+  }
+};
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -297,4 +321,7 @@ module.exports = {
   
   // Rings
   getAllRings, createRing, updateRing, deleteRing,
+
+  // Regions
+  getRegions,
 };

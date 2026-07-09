@@ -95,48 +95,65 @@ export default function PrefixesPage() {
 
   return (
     <>
-      {/* Action Toolbar Outside Table - Only visible when items are selected */}
-      {selectedPrefixes.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-3 items-center bg-base-900 p-4 rounded-xl border border-base-600/40 justify-between animate-in slide-in-from-top-2 duration-200">
-          <div className="flex flex-wrap gap-2.5">
-            <button
-              type="button"
-              disabled
-              className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-base-950 border border-base-600 text-ink-500 cursor-not-allowed opacity-50 flex items-center gap-1.5"
-            >
-              Create
-            </button>
-            
-            <button
-              type="button"
-              onClick={handleEditClick}
-              className="px-3.5 py-2 text-xs font-semibold rounded-lg border bg-nds border-nds text-base-950 hover:bg-nds-hover shadow-[0_0_15px_rgba(76,141,255,0.15)] transition-all flex items-center gap-1.5"
-            >
-              Edit Ring
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-base-950 border border-base-600 text-ink-500 cursor-not-allowed opacity-50 flex items-center gap-1.5"
-            >
-              Move Topology
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-base-950 border border-base-600 text-ink-500 cursor-not-allowed opacity-50 flex items-center gap-1.5"
-            >
-              Delete
-            </button>
-          </div>
-
+      {/* Top Controls Bar - Always visible */}
+      <div className="mb-4 flex flex-wrap gap-4 justify-between items-center bg-base-900/40 p-4 rounded-xl border border-base-600/30">
+        <div className="flex items-center gap-4">
           <span className="text-xs font-mono text-ink-400">
-            Selected: <span className="text-nds font-bold">{selectedPrefixes.length}</span> prefixes
+            IP Prefixes Management Toolbar
           </span>
+          {selectedPrefixes.length > 0 && (
+            <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4">
+              Selected: <span className="text-nds font-bold">{selectedPrefixes.length}</span> prefixes
+            </span>
+          )}
         </div>
-      )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled
+            className="px-4 py-2 text-xs font-semibold rounded-lg bg-base-950 border border-base-600 text-ink-500 cursor-not-allowed opacity-50 flex items-center gap-1.5"
+          >
+            Create Prefix
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleEditClick}
+            disabled={selectedPrefixes.length === 0}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
+              selectedPrefixes.length > 0
+                ? 'bg-nds border-nds text-base-950 hover:bg-nds-hover shadow-[0_0_15px_rgba(76,141,255,0.15)]'
+                : 'bg-base-950 border-base-600 text-ink-500 cursor-not-allowed opacity-50'
+            }`}
+          >
+            Edit Ring
+          </button>
+
+          <button
+            type="button"
+            disabled={selectedPrefixes.length === 0}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
+              selectedPrefixes.length > 0
+                ? 'bg-base-950 border-base-600 text-ink-400 hover:bg-base-800'
+                : 'bg-base-950 border-base-600 text-ink-500 cursor-not-allowed opacity-50'
+            }`}
+          >
+            Move Topology
+          </button>
+
+          <button
+            type="button"
+            disabled={selectedPrefixes.length === 0}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
+              selectedPrefixes.length > 0
+                ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                : 'bg-base-950 border-base-600 text-ink-500 cursor-not-allowed opacity-50'
+            }`}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
 
       <NDSPageContainer
         fetchData={() => ndsApi.prefixes.list()}

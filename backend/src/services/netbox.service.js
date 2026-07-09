@@ -145,23 +145,46 @@ async function getSites() {
   
   const mapped = rawSites.map(site => ({
     id: site.id,
-    name: site.name || site.slug || 'Unnamed Site',
-    slug: site.slug || 'N/A',
-    status: {
-      value: site.status?.value || 'active',
-      label: site.status?.label || 'Active'
-    },
+    name: site.name || 'Unnamed Site',
+    name_thai: site.custom_fields?.name_thai || 'N/A',
+    site_name: site.custom_fields?.site_name || 'N/A',
+    status: site.status?.value || 'active',
     region: site.region?.name || 'N/A',
+    group: site.group?.name || 'N/A',
     tenant: site.tenant?.name || 'N/A',
     facility: site.facility || 'N/A',
-    asn: site.asn || 'N/A',
-    physical_address: site.physical_address || 'N/A',
     description: site.description || 'N/A',
+    slug: site.slug || '',
+    time_zone: site.time_zone || '',
+    physical_address: site.physical_address || '',
+    shipping_address: site.shipping_address || '',
+    latitude: site.latitude || '',
+    longitude: site.longitude || '',
+    asns: site.asns?.map(a => a.asn || a).join(', ') || '',
+    tags: site.tags?.map(t => typeof t === 'object' ? t.name : t).join(', ') || '',
+    tenant_group: site.tenant?.group?.name || 'N/A',
+    owner_group: site.custom_fields?.owner_group || 'N/A',
+    owner: site.custom_fields?.owner || 'N/A',
     last_updated: site.last_updated ? new Date(site.last_updated).toLocaleString('th-TH') : 'N/A'
   }));
 
   memoryCache.sites.data = mapped;
   memoryCache.sites.timestamp = now;
+  return mapped;
+}
+
+async function getRegions() {
+  const now = Date.now();
+  if (!memoryCache.regions) {
+    memoryCache.regions = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.regions.data && (now - memoryCache.regions.timestamp < CACHE_TTL)) {
+    return memoryCache.regions.data;
+  }
+  const raw = await fetchAllPages('/dcim/regions/');
+  const mapped = raw.map(r => ({ id: r.id, name: r.name, slug: r.slug }));
+  memoryCache.regions.data = mapped;
+  memoryCache.regions.timestamp = now;
   return mapped;
 }
 
@@ -237,9 +260,64 @@ async function updatePrefix(id, data) {
   }
 
   const result = await res.json();
-  // ล้างแคชเพื่อให้การดึงข้อมูลรอบถัดไปเป็นค่าล่าสุด
   memoryCache.prefixes.data = null;
   return result;
 }
 
-module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix };
+async function updateSite(id, data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/sites/${id}/`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  memoryCache.sites.data = null;
+  return result;
+}
+
+async function createSite(data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/sites/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  memoryCache.sites.data = null;
+  return result;
+}
+
+module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix, updateSite, createSite, getRegions };

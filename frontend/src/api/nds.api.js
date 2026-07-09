@@ -13,6 +13,7 @@ export const ndsApi = {
   getProject: (id) => axiosClient.get(`/nds/projects/${id}`),
   createProject: (payload) => axiosClient.post('/nds/projects', payload),
   getDevices: () => axiosClient.get('/nds/devices'),
+  getRegions: () => axiosClient.get('/nds/regions'),
 
   // CRUD Bindings
   sites: makeCrudApi('sites'),
