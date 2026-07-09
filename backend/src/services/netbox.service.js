@@ -117,6 +117,13 @@ async function getPrefixes() {
       name: prefix.site?.name || 'N/A'
     },
     role: prefix.role?.name || 'N/A',
+    vlan: prefix.vlan ? {
+      id: prefix.vlan.id,
+      name: prefix.vlan.name,
+      vid: prefix.vlan.vid,
+      display: prefix.vlan.display
+    } : null,
+    custom_fields: prefix.custom_fields || {},
     description: prefix.description || 'N/A',
     last_updated: prefix.last_updated ? new Date(prefix.last_updated).toLocaleString('th-TH') : 'N/A'
   }));

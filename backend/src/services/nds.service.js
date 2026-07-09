@@ -108,12 +108,13 @@ const getAllPrefixes = async () => {
       return netboxPrefixes.map(p => ({
         id: p.id,
         prefix: p.prefix,
-        vlan: p.prefix.split('.')[2] || 100,
+        vlan: p.vlan?.vid || p.vlan?.name || p.prefix.split('.')[2] || 100,
         vrf: p.vrf || 'Global',
         tenant: p.tenant || 'N/A',
         role: p.role || 'N/A',
         siteName: p.site?.name || 'N/A',
         description: p.description || 'N/A',
+        ringname: p.custom_fields?.ringname || 'N/A',
         last_updated: p.last_updated || 'N/A'
       }));
     }
