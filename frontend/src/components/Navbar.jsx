@@ -12,7 +12,7 @@ export default function Navbar() {
             N
           </span>
           <span className="font-display text-sm font-semibold tracking-wide text-ink-100">
-            NETWORK PORTAL
+            NETWORK MANAGEMENT
           </span>
         </NavLink>
 

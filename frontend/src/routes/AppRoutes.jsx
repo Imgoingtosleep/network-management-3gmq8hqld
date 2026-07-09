@@ -2,12 +2,9 @@ import { Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import HomePage from '../pages/HomePage.jsx';
 import NDSLayout from '../pages/nds/NDSLayout.jsx';
 import SitesPage from '../pages/nds/SitesPage.jsx';
-import PEsPage from '../pages/nds/PEsPage.jsx';
-import LswNtsPage from '../pages/nds/LswNtsPage.jsx';
+import DevicesPage from '../pages/nds/DevicesPage.jsx';
 import PrefixesPage from '../pages/nds/PrefixesPage.jsx';
-import AggsPage from '../pages/nds/AggsPage.jsx';
 import DomainsPage from '../pages/nds/DomainsPage.jsx';
-import RingsPage from '../pages/nds/RingsPage.jsx';
 import CDSHomePage from '../pages/cds/CDSHomePage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
 import LoginPage from '../pages/LoginPage.jsx';
@@ -37,12 +34,9 @@ export default function AppRoutes() {
           <Route path="/nds" element={<NDSLayout />}>
             <Route index element={<Navigate to="/nds/sites" replace />} />
             <Route path="sites" element={<SitesPage />} />
-            <Route path="pes" element={<PEsPage />} />
-            <Route path="lsw-nts" element={<LswNtsPage />} />
+            <Route path="devices" element={<DevicesPage />} />
             <Route path="prefixes" element={<PrefixesPage />} />
-            <Route path="aggs" element={<AggsPage />} />
             <Route path="domains" element={<DomainsPage />} />
-            <Route path="rings" element={<RingsPage />} />
           </Route>
 
           {/* ทีม CDS */}

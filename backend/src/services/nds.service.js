@@ -181,7 +181,26 @@ const getAllPrefixes = async () => {
   }));
 };
 const createPrefix = (payload) => ndsModel.createPrefix(payload);
-const updatePrefix = (id, payload) => ndsModel.updatePrefix(id, payload);
+const updatePrefix = async (id, payload) => {
+  try {
+    const patchData = {};
+    if (payload.ringname !== undefined) {
+      patchData.custom_fields = {
+        ringname: payload.ringname || null
+      };
+    }
+    if (payload.description !== undefined) {
+      patchData.description = payload.description;
+    }
+    
+    if (Object.keys(patchData).length > 0) {
+      await netboxService.updatePrefix(id, patchData);
+    }
+  } catch (err) {
+    console.error('⚠️ Failed to update Prefix in NetBox, updating local database', err);
+  }
+  return ndsModel.updatePrefix(id, payload);
+};
 const deletePrefix = (id) => ndsModel.deletePrefix(id);
 
 // AGGs (ดึงตรงจาก NetBox)

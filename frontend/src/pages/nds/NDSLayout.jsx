@@ -3,12 +3,9 @@ import Sidebar from '../../components/Sidebar.jsx';
 
 const menuItems = [
   { label: 'Site Management', value: 'sites', path: '/nds/sites' },
-  { label: 'PE Devices', value: 'pes', path: '/nds/pes' },
-  { label: 'LSW / NT Devices', value: 'lsw-nts', path: '/nds/lsw-nts' },
+  { label: 'Devices', value: 'devices', path: '/nds/devices' },
   { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
-  { label: 'AGG Devices', value: 'aggs', path: '/nds/aggs' },
   { label: 'Domains', value: 'domains', path: '/nds/domains' },
-  { label: 'Assign Ring Name', value: 'rings', path: '/nds/rings' },
 ];
 
 export default function NDSLayout() {

@@ -19,7 +19,7 @@ const memoryCache = {
   sites: { data: null, timestamp: 0 }
 };
 
-const CACHE_TTL = 20 * 1000; // เก็บแคชไว้ 20 วินาที เพื่อให้เปลี่ยนหน้าดึงข้อมูลเร็วขึ้นแบบเรียลไทม์
+const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
 
 // ฟังก์ชันดึงข้อมูลแบบวนลูปทีละหน้าจนกว่าจะหมด เพื่อ bypass ขีดจำกัด MAX_PAGE_SIZE (1000) ของ NetBox
 async function fetchAllPages(endpointPath) {
@@ -213,4 +213,33 @@ async function getIpAddresses() {
   return mapped;
 }
 
-module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses };
+async function updatePrefix(id, data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/ipam/prefixes/${id}/`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  // ล้างแคชเพื่อให้การดึงข้อมูลรอบถัดไปเป็นค่าล่าสุด
+  memoryCache.prefixes.data = null;
+  return result;
+}
+
+module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix };
