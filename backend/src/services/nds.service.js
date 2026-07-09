@@ -46,7 +46,14 @@ const updateSite = async (id, payload) => {
   }
   return ndsModel.updateSite(id, payload);
 };
-const deleteSite = (id) => ndsModel.deleteSite(id);
+const deleteSite = async (id) => {
+  try {
+    return await netboxService.deleteSite(id);
+  } catch (err) {
+    console.log('⚠️ Failed to delete Site in NetBox, using local database:', err.message);
+  }
+  return ndsModel.deleteSite(id);
+};
 
 // PEs (ดึงตรงจาก NetBox)
 const getAllPEs = async () => {

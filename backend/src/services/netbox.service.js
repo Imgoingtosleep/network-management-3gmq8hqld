@@ -320,4 +320,29 @@ async function createSite(data) {
   return result;
 }
 
-module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix, updateSite, createSite, getRegions };
+async function deleteSite(id) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/sites/${id}/`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  memoryCache.sites.data = null;
+  return true;
+}
+
+module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix, updateSite, createSite, getRegions, deleteSite };

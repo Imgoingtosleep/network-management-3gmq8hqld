@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
 import NDSPageContainer from '../../components/NDSPageContainer.jsx';
 import { ndsApi } from '../../api/nds.api.js';
-import axiosClient from '../../api/axiosClient.js';
 
 export default function SitesPage() {
   const [selectedSites, setSelectedSites] = useState([]);
   const [regions, setRegions] = useState([]);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  // Modals state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const apiBaseURL = axiosClient.defaults.baseURL;
-
-  // Form states for Create Site
+  // Form states
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -89,17 +91,38 @@ export default function SitesPage() {
       owner: ''
     });
     setSaveError(null);
-    setIsCreateModalOpen(true);
+    setModalMode('create');
+    setIsModalOpen(true);
   };
 
-  const handleEdit = () => {
+  const handleEditClick = () => {
     if (selectedSites.length !== 1) return;
-    window.open(`${apiBaseURL}/nds/netbox-redirect?type=site_edit&id=${selectedSites[0].id}`, '_blank');
-  };
-
-  const handleDelete = () => {
-    if (selectedSites.length !== 1) return;
-    window.open(`${apiBaseURL}/nds/netbox-redirect?type=site_delete&id=${selectedSites[0].id}`, '_blank');
+    const site = selectedSites[0];
+    setFormData({
+      name: site.name || '',
+      slug: site.slug || '',
+      status: site.status || 'active',
+      region: regions.find(r => r.name === site.region)?.id || '',
+      group: site.group === 'N/A' ? '' : site.group,
+      facility: site.facility === 'N/A' ? '' : site.facility,
+      asns: site.asns || '',
+      time_zone: site.time_zone || '',
+      description: site.description === 'N/A' ? '' : site.description,
+      tags: site.tags || '',
+      tenant_group: site.tenant_group === 'N/A' ? '' : site.tenant_group,
+      tenant: site.tenant === 'N/A' ? '' : site.tenant,
+      physical_address: site.physical_address || '',
+      shipping_address: site.shipping_address || '',
+      latitude: site.latitude || '',
+      longitude: site.longitude || '',
+      name_thai: site.name_thai === 'N/A' ? '' : site.name_thai,
+      site_name: site.site_name === 'N/A' ? '' : site.site_name,
+      owner_group: site.owner_group === 'N/A' ? '' : site.owner_group,
+      owner: site.owner === 'N/A' ? '' : site.owner
+    });
+    setSaveError(null);
+    setModalMode('edit');
+    setIsModalOpen(true);
   };
 
   const handleInputChange = (e) => {
@@ -125,7 +148,7 @@ export default function SitesPage() {
     });
   };
 
-  const handleCreateSave = async () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.slug || !formData.status || !formData.name_thai || !formData.site_name) {
       setSaveError('กรุณากรอกฟิลด์ที่จำเป็น (Name, Slug, Status, Name thai, Site name) ให้ครบถ้วน');
       return;
@@ -156,12 +179,37 @@ export default function SitesPage() {
     };
 
     try {
-      await ndsApi.sites.create(payload);
+      if (modalMode === 'create') {
+        await ndsApi.sites.create(payload);
+      } else {
+        await ndsApi.sites.update(selectedSites[0].id, payload);
+      }
       setSelectedSites([]);
-      setIsCreateModalOpen(false);
+      setIsModalOpen(false);
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      setSaveError(err.message || 'เกิดข้อผิดพลาดในการสร้างไซต์ไปยัง NetBox');
+      setSaveError(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลไปยัง NetBox');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteClick = () => {
+    if (selectedSites.length !== 1) return;
+    setSaveError(null);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await ndsApi.sites.delete(selectedSites[0].id);
+      setSelectedSites([]);
+      setIsDeleteConfirmOpen(false);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      setSaveError(err.message || 'เกิดข้อผิดพลาดในการลบไซต์ออกจาก NetBox');
     } finally {
       setSaving(false);
     }
@@ -191,7 +239,7 @@ export default function SitesPage() {
           </button>
           <button
             type="button"
-            onClick={handleEdit}
+            onClick={handleEditClick}
             disabled={selectedSites.length !== 1}
             className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
               selectedSites.length === 1
@@ -203,7 +251,7 @@ export default function SitesPage() {
           </button>
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
             disabled={selectedSites.length !== 1}
             className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
               selectedSites.length === 1
@@ -286,13 +334,18 @@ export default function SitesPage() {
         )}
       />
 
-      {/* Create Site Dialog Modal - Opens inside the Portal */}
-      {isCreateModalOpen && (
+      {/* Create/Edit Site Dialog Modal */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="my-8 w-full max-w-2xl rounded-xl border border-base-600 bg-base-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <h3 className="font-display text-lg font-semibold text-ink-100">
-              เพิ่มข้อมูล Site
+              {modalMode === 'create' ? 'เพิ่มข้อมูล Site' : 'แก้ไขข้อมูล Site'}
             </h3>
+            {modalMode === 'edit' && (
+              <p className="mt-1 font-mono text-xs text-ink-400">
+                Site ID: <span className="text-nds font-semibold">{selectedSites[0]?.id}</span>
+              </p>
+            )}
 
             {saveError && (
               <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400 font-mono">
@@ -565,7 +618,7 @@ export default function SitesPage() {
             <div className="mt-6 flex justify-end gap-3 border-t border-base-600/30 pt-4">
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsModalOpen(false)}
                 className="rounded-lg border border-base-600 bg-base-950 px-4 py-2 text-xs text-ink-400 hover:bg-base-800 transition-colors"
                 disabled={saving}
               >
@@ -573,11 +626,50 @@ export default function SitesPage() {
               </button>
               <button
                 type="button"
-                onClick={handleCreateSave}
+                onClick={handleSave}
                 className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-base-950 hover:bg-nds-hover disabled:opacity-50 transition-colors"
                 disabled={saving}
               >
-                {saving ? 'กำลังบันทึก...' : 'สร้าง Site'}
+                {saving ? 'กำลังบันทึก...' : modalMode === 'create' ? 'สร้าง Site' : 'บันทึกไปยัง NetBox'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-base-600 bg-base-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-left">
+            <h3 className="font-display text-lg font-semibold text-ink-100">
+              ยืนยันการลบข้อมูล Site
+            </h3>
+            <p className="mt-3 text-xs text-ink-400 leading-relaxed">
+              คุณต้องการลบข้อมูล Site <span className="text-red-400 font-bold">{selectedSites[0]?.name}</span> ออกจาก NetBox ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้
+            </p>
+
+            {saveError && (
+              <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400 font-mono">
+                {saveError}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3 border-t border-base-600/30 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                className="rounded-lg border border-base-600 bg-base-950 px-4 py-2 text-xs text-ink-400 hover:bg-base-800 transition-colors"
+                disabled={saving}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="rounded-lg bg-red-500 px-4 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+                disabled={saving}
+              >
+                {saving ? 'กำลังลบ...' : 'ยืนยันลบ Site'}
               </button>
             </div>
           </div>
