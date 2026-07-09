@@ -39,9 +39,7 @@ const getAllPEs = async () => {
   try {
     const netboxDevices = await netboxService.getDevices();
     const filtered = netboxDevices.filter(d => 
-      d.device_role?.name?.toLowerCase().includes('pe') || 
-      d.device_role?.name?.toLowerCase().includes('core') ||
-      d.device_role?.name?.toLowerCase().includes('router')
+      d.device_role?.name?.toLowerCase() === 'provider edge'
     );
     if (filtered.length > 0) {
       return filtered.map(d => ({

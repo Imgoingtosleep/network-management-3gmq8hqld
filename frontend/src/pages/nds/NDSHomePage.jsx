@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ndsApi } from '../../api/nds.api.js';
 import Sidebar from '../../components/Sidebar.jsx';
-import StatusCard from '../../components/StatusCard.jsx';
 
 const menuItems = [
-  { label: 'ภาพรวม', value: 'overview' },
   { label: 'Site Management', value: 'sites' },
   { label: 'PE Devices', value: 'pes' },
   { label: 'LSW / NT Devices', value: 'lsw_nts' },
@@ -15,17 +13,17 @@ const menuItems = [
 ];
 
 export default function NDSHomePage() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('sites');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Pagination state
+  // Pagination and Search state
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
   const itemsPerPage = 50;
 
   // Data states
-  const [projects, setProjects] = useState([]);
   const [sites, setSites] = useState([]);
   const [pes, setPEs] = useState([]);
   const [lswNts, setLswNts] = useState([]);
@@ -44,41 +42,27 @@ export default function NDSHomePage() {
     setLoading(true);
     setError(null);
     setCurrentPage(1); // Reset page on tab switch
+    setSearchQuery(''); // Reset search on tab switch
 
     const loadData = async () => {
       try {
-        if (activeTab === 'overview') {
-          const resProj = await ndsApi.getProjects();
-          const resSites = await ndsApi.sites.list();
-          const resPEs = await ndsApi.pes.list();
-          const resLsw = await ndsApi.lswNts.list();
-          const resPref = await ndsApi.prefixes.list();
-          if (mounted) {
-            setProjects(resProj.data?.data || []);
-            setSites(resSites.data?.data || []);
-            setPEs(resPEs.data?.data || []);
-            setLswNts(resLsw.data?.data || []);
-            setPrefixes(resPref.data?.data || []);
-          }
-        } else {
-          const res = await ndsApi[activeTab].list();
-          const resSites = await ndsApi.sites.list();
-          const resAggs = await ndsApi.aggs.list();
-          const resDom = await ndsApi.domains.list();
+        const res = await ndsApi[activeTab].list();
+        const resSites = await ndsApi.sites.list();
+        const resAggs = await ndsApi.aggs.list();
+        const resDom = await ndsApi.domains.list();
+        
+        if (mounted) {
+          setSites(resSites.data?.data || []);
+          setAggs(resAggs.data?.data || []);
+          setDomains(resDom.data?.data || []);
           
-          if (mounted) {
-            setSites(resSites.data?.data || []);
-            setAggs(resAggs.data?.data || []);
-            setDomains(resDom.data?.data || []);
-            
-            if (activeTab === 'sites') setSites(res.data?.data || []);
-            if (activeTab === 'pes') setPEs(res.data?.data || []);
-            if (activeTab === 'lsw_nts') setLswNts(res.data?.data || []);
-            if (activeTab === 'prefixes') setPrefixes(res.data?.data || []);
-            if (activeTab === 'aggs') setAggs(res.data?.data || []);
-            if (activeTab === 'domains') setDomains(res.data?.data || []);
-            if (activeTab === 'rings') setRings(res.data?.data || []);
-          }
+          if (activeTab === 'sites') setSites(res.data?.data || []);
+          if (activeTab === 'pes') setPEs(res.data?.data || []);
+          if (activeTab === 'lsw_nts') setLswNts(res.data?.data || []);
+          if (activeTab === 'prefixes') setPrefixes(res.data?.data || []);
+          if (activeTab === 'aggs') setAggs(res.data?.data || []);
+          if (activeTab === 'domains') setDomains(res.data?.data || []);
+          if (activeTab === 'rings') setRings(res.data?.data || []);
         }
       } catch (err) {
         if (mounted) setError('ไม่สามารถเชื่อมต่อดึงข้อมูลหลังบ้านได้');
@@ -169,7 +153,24 @@ export default function NDSHomePage() {
     return dom ? dom.name : 'Unknown Domain';
   };
 
-  // Pagination Helper functions
+  // Search logic
+  const getFilteredData = (dataList) => {
+    if (!searchQuery) return dataList;
+    const query = searchQuery.toLowerCase().trim();
+    return dataList.filter(item => {
+      return Object.entries(item).some(([key, val]) => {
+        if (val === null || val === undefined) return false;
+        if (typeof val === 'object') {
+          return Object.values(val).some(nestedVal => 
+            nestedVal && String(nestedVal).toLowerCase().includes(query)
+          );
+        }
+        return String(val).toLowerCase().includes(query);
+      });
+    });
+  };
+
+  // Pagination Helpers
   const paginate = (dataList) => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return dataList.slice(startIndex, startIndex + itemsPerPage);
@@ -181,16 +182,14 @@ export default function NDSHomePage() {
 
     const getPageNumbers = () => {
       const pages = [];
-      const maxVisible = 5; // Max visible buttons at one time (excluding ellipses)
+      const maxVisible = 5;
       
       if (totalPages <= maxVisible) {
         for (let i = 1; i <= totalPages; i++) {
           pages.push(i);
         }
       } else {
-        // เสมอ หน้า 1
         pages.push(1);
-        
         let start = Math.max(2, currentPage - 1);
         let end = Math.min(totalPages - 1, currentPage + 1);
         
@@ -201,19 +200,11 @@ export default function NDSHomePage() {
           start = totalPages - 2;
         }
         
-        if (start > 2) {
-          pages.push('...');
-        }
-        
+        if (start > 2) pages.push('...');
         for (let i = start; i <= end; i++) {
           pages.push(i);
         }
-        
-        if (end < totalPages - 1) {
-          pages.push('...');
-        }
-        
-        // เสมอ หน้าสุดท้าย
+        if (end < totalPages - 1) pages.push('...');
         pages.push(totalPages);
       }
       return pages;
@@ -264,6 +255,21 @@ export default function NDSHomePage() {
     );
   };
 
+  // Get active lists & filtered variants
+  const getActiveList = () => {
+    if (activeTab === 'sites') return sites;
+    if (activeTab === 'pes') return pes;
+    if (activeTab === 'lsw_nts') return lswNts;
+    if (activeTab === 'prefixes') return prefixes;
+    if (activeTab === 'aggs') return aggs;
+    if (activeTab === 'domains') return domains;
+    if (activeTab === 'rings') return rings;
+    return [];
+  };
+
+  const rawList = getActiveList();
+  const filteredList = getFilteredData(rawList);
+
   return (
     <div className="flex gap-10">
       <Sidebar accent="nds" items={menuItems} activeTab={activeTab} onSelectTab={setActiveTab} />
@@ -282,14 +288,12 @@ export default function NDSHomePage() {
               การบริหารจัดการและสถาปัตยกรรมโครงข่ายทีม Network Design Services (NDS)
             </p>
           </div>
-          {activeTab !== 'overview' && (
-            <button
-              onClick={handleOpenCreateModal}
-              className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-nds/20 hover:opacity-90 active:scale-[0.97] transition-all"
-            >
-              + Create New
-            </button>
-          )}
+          <button
+            onClick={handleOpenCreateModal}
+            className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-nds/20 hover:opacity-90 active:scale-[0.97] transition-all"
+          >
+            + Create New
+          </button>
         </div>
 
         {/* Alerts / Messages */}
@@ -304,6 +308,33 @@ export default function NDSHomePage() {
           </div>
         )}
 
+        {/* Search & Dynamic Status Header */}
+        {!loading && (
+          <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-between items-center bg-base-800/40 p-4 rounded-xl border border-base-600/50">
+            <div className="relative w-full sm:max-w-xs">
+              <input
+                type="text"
+                placeholder="ค้นหาด่วน (เช่น ชื่อ, IP, รุ่น, ไซต์)..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full rounded-lg border border-base-600 bg-base-950 px-3.5 py-2 pl-9 text-xs text-ink-100 placeholder-ink-500 focus:border-nds focus:outline-none focus:ring-1 focus:ring-nds"
+              />
+              <span className="absolute left-3 top-2.5 text-xs opacity-60">🔍</span>
+            </div>
+            <div className="text-xs text-ink-400 font-mono">
+              ข้อมูลทั้งหมด: <span className="text-nds font-bold text-sm mx-1">{rawList.length}</span> รายการ
+              {searchQuery && (
+                <>
+                  {' '}| ค้นพบ: <span className="text-green-400 font-bold text-sm mx-1">{filteredList.length}</span> รายการ
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Loading Spinner */}
         {loading && !modalType && (
           <p className="mt-10 text-sm text-ink-400 animate-pulse text-center">กำลังโหลดข้อมูลระบบ...</p>
@@ -311,33 +342,8 @@ export default function NDSHomePage() {
 
         {/* Render Tab Contents */}
         {!loading && (
-          <div className="mt-6">
-            {/* 1. Overview Tab */}
-            {activeTab === 'overview' && (
-              <div className="space-y-8">
-                {/* Stats */}
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <StatusCard accent="nds" label="Total Sites" value={sites.length} />
-                  <StatusCard accent="nds" label="PE Routers" value={pes.length} />
-                  <StatusCard accent="nds" label="LSW / NT Nodes" value={lswNts.length} />
-                  <StatusCard accent="nds" label="Prefix Blocks" value={prefixes.length} />
-                </div>
-
-                <div className="rounded-xl border border-base-600/60 bg-base-800/40 p-6">
-                  <h3 className="font-display text-lg font-semibold text-ink-100">โปรเจกต์สถาปัตยกรรมโครงข่าย NDS</h3>
-                  <ul className="mt-4 divide-y divide-base-600/50">
-                    {projects.map(p => (
-                      <li key={p.id} className="flex justify-between py-3 text-sm">
-                        <span className="text-ink-100">{p.name}</span>
-                        <span className="text-nds font-mono">{p.status}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {/* 2. Sites Tab */}
+          <div className="mt-4">
+            {/* Sites Tab */}
             {activeTab === 'sites' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -357,7 +363,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(sites).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-400">{item.slug}</td>
@@ -374,14 +380,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={10} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(sites.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 3. PE Devices Tab */}
+            {/* PE Devices Tab */}
             {activeTab === 'pes' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -403,7 +414,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(pes).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 text-ink-400">{item.manufacturer}</td>
@@ -425,14 +436,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={12} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(pes.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 4. LSW / NT Devices Tab */}
+            {/* LSW / NT Devices Tab */}
             {activeTab === 'lsw_nts' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -454,7 +470,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(lswNts).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 text-ink-400 font-semibold text-xs">{item.type}</td>
@@ -474,14 +490,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={12} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(lswNts.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 5. IP Management (Prefix) Tab */}
+            {/* IP Management (Prefix) Tab */}
             {activeTab === 'prefixes' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -500,7 +521,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(prefixes).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-nds">{item.prefix}</td>
                           <td className="px-5 py-4 font-mono text-ink-400">{item.vlan}</td>
@@ -517,14 +538,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(prefixes.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 6. AGG Devices Tab */}
+            {/* AGG Devices Tab */}
             {activeTab === 'aggs' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -545,7 +571,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(aggs).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 text-ink-400">{item.manufacturer}</td>
@@ -564,14 +590,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={11} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(aggs.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 7. Domains Tab */}
+            {/* Domains Tab */}
             {activeTab === 'domains' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -585,7 +616,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(domains).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-medium text-ink-100">{item.name}</td>
                           <td className="px-5 py-4 font-mono text-xs text-nds">{item.code}</td>
@@ -596,14 +627,19 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(domains.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
 
-            {/* 8. Assign Ring Name Tab */}
+            {/* Assign Ring Name Tab */}
             {activeTab === 'rings' && (
               <div className="overflow-hidden rounded-xl border border-base-600/60 bg-base-800/40">
                 <div className="overflow-x-auto">
@@ -618,7 +654,7 @@ export default function NDSHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-600/30">
-                      {paginate(rings).map(item => (
+                      {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
                           <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.ringName}</td>
                           <td className="px-5 py-4 text-ink-400">{getAggName(item.aggId)}</td>
@@ -631,10 +667,15 @@ export default function NDSHomePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredList.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลผลลัพธ์ที่ค้นหา</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {renderPagination(rings.length)}
+                {renderPagination(filteredList.length)}
               </div>
             )}
           </div>
