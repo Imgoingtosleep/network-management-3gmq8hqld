@@ -100,28 +100,85 @@ const createLswNt = (payload) => ndsModel.createLswNt(payload);
 const updateLswNt = (id, payload) => ndsModel.updateLswNt(id, payload);
 const deleteLswNt = (id) => ndsModel.deleteLswNt(id);
 
+function ipToInt(ip) {
+  if (!ip) return 0;
+  const parts = ip.split('.');
+  if (parts.length !== 4) return 0;
+  return parts.reduce((ipInt, octet) => (ipInt << 8) + parseInt(octet, 10), 0) >>> 0;
+}
+
 // IP Management / Prefixes (ดึงตรงจาก NetBox)
 const getAllPrefixes = async () => {
   try {
-    const netboxPrefixes = await netboxService.getPrefixes();
+    const [netboxPrefixes, netboxIps] = await Promise.all([
+      netboxService.getPrefixes(),
+      netboxService.getIpAddresses()
+    ]);
+
     if (netboxPrefixes.length > 0) {
-      return netboxPrefixes.map(p => ({
-        id: p.id,
-        prefix: p.prefix,
-        vlan: p.vlan?.vid || p.vlan?.name || p.prefix.split('.')[2] || 100,
-        vrf: p.vrf || 'Global',
-        tenant: p.tenant || 'N/A',
-        role: p.role || 'N/A',
-        siteName: p.site?.name || 'N/A',
-        description: p.description || 'N/A',
-        ringname: p.custom_fields?.ringname || 'N/A',
-        last_updated: p.last_updated || 'N/A'
-      }));
+      // Parse IP ranges once
+      const prefixRanges = netboxPrefixes.map(p => {
+        const parts = p.prefix.split('/');
+        const ip = parts[0];
+        const mask = parseInt(parts[1], 10);
+        if (isNaN(mask)) return { id: p.id, start: 0, end: 0, usableSize: 1 };
+        const ipInt = ipToInt(ip);
+        const maskInt = (0xffffffff << (32 - mask)) >>> 0;
+        const start = (ipInt & maskInt) >>> 0;
+        const end = (start | ~maskInt) >>> 0;
+        const totalSize = (end - start + 1);
+        const usableSize = mask >= 31 ? totalSize : (p.is_pool ? totalSize : totalSize - 2);
+        return { id: p.id, start, end, usableSize };
+      });
+
+      // Group IP addresses into integers
+      const ipInts = netboxIps.map(ip => ipToInt(ip.address)).filter(ipVal => ipVal > 0);
+
+      // Count IPs in each range
+      const counts = {};
+      for (const ipVal of ipInts) {
+        for (const range of prefixRanges) {
+          if (ipVal >= range.start && ipVal <= range.end) {
+            counts[range.id] = (counts[range.id] || 0) + 1;
+          }
+        }
+      }
+
+      return netboxPrefixes.map(p => {
+        const range = prefixRanges.find(r => r.id === p.id);
+        const ipCount = counts[p.id] || 0;
+        const usable = range ? range.usableSize : 1;
+        const utilization = usable > 0 ? Math.min(100, Math.round((ipCount / usable) * 100)) : 0;
+        
+        return {
+          id: p.id,
+          prefix: p.prefix,
+          vlan: p.vlan?.vid || p.vlan?.name || p.prefix.split('.')[2] || 100,
+          vrf: p.vrf || 'Global',
+          tenant: p.tenant || 'N/A',
+          role: p.role || 'N/A',
+          siteName: p.site?.name || 'N/A',
+          description: p.description || 'N/A',
+          ringname: p.custom_fields?.ringname || 'N/A',
+          utilization: `${utilization}%`,
+          last_updated: p.last_updated || 'N/A'
+        };
+      });
     }
   } catch (err) {
-    console.log('⚠️ Failed to load Prefixes from NetBox, using local database');
+    console.error('⚠️ Failed to load Prefixes from NetBox, using local database', err);
   }
-  return ndsModel.findPrefixes();
+  const local = await ndsModel.findPrefixes();
+  return local.map(p => ({
+    ...p,
+    siteName: p.siteName || 'N/A',
+    vrf: p.vrf || 'Global',
+    tenant: p.tenant || 'N/A',
+    role: p.role || 'N/A',
+    ringname: p.ringname || 'N/A',
+    utilization: '0%',
+    last_updated: 'N/A'
+  }));
 };
 const createPrefix = (payload) => ndsModel.createPrefix(payload);
 const updatePrefix = (id, payload) => ndsModel.updatePrefix(id, payload);
@@ -159,8 +216,33 @@ const createAGG = (payload) => ndsModel.createAGG(payload);
 const updateAGG = (id, payload) => ndsModel.updateAGG(id, payload);
 const deleteAGG = (id) => ndsModel.deleteAGG(id);
 
-// Domains
-const getAllDomains = () => ndsModel.findDomains();
+// Domains (ดึงตรงจาก NetBox VRF)
+const getAllDomains = async () => {
+  try {
+    const netboxVrfs = await netboxService.getVrfs();
+    if (netboxVrfs.length > 0) {
+      return netboxVrfs.map(v => ({
+        id: v.id,
+        name: v.name,
+        rd: v.rd,
+        tenant: v.tenant,
+        description: v.description,
+        last_updated: v.last_updated
+      }));
+    }
+  } catch (err) {
+    console.log('⚠️ Failed to load VRFs from NetBox, using local database');
+  }
+  const localDomains = await ndsModel.findDomains();
+  return localDomains.map(d => ({
+    id: d.id,
+    name: d.name,
+    rd: d.code,
+    tenant: d.type,
+    description: 'Local Mock VRF',
+    last_updated: 'N/A'
+  }));
+};
 const createDomain = (payload) => ndsModel.createDomain(payload);
 const updateDomain = (id, payload) => ndsModel.updateDomain(id, payload);
 const deleteDomain = (id) => ndsModel.deleteDomain(id);

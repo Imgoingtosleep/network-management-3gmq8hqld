@@ -111,6 +111,7 @@ async function getPrefixes() {
       value: prefix.status?.value || 'active',
       label: prefix.status?.label || 'Active'
     },
+    is_pool: prefix.is_pool || false,
     vrf: prefix.vrf?.name || 'Global',
     tenant: prefix.tenant?.name || 'N/A',
     site: {
@@ -164,4 +165,52 @@ async function getSites() {
   return mapped;
 }
 
-module.exports = { getDevices, getPrefixes, getSites };
+async function getVrfs() {
+  const now = Date.now();
+  if (!memoryCache.vrfs) {
+    memoryCache.vrfs = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.vrfs.data && (now - memoryCache.vrfs.timestamp < CACHE_TTL)) {
+    console.log('⚡ [Cache] Returning cached NetBox vrfs');
+    return memoryCache.vrfs.data;
+  }
+
+  const rawVrfs = await fetchAllPages('/ipam/vrfs/');
+  
+  const mapped = rawVrfs.map(vrf => ({
+    id: vrf.id,
+    name: vrf.name || 'Unnamed VRF',
+    rd: vrf.rd || 'N/A',
+    tenant: vrf.tenant?.name || 'N/A',
+    description: vrf.description || 'N/A',
+    last_updated: vrf.last_updated ? new Date(vrf.last_updated).toLocaleString('th-TH') : 'N/A'
+  }));
+
+  memoryCache.vrfs.data = mapped;
+  memoryCache.vrfs.timestamp = now;
+  return mapped;
+}
+
+async function getIpAddresses() {
+  const now = Date.now();
+  if (!memoryCache.ipAddresses) {
+    memoryCache.ipAddresses = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.ipAddresses.data && (now - memoryCache.ipAddresses.timestamp < CACHE_TTL)) {
+    console.log('⚡ [Cache] Returning cached NetBox IP addresses');
+    return memoryCache.ipAddresses.data;
+  }
+
+  const rawIps = await fetchAllPages('/ipam/ip-addresses/');
+  
+  const mapped = rawIps.map(ip => ({
+    id: ip.id,
+    address: ip.address ? ip.address.split('/')[0] : ''
+  }));
+
+  memoryCache.ipAddresses.data = mapped;
+  memoryCache.ipAddresses.timestamp = now;
+  return mapped;
+}
+
+module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses };
