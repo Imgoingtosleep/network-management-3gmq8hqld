@@ -2,6 +2,36 @@ import { useEffect, useState } from 'react';
 import { ndsApi } from '../../api/nds.api.js';
 import Sidebar from '../../components/Sidebar.jsx';
 
+const getUtilColor = (utilStr) => {
+  const val = parseInt(utilStr);
+  if (isNaN(val)) return 'text-ink-400';
+  if (val >= 85) return 'text-red-400 font-semibold';
+  if (val >= 50) return 'text-yellow-400 font-semibold';
+  return 'text-green-400';
+};
+
+const getUtilBarColor = (val) => {
+  if (val >= 85) return 'bg-red-500';
+  if (val >= 50) return 'bg-yellow-500';
+  return 'bg-green-500';
+};
+
+const renderUtilBar = (utilStr) => {
+  const val = parseInt(utilStr) || 0;
+  const barColor = getUtilBarColor(val);
+  return (
+    <div className="flex items-center gap-2.5 min-w-[110px]">
+      <div className="w-14 h-2 bg-base-950 rounded-full overflow-hidden border border-base-600/30">
+        <div 
+          className={`h-full ${barColor} transition-all duration-500`} 
+          style={{ width: `${val}%` }}
+        />
+      </div>
+      <span className={`font-mono text-xs ${getUtilColor(utilStr)}`}>{utilStr}</span>
+    </div>
+  );
+};
+
 const menuItems = [
   { label: 'Site Management', value: 'sites' },
   { label: 'PE Devices', value: 'pes' },
@@ -413,12 +443,13 @@ export default function NDSHomePage() {
                   <table className="w-full text-left text-sm whitespace-nowrap">
                     <thead className="bg-base-900/50 text-xs font-mono uppercase text-ink-400 border-b border-base-600/50">
                       <tr>
+                        <th className="px-5 py-3.5">VRF</th>
+                        <th className="px-5 py-3.5">Ring Name</th>
                         <th className="px-5 py-3.5">IP Prefix Block</th>
                         <th className="px-5 py-3.5">VLAN ID</th>
-                        <th className="px-5 py-3.5">VRF</th>
+                        <th className="px-5 py-3.5">Utilization</th>
                         <th className="px-5 py-3.5">Tenant</th>
                         <th className="px-5 py-3.5">Role</th>
-                        <th className="px-5 py-3.5">Site Assigned</th>
                         <th className="px-5 py-3.5">Description</th>
                         <th className="px-5 py-3.5">Last Updated</th>
                       </tr>
@@ -426,12 +457,21 @@ export default function NDSHomePage() {
                     <tbody className="divide-y divide-base-600/30">
                       {paginate(filteredList).map(item => (
                         <tr key={item.id} className="hover:bg-base-700/20 transition-colors">
+                          <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.vrf}</td>
+                          <td className="px-5 py-4 font-mono text-xs">
+                            {item.ringname && item.ringname !== 'N/A' ? (
+                              <span className="text-nds font-semibold uppercase">
+                                {item.ringname}
+                              </span>
+                            ) : (
+                              <span className="text-ink-600">N/A</span>
+                            )}
+                          </td>
                           <td className="px-5 py-4 font-mono font-medium text-nds">{item.prefix}</td>
                           <td className="px-5 py-4 font-mono text-ink-400">{item.vlan}</td>
-                          <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.vrf}</td>
+                          <td className="px-5 py-4">{renderUtilBar(item.utilization)}</td>
                           <td className="px-5 py-4 text-ink-400">{item.tenant}</td>
                           <td className="px-5 py-4 text-ink-400 text-xs">{item.role}</td>
-                          <td className="px-5 py-4 text-ink-400">{item.siteName || getSiteName(item.siteId)}</td>
                           <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
                           <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
                         </tr>
