@@ -469,6 +469,200 @@ async function createDevice(data) {
   return result;
 }
 
+function slugify(text) {
+  return text
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, '-')           // Replace spaces with -
+    .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+    .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+    .replace(/^-+/, '')             // Trim - from start
+    .replace(/-+$/, '');            // Trim - from end
+}
+
+async function createDeviceType(data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  // Resolve or create manufacturer
+  let manufacturerId = data.manufacturer;
+  if (typeof data.manufacturer === 'string') {
+    const mfgName = data.manufacturer.trim();
+    const mfgs = await fetchAllPages('/dcim/manufacturers/');
+    const found = mfgs.find(m => m.name.toLowerCase() === mfgName.toLowerCase());
+    if (found) {
+      manufacturerId = found.id;
+    } else {
+      // Create new manufacturer
+      const mfgSlug = slugify(mfgName) || 'generic';
+      const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ name: mfgName, slug: mfgSlug })
+      });
+      if (!mfgRes.ok) {
+        const mfgErr = await mfgRes.text();
+        throw new Error(`สร้างผู้ผลิต (Manufacturer) ไม่สำเร็จ: ${mfgErr}`);
+      }
+      const newMfg = await mfgRes.json();
+      manufacturerId = newMfg.id;
+    }
+  }
+
+  const payload = {
+    manufacturer: manufacturerId,
+    model: data.model,
+    slug: data.slug || slugify(`${data.manufacturer}-${data.model}`),
+    part_number: data.part_number || '',
+    u_height: parseInt(data.u_height) || 1,
+    is_full_depth: !!data.is_full_depth
+  };
+
+  const res = await fetch(`${baseUrl}/dcim/device-types/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+
+  // Create interface templates if interface_ranges is specified
+  const interfaceRanges = data.interface_ranges || [];
+  const interfaceTemplates = [];
+
+  if (interfaceRanges.length > 0) {
+    for (const range of interfaceRanges) {
+      const prefix = range.prefix || 'GigabitEthernet';
+      const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
+      const count = parseInt(range.count) || 0;
+      const type = range.type || '1000base-t';
+
+      for (let i = 0; i < count; i++) {
+        const portNum = start + i;
+        interfaceTemplates.push({
+          device_type: result.id,
+          name: `${prefix}${portNum}`,
+          type: type
+        });
+      }
+    }
+  } else {
+    // Fallback to legacy single count
+    const interfaceCount = parseInt(data.interface_count) || 0;
+    if (interfaceCount > 0) {
+      for (let i = 1; i <= interfaceCount; i++) {
+        interfaceTemplates.push({
+          device_type: result.id,
+          name: `GigabitEthernet${i}`,
+          type: '1000base-t'
+        });
+      }
+    }
+  }
+
+  if (interfaceTemplates.length > 0) {
+    try {
+      const itRes = await fetch(`${baseUrl}/dcim/interface-templates/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(interfaceTemplates)
+      });
+      if (!itRes.ok) {
+        console.warn('⚠️ Failed to create interface templates for device type:', await itRes.text());
+      }
+    } catch (itErr) {
+      console.warn('⚠️ Error creating interface templates:', itErr.message);
+    }
+  }
+
+  if (memoryCache.deviceTypes) {
+    memoryCache.deviceTypes.data = null;
+  }
+  return result;
+}
+
+async function createInterfaceTemplates(deviceTypeId, data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  // Support both single group and multi ranges (ranges: [{prefix, start, count, type}])
+  const ranges = data.ranges || [
+    {
+      prefix: data.prefix || 'GigabitEthernet',
+      start: parseInt(data.start) !== undefined && !isNaN(parseInt(data.start)) ? parseInt(data.start) : 1,
+      count: parseInt(data.count) || 0,
+      type: data.type || '1000base-t'
+    }
+  ];
+
+  const interfaceTemplates = [];
+  for (const range of ranges) {
+    const prefix = range.prefix || 'GigabitEthernet';
+    const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
+    const count = parseInt(range.count) || 0;
+    const type = range.type || '1000base-t';
+
+    for (let i = 0; i < count; i++) {
+      const portNum = start + i;
+      interfaceTemplates.push({
+        device_type: parseInt(deviceTypeId),
+        name: `${prefix}${portNum}`,
+        type: type
+      });
+    }
+  }
+
+  if (interfaceTemplates.length === 0) {
+    throw new Error('กรุณาระบุกลุ่มพอร์ตที่ต้องการสร้างอย่างน้อย 1 รายการ');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(interfaceTemplates)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`สร้าง Port Templates ล้มเหลว: ${errText}`);
+  }
+
+  const result = await res.json();
+  if (memoryCache.deviceTypes) {
+    memoryCache.deviceTypes.data = null;
+  }
+  return result;
+}
+
 async function updateDevice(id, data) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -745,8 +939,9 @@ module.exports = {
   createSite,
   getRegions,
   deleteSite,
-  // New
   createDevice,
+  createDeviceType,
+  createInterfaceTemplates,
   updateDevice,
   deleteDevice,
   getDeviceTypes,

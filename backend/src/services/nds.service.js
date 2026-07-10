@@ -351,6 +351,8 @@ module.exports = {
 
   // Device CRUD
   createDevice: async (payload) => netboxService.createDevice(payload),
+  createDeviceType: async (payload) => netboxService.createDeviceType(payload),
+  createInterfaceTemplates: async (deviceTypeId, payload) => netboxService.createInterfaceTemplates(deviceTypeId, payload),
   updateDevice: async (id, payload) => netboxService.updateDevice(id, payload),
   deleteDevice: async (id) => netboxService.deleteDevice(id),
 
@@ -494,5 +496,9 @@ module.exports = {
         { id: 3, name: "Voice-VLAN", vid: 300, display: "Voice-VLAN (300)" }
       ];
     }
-  }
+  },
+  
+  // Port Presets (Templates)
+  getPortPresets: async () => ndsModel.findPortPresets(),
+  createPortPreset: async (payload) => ndsModel.createPortPreset(payload)
 };

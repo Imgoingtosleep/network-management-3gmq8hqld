@@ -18,6 +18,10 @@ router.get('/netbox-redirect', ndsController.netboxRedirect);
 
 // Metadata Helpers for forms
 router.get('/device-types', ndsController.listDeviceTypes);
+router.post('/device-types', ndsController.createDeviceType);
+router.post('/device-types/:id/interfaces', ndsController.createInterfaceTemplates);
+router.get('/port-presets', ndsController.listPortPresets);
+router.post('/port-presets', ndsController.createPortPreset);
 router.get('/device-roles', ndsController.listDeviceRoles);
 router.get('/tenants', ndsController.listTenants);
 router.get('/locations', ndsController.listLocations);

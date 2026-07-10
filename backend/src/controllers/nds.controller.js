@@ -111,6 +111,34 @@ async function listDeviceTypes(req, res, next) {
   } catch (err) { return next(err); }
 }
 
+async function createDeviceType(req, res, next) {
+  try {
+    const data = await ndsService.createDeviceType(req.body);
+    return ok(res, data, 'สร้าง Device Type สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function createInterfaceTemplates(req, res, next) {
+  try {
+    const data = await ndsService.createInterfaceTemplates(req.params.id, req.body);
+    return ok(res, data, 'สร้าง Interface Templates สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listPortPresets(req, res, next) {
+  try {
+    const data = await ndsService.getPortPresets();
+    return ok(res, data, 'ดึงรายการ Port Presets สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function createPortPreset(req, res, next) {
+  try {
+    const data = await ndsService.createPortPreset(req.body);
+    return ok(res, data, 'สร้าง Port Preset สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 async function listDeviceRoles(req, res, next) {
   try {
     const data = await ndsService.getDeviceRoles();
@@ -239,6 +267,10 @@ module.exports = {
 
   // Device Metadata helpers
   listDeviceTypes,
+  createDeviceType,
+  createInterfaceTemplates,
+  listPortPresets,
+  createPortPreset,
   listDeviceRoles,
   listTenants,
   listLocations,
