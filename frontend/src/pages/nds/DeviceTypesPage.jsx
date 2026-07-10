@@ -351,7 +351,7 @@ export default function DeviceTypesPage() {
             onClick={handleCreatePresetClick}
             className="px-4 py-2 text-xs font-semibold rounded-lg border border-base-600 bg-base-950 text-ink-100 hover:bg-base-800 transition-all"
           >
-            Create Port Preset
+            Create Port Template
           </button>
           <button
             type="button"
@@ -445,7 +445,7 @@ export default function DeviceTypesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Pre-populate Ports from Preset (สร้างพอร์ตตามแม่แบบ)</label>
+                <label className="block text-xs font-mono text-ink-400">Interface Template</label>
                 <select
                   name="selectedPresetId"
                   value={deviceTypeFormData.selectedPresetId}
@@ -585,13 +585,13 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            <option value="1000base-t">1G Copper (1000Base-T)</option>
+                            {/* <option value="1000base-t">1G Copper (1000Base-T)</option>
                             <option value="1000base-x-sfp">1G Fiber SFP (1000Base-X)</option>
                             <option value="10gbase-x-sfpp">10G SFP+ (10GBASE-X)</option>
                             <option value="40gbase-x-qsfpp">40G QSFP+ (40GBASE-X)</option>
-                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option>
-                            <option value="virtual">Virtual (พอร์ตเสมือน)</option>
-                            <option value="other">Other (อื่นๆ)</option>
+                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option> */}
+                            {/* <option value="virtual">Virtual (พอร์ตเสมือน)</option>
+                            <option value="other">Other (อื่นๆ)</option> */}
                           </select>
                         </td>
                         <td className="py-3 text-center">
@@ -729,13 +729,13 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handlePresetRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            <option value="1000base-t">1G Copper (1000Base-T)</option>
+                            {/* <option value="1000base-t">1G Copper (1000Base-T)</option>
                             <option value="1000base-x-sfp">1G Fiber SFP (1000Base-X)</option>
                             <option value="10gbase-x-sfpp">10G SFP+ (10GBASE-X)</option>
                             <option value="40gbase-x-qsfpp">40G QSFP+ (40GBASE-X)</option>
-                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option>
-                            <option value="virtual">Virtual (พอร์ตเสมือน)</option>
-                            <option value="other">Other (อื่นๆ)</option>
+                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option> */}
+                            {/* <option value="virtual">Virtual (พอร์ตเสมือน)</option>
+                            <option value="other">Other (อื่นๆ)</option> */}
                           </select>
                         </td>
                         <td className="py-3 text-center">
