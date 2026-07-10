@@ -341,11 +341,6 @@ export default function SitesPage() {
             <h3 className="font-display text-lg font-semibold text-ink-100">
               {modalMode === 'create' ? 'เพิ่มข้อมูล Site' : 'แก้ไขข้อมูล Site'}
             </h3>
-            {modalMode === 'edit' && (
-              <p className="mt-1 font-mono text-xs text-ink-400">
-                Site ID: <span className="text-nds font-semibold">{selectedSites[0]?.id}</span>
-              </p>
-            )}
 
             {saveError && (
               <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400 font-mono">
