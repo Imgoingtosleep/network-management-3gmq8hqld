@@ -5,6 +5,8 @@ import { ndsApi } from '../../api/nds.api.js';
 export default function DevicesPage() {
   const [selectedDevices, setSelectedDevices] = useState([]);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('All');
+  const [selectedDeviceType, setSelectedDeviceType] = useState('All');
+  const [allDevices, setAllDevices] = useState([]);
   
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);

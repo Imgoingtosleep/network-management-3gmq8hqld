@@ -3,6 +3,7 @@ import HomePage from '../pages/HomePage.jsx';
 import NDSLayout from '../pages/nds/NDSLayout.jsx';
 import SitesPage from '../pages/nds/SitesPage.jsx';
 import DevicesPage from '../pages/nds/DevicesPage.jsx';
+import DeviceTypesPage from '../pages/nds/DeviceTypesPage.jsx';
 import PrefixesPage from '../pages/nds/PrefixesPage.jsx';
 import DomainsPage from '../pages/nds/DomainsPage.jsx';
 import CDSHomePage from '../pages/cds/CDSHomePage.jsx';
@@ -35,6 +36,7 @@ export default function AppRoutes() {
             <Route index element={<Navigate to="/nds/sites" replace />} />
             <Route path="sites" element={<SitesPage />} />
             <Route path="devices" element={<DevicesPage />} />
+            <Route path="device-types" element={<DeviceTypesPage />} />
             <Route path="prefixes" element={<PrefixesPage />} />
             <Route path="domains" element={<DomainsPage />} />
           </Route>

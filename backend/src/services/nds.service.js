@@ -361,11 +361,11 @@ module.exports = {
     } catch (err) {
       console.log('⚠️ Failed to load Device Types from NetBox, using fallback mock data');
       return [
-        { id: 1, manufacturer: "Cisco", model: "ASR 9010", display: "Cisco ASR 9010" },
-        { id: 2, manufacturer: "Huawei", model: "NE40E", display: "Huawei NE40E" },
-        { id: 3, manufacturer: "Cisco", model: "Catalyst 9300", display: "Cisco Catalyst 9300" },
-        { id: 4, manufacturer: "Nokia", model: "7210", display: "Nokia 7210" },
-        { id: 5, manufacturer: "Cisco", model: "Nexus 9300", display: "Cisco Nexus 9300" }
+        { id: 1, manufacturer: "Cisco", model: "ASR 9010", display: "Cisco ASR 9010", part_number: "ASR-9010-AC", u_height: 21, is_full_depth: "Yes", device_count: 5, interface_count: 48 },
+        { id: 2, manufacturer: "Huawei", model: "NE40E", display: "Huawei NE40E", part_number: "CR52-NE40E-X8", u_height: 14, is_full_depth: "Yes", device_count: 3, interface_count: 32 },
+        { id: 3, manufacturer: "Cisco", model: "Catalyst 9300", display: "Cisco Catalyst 9300", part_number: "C9300-48T-A", u_height: 1, is_full_depth: "No", device_count: 12, interface_count: 50 },
+        { id: 4, manufacturer: "Nokia", model: "7210", display: "Nokia 7210", part_number: "3HE08142AA", u_height: 1, is_full_depth: "No", device_count: 8, interface_count: 24 },
+        { id: 5, manufacturer: "Cisco", model: "Nexus 9300", display: "Cisco Nexus 9300", part_number: "N9K-C93180YC-FX", u_height: 1, is_full_depth: "Yes", device_count: 6, interface_count: 54 }
       ];
     }
   },

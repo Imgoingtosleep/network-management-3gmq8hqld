@@ -5,7 +5,9 @@ export default function NDSPageContainer({
   fetchLookups = async () => ({}), 
   renderTable, 
   placeholder = "ค้นหาด่วน (เช่น ชื่อ, IP, รุ่น, ไซต์)...",
-  refreshTrigger = 0
+  refreshTrigger = 0,
+  extraFilter = null,
+  onDataLoaded = null
 }) {
   const [data, setData] = useState([]);
   const [lookups, setLookups] = useState({});
@@ -40,8 +42,12 @@ export default function NDSPageContainer({
           fetchLookupsRef.current()
         ]);
         if (mounted) {
-          setData(mainRes.data?.data || mainRes.data || mainRes || []);
+          const parsedData = mainRes.data?.data || mainRes.data || mainRes || [];
+          setData(parsedData);
           setLookups(lookupData);
+          if (onDataLoaded) {
+            onDataLoaded(parsedData);
+          }
         }
       } catch (err) {
         if (mounted) setError('ไม่สามารถเชื่อมต่อดึงข้อมูลหลังบ้านได้');
@@ -56,9 +62,13 @@ export default function NDSPageContainer({
 
   // Search logic
   const filteredList = (() => {
-    if (!searchQuery) return data;
+    let result = data;
+    if (extraFilter) {
+      result = result.filter(extraFilter);
+    }
+    if (!searchQuery) return result;
     const query = searchQuery.toLowerCase().trim();
-    return data.filter(item => {
+    return result.filter(item => {
       return Object.entries(item).some(([key, val]) => {
         if (val === null || val === undefined) return false;
         if (typeof val === 'object') {

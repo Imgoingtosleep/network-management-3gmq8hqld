@@ -16,7 +16,8 @@ function getSanitizedUrl() {
 const memoryCache = {
   devices: { data: null, timestamp: 0 },
   prefixes: { data: null, timestamp: 0 },
-  sites: { data: null, timestamp: 0 }
+  sites: { data: null, timestamp: 0 },
+  deviceTypes: { data: null, timestamp: 0 }
 };
 
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
@@ -535,7 +536,14 @@ async function getDeviceTypes() {
     id: dt.id,
     manufacturer: dt.manufacturer?.name || 'N/A',
     model: dt.model || dt.name,
-    display: `${dt.manufacturer?.name || ''} ${dt.model || dt.name}`.trim()
+    display: `${dt.manufacturer?.name || ''} ${dt.model || dt.name}`.trim(),
+    part_number: dt.part_number || 'N/A',
+    u_height: dt.u_height || 0,
+    is_full_depth: dt.is_full_depth ? 'Yes' : 'No',
+    device_count: dt.device_count || 0,
+    interface_count: dt.interface_template_count !== undefined 
+      ? dt.interface_template_count 
+      : (dt.interface_count !== undefined ? dt.interface_count : (dt.interfaces?.length || 0))
   }));
   memoryCache.deviceTypes.data = mapped;
   memoryCache.deviceTypes.timestamp = now;

@@ -4,6 +4,7 @@ import Sidebar from '../../components/Sidebar.jsx';
 const menuItems = [
   { label: 'Site Management', value: 'sites', path: '/nds/sites' },
   { label: 'Devices', value: 'devices', path: '/nds/devices' },
+  { label: 'Device Types', value: 'device-types', path: '/nds/device-types' },
   { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
   { label: 'Domains', value: 'domains', path: '/nds/domains' },
 ];
