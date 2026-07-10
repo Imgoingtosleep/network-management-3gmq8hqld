@@ -81,6 +81,106 @@ const listRegions = async (req, res, next) => {
   }
 };
 
+// Device CRUD controllers
+async function createDevice(req, res, next) {
+  try {
+    const data = await ndsService.createDevice(req.body);
+    return created(res, data, 'สร้างอุปกรณ์ใน Netbox สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function updateDevice(req, res, next) {
+  try {
+    const data = await ndsService.updateDevice(req.params.id, req.body);
+    return ok(res, data, 'แก้ไขข้อมูลอุปกรณ์ใน Netbox สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function deleteDevice(req, res, next) {
+  try {
+    await ndsService.deleteDevice(req.params.id);
+    return ok(res, null, 'ลบอุปกรณ์ออกจาก Netbox สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+// Metadata list controllers
+async function listDeviceTypes(req, res, next) {
+  try {
+    const data = await ndsService.getDeviceTypes();
+    return ok(res, data, 'ดึงรายการ Device Types สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listDeviceRoles(req, res, next) {
+  try {
+    const data = await ndsService.getDeviceRoles();
+    return ok(res, data, 'ดึงรายการ Device Roles สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listTenants(req, res, next) {
+  try {
+    const data = await ndsService.getTenants();
+    return ok(res, data, 'ดึงรายการ Tenants สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listLocations(req, res, next) {
+  try {
+    const data = await ndsService.getLocations();
+    return ok(res, data, 'ดึงรายการ Locations สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listRacks(req, res, next) {
+  try {
+    const data = await ndsService.getRacks();
+    return ok(res, data, 'ดึงรายการ Racks สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listPlatforms(req, res, next) {
+  try {
+    const data = await ndsService.getPlatforms();
+    return ok(res, data, 'ดึงรายการ Platforms สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listConfigTemplates(req, res, next) {
+  try {
+    const data = await ndsService.getConfigTemplates();
+    return ok(res, data, 'ดึงรายการ Config Templates สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listClusters(req, res, next) {
+  try {
+    const data = await ndsService.getClusters();
+    return ok(res, data, 'ดึงรายการ Clusters สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listTenantGroups(req, res, next) {
+  try {
+    const data = await ndsService.getTenantGroups();
+    return ok(res, data, 'ดึงรายการ Tenant Groups สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listVirtualChassises(req, res, next) {
+  try {
+    const data = await ndsService.getVirtualChassises();
+    return ok(res, data, 'ดึงรายการ Virtual Chassis สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function listTags(req, res, next) {
+  try {
+    const data = await ndsService.getTags();
+    return ok(res, data, 'ดึงรายการ Tags สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 const netboxRedirect = (req, res, next) => {
   try {
     const { type, id } = req.query;
@@ -124,6 +224,24 @@ module.exports = {
   listDevices,
   listRegions,
   netboxRedirect,
+
+  // Device CRUD
+  createDevice,
+  updateDevice,
+  deleteDevice,
+
+  // Device Metadata helpers
+  listDeviceTypes,
+  listDeviceRoles,
+  listTenants,
+  listLocations,
+  listRacks,
+  listPlatforms,
+  listConfigTemplates,
+  listClusters,
+  listTenantGroups,
+  listVirtualChassises,
+  listTags,
   
   // Sites
   listSites: siteHandlers.list, createSite: siteHandlers.create, updateSite: siteHandlers.update, deleteSite: siteHandlers.delete,

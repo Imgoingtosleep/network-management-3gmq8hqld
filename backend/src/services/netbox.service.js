@@ -68,20 +68,50 @@ async function getDevices() {
     nodeid: device.custom_fields?.node_id || device.id,
     name: device.name || 'Unnamed Device',
     status: device.status?.label || device.status?.value || 'Active',
+    status_value: device.status?.value || 'active',
     tenant: device.tenant?.name || 'N/A',
+    tenant_id: device.tenant?.id || null,
+    tenant_group: device.tenant?.group?.name || 'N/A',
+    tenant_group_id: device.tenant?.group?.id || null,
     site: device.site?.name || 'N/A',
+    site_id: device.site?.id || null,
     location: device.location?.name || 'N/A',
+    location_id: device.location?.id || null,
     rack: device.rack?.name || 'N/A',
+    rack_id: device.rack?.id || null,
     role: (() => {
       const r = device.role?.name || device.device_role?.name || 'N/A';
       if (r === 'Aggregation Switch') return 'Aggregation';
       if (r === 'LSW') return 'Network';
       return r; // Returns 'Provider Edge', 'Provider' as is
     })(),
+    role_id: device.role?.id || device.device_role?.id || null,
     manufacturer: device.device_type?.manufacturer?.name || 'N/A',
     type: device.device_type?.model || device.device_type?.name || 'N/A',
+    device_type_id: device.device_type?.id || null,
     ip: device.primary_ip?.address || 'N/A',
     description: device.description || 'N/A',
+    airflow: device.airflow?.value || device.airflow || '',
+    serial: device.serial || '',
+    asset_tag: device.asset_tag || '',
+    face: device.face?.value || device.face || '',
+    position: device.position || '',
+    latitude: device.custom_fields?.latitude || '',
+    longitude: device.custom_fields?.longitude || '',
+    platform: device.platform?.name || 'N/A',
+    platform_id: device.platform?.id || null,
+    config_template: device.config_template?.name || 'N/A',
+    config_template_id: device.config_template?.id || null,
+    cluster: device.cluster?.name || 'N/A',
+    cluster_id: device.cluster?.id || null,
+    virtual_chassis: device.virtual_chassis?.name || device.virtual_chassis?.display || 'N/A',
+    virtual_chassis_id: device.virtual_chassis?.id || null,
+    vc_position: device.vc_position || '',
+    vc_priority: device.vc_priority || '',
+    owner_group: device.custom_fields?.owner_group || 'N/A',
+    owner: device.custom_fields?.owner || 'N/A',
+    tags: device.tags ? device.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
+    local_context_data: device.local_context_data ? JSON.stringify(device.local_context_data, null, 2) : '',
     last_updated: device.last_updated ? new Date(device.last_updated).toLocaleString('th-TH') : 'N/A'
   }));
 
@@ -340,4 +370,303 @@ async function deleteSite(id) {
   return true;
 }
 
-module.exports = { getDevices, getPrefixes, getSites, getVrfs, getIpAddresses, updatePrefix, updateSite, createSite, getRegions, deleteSite };
+// Device CRUD Operations
+async function createDevice(data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/devices/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  memoryCache.devices.data = null;
+  return result;
+}
+
+async function updateDevice(id, data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  memoryCache.devices.data = null;
+  return result;
+}
+
+async function deleteDevice(id) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  memoryCache.devices.data = null;
+  return true;
+}
+
+// Netbox Metadata helpers
+async function getDeviceTypes() {
+  const now = Date.now();
+  if (!memoryCache.deviceTypes) {
+    memoryCache.deviceTypes = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.deviceTypes.data && (now - memoryCache.deviceTypes.timestamp < CACHE_TTL)) {
+    return memoryCache.deviceTypes.data;
+  }
+  const raw = await fetchAllPages('/dcim/device-types/');
+  const mapped = raw.map(dt => ({
+    id: dt.id,
+    manufacturer: dt.manufacturer?.name || 'N/A',
+    model: dt.model || dt.name,
+    display: `${dt.manufacturer?.name || ''} ${dt.model || dt.name}`.trim()
+  }));
+  memoryCache.deviceTypes.data = mapped;
+  memoryCache.deviceTypes.timestamp = now;
+  return mapped;
+}
+
+async function getDeviceRoles() {
+  const now = Date.now();
+  if (!memoryCache.deviceRoles) {
+    memoryCache.deviceRoles = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.deviceRoles.data && (now - memoryCache.deviceRoles.timestamp < CACHE_TTL)) {
+    return memoryCache.deviceRoles.data;
+  }
+  // Modern Netbox uses /dcim/roles/, older uses /dcim/device-roles/
+  let raw = [];
+  try {
+    raw = await fetchAllPages('/dcim/device-roles/');
+  } catch (err) {
+    try {
+      raw = await fetchAllPages('/dcim/roles/');
+    } catch (err2) {
+      throw new Error('ไม่สามารถดึงข้อมูล Device Roles ได้จากทั้ง /dcim/device-roles/ และ /dcim/roles/');
+    }
+  }
+  const mapped = raw.map(r => ({ id: r.id, name: r.name, slug: r.slug }));
+  memoryCache.deviceRoles.data = mapped;
+  memoryCache.deviceRoles.timestamp = now;
+  return mapped;
+}
+
+async function getTenants() {
+  const now = Date.now();
+  if (!memoryCache.tenants) {
+    memoryCache.tenants = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.tenants.data && (now - memoryCache.tenants.timestamp < CACHE_TTL)) {
+    return memoryCache.tenants.data;
+  }
+  const raw = await fetchAllPages('/tenancy/tenants/');
+  const mapped = raw.map(t => ({ id: t.id, name: t.name, slug: t.slug }));
+  memoryCache.tenants.data = mapped;
+  memoryCache.tenants.timestamp = now;
+  return mapped;
+}
+
+async function getLocations() {
+  const now = Date.now();
+  if (!memoryCache.locations) {
+    memoryCache.locations = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.locations.data && (now - memoryCache.locations.timestamp < CACHE_TTL)) {
+    return memoryCache.locations.data;
+  }
+  const raw = await fetchAllPages('/dcim/locations/');
+  const mapped = raw.map(l => ({ id: l.id, name: l.name, slug: l.slug, site: l.site?.id }));
+  memoryCache.locations.data = mapped;
+  memoryCache.locations.timestamp = now;
+  return mapped;
+}
+
+async function getRacks() {
+  const now = Date.now();
+  if (!memoryCache.racks) {
+    memoryCache.racks = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.racks.data && (now - memoryCache.racks.timestamp < CACHE_TTL)) {
+    return memoryCache.racks.data;
+  }
+  const raw = await fetchAllPages('/dcim/racks/');
+  const mapped = raw.map(r => ({ id: r.id, name: r.name, site: r.site?.id }));
+  memoryCache.racks.data = mapped;
+  memoryCache.racks.timestamp = now;
+  return mapped;
+}
+
+async function getPlatforms() {
+  const now = Date.now();
+  if (!memoryCache.platforms) {
+    memoryCache.platforms = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.platforms.data && (now - memoryCache.platforms.timestamp < CACHE_TTL)) {
+    return memoryCache.platforms.data;
+  }
+  const raw = await fetchAllPages('/dcim/platforms/');
+  const mapped = raw.map(p => ({ id: p.id, name: p.name, slug: p.slug }));
+  memoryCache.platforms.data = mapped;
+  memoryCache.platforms.timestamp = now;
+  return mapped;
+}
+
+async function getConfigTemplates() {
+  const now = Date.now();
+  if (!memoryCache.configTemplates) {
+    memoryCache.configTemplates = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.configTemplates.data && (now - memoryCache.configTemplates.timestamp < CACHE_TTL)) {
+    return memoryCache.configTemplates.data;
+  }
+  let raw = [];
+  try {
+    raw = await fetchAllPages('/extras/config-templates/');
+  } catch (err) {
+    try {
+      raw = await fetchAllPages('/dcim/config-templates/');
+    } catch (err2) {
+      console.log('⚠️ Failed to load config templates from both routes, returning empty');
+    }
+  }
+  const mapped = raw.map(ct => ({ id: ct.id, name: ct.name }));
+  memoryCache.configTemplates.data = mapped;
+  memoryCache.configTemplates.timestamp = now;
+  return mapped;
+}
+
+async function getClusters() {
+  const now = Date.now();
+  if (!memoryCache.clusters) {
+    memoryCache.clusters = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.clusters.data && (now - memoryCache.clusters.timestamp < CACHE_TTL)) {
+    return memoryCache.clusters.data;
+  }
+  const raw = await fetchAllPages('/virtualization/clusters/');
+  const mapped = raw.map(c => ({ id: c.id, name: c.name }));
+  memoryCache.clusters.data = mapped;
+  memoryCache.clusters.timestamp = now;
+  return mapped;
+}
+
+async function getTenantGroups() {
+  const now = Date.now();
+  if (!memoryCache.tenantGroups) {
+    memoryCache.tenantGroups = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.tenantGroups.data && (now - memoryCache.tenantGroups.timestamp < CACHE_TTL)) {
+    return memoryCache.tenantGroups.data;
+  }
+  const raw = await fetchAllPages('/tenancy/tenant-groups/');
+  const mapped = raw.map(tg => ({ id: tg.id, name: tg.name, slug: tg.slug }));
+  memoryCache.tenantGroups.data = mapped;
+  memoryCache.tenantGroups.timestamp = now;
+  return mapped;
+}
+
+async function getVirtualChassises() {
+  const now = Date.now();
+  if (!memoryCache.virtualChassises) {
+    memoryCache.virtualChassises = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.virtualChassises.data && (now - memoryCache.virtualChassises.timestamp < CACHE_TTL)) {
+    return memoryCache.virtualChassises.data;
+  }
+  const raw = await fetchAllPages('/dcim/virtual-chassis/');
+  const mapped = raw.map(vc => ({ id: vc.id, name: vc.name || vc.display }));
+  memoryCache.virtualChassises.data = mapped;
+  memoryCache.virtualChassises.timestamp = now;
+  return mapped;
+}
+
+async function getTags() {
+  const now = Date.now();
+  if (!memoryCache.tags) {
+    memoryCache.tags = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.tags.data && (now - memoryCache.tags.timestamp < CACHE_TTL)) {
+    return memoryCache.tags.data;
+  }
+  const raw = await fetchAllPages('/extras/tags/');
+  const mapped = raw.map(t => ({ id: t.id, name: t.name, slug: t.slug }));
+  memoryCache.tags.data = mapped;
+  memoryCache.tags.timestamp = now;
+  return mapped;
+}
+
+module.exports = {
+  getDevices,
+  getPrefixes,
+  getSites,
+  getVrfs,
+  getIpAddresses,
+  updatePrefix,
+  updateSite,
+  createSite,
+  getRegions,
+  deleteSite,
+  // New
+  createDevice,
+  updateDevice,
+  deleteDevice,
+  getDeviceTypes,
+  getDeviceRoles,
+  getTenants,
+  getLocations,
+  getRacks,
+  // Additional new ones
+  getPlatforms,
+  getConfigTemplates,
+  getClusters,
+  getTenantGroups,
+  getVirtualChassises,
+  getTags
+};

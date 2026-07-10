@@ -331,4 +331,139 @@ module.exports = {
 
   // Regions
   getRegions,
+
+  // Device CRUD
+  createDevice: async (payload) => netboxService.createDevice(payload),
+  updateDevice: async (id, payload) => netboxService.updateDevice(id, payload),
+  deleteDevice: async (id) => netboxService.deleteDevice(id),
+
+  // Device Metadata helpers
+  getDeviceTypes: async () => {
+    try {
+      return await netboxService.getDeviceTypes();
+    } catch (err) {
+      console.log('⚠️ Failed to load Device Types from NetBox, using fallback mock data');
+      return [
+        { id: 1, manufacturer: "Cisco", model: "ASR 9010", display: "Cisco ASR 9010" },
+        { id: 2, manufacturer: "Huawei", model: "NE40E", display: "Huawei NE40E" },
+        { id: 3, manufacturer: "Cisco", model: "Catalyst 9300", display: "Cisco Catalyst 9300" },
+        { id: 4, manufacturer: "Nokia", model: "7210", display: "Nokia 7210" },
+        { id: 5, manufacturer: "Cisco", model: "Nexus 9300", display: "Cisco Nexus 9300" }
+      ];
+    }
+  },
+  getDeviceRoles: async () => {
+    try {
+      return await netboxService.getDeviceRoles();
+    } catch (err) {
+      console.log('⚠️ Failed to load Device Roles from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Provider Edge", slug: "provider-edge" },
+        { id: 2, name: "LSW_Network", slug: "lsw_network" },
+        { id: 3, name: "Network", slug: "network" },
+        { id: 4, name: "Aggregation", slug: "aggregation" }
+      ];
+    }
+  },
+  getTenants: async () => {
+    try {
+      return await netboxService.getTenants();
+    } catch (err) {
+      console.log('⚠️ Failed to load Tenants from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "NDS Team", slug: "nds-team" },
+        { id: 2, name: "CDS Team", slug: "cds-team" }
+      ];
+    }
+  },
+  getLocations: async () => {
+    try {
+      return await netboxService.getLocations();
+    } catch (err) {
+      console.log('⚠️ Failed to load Locations from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Floor 1", slug: "floor-1", site: 1 },
+        { id: 2, name: "Floor 2", slug: "floor-2", site: 2 }
+      ];
+    }
+  },
+  getRacks: async () => {
+    try {
+      return await netboxService.getRacks();
+    } catch (err) {
+      console.log('⚠️ Failed to load Racks from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Rack A-01", site: 1 },
+        { id: 2, name: "Rack B-02", site: 2 }
+      ];
+    }
+  },
+  getPlatforms: async () => {
+    try {
+      return await netboxService.getPlatforms();
+    } catch (err) {
+      console.log('⚠️ Failed to load Platforms from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Cisco IOS-XR", slug: "cisco-ios-xr" },
+        { id: 2, name: "Huawei VRP", slug: "huawei-vrp" },
+        { id: 3, name: "Juniper Junos", slug: "juniper-junos" }
+      ];
+    }
+  },
+  getConfigTemplates: async () => {
+    try {
+      return await netboxService.getConfigTemplates();
+    } catch (err) {
+      console.log('⚠️ Failed to load Config Templates from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Standard PE Config Template" },
+        { id: 2, name: "Standard LSW Config Template" }
+      ];
+    }
+  },
+  getClusters: async () => {
+    try {
+      return await netboxService.getClusters();
+    } catch (err) {
+      console.log('⚠️ Failed to load Clusters from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "BKK-Core-Cluster" },
+        { id: 2, name: "CNX-Edge-Cluster" }
+      ];
+    }
+  },
+  getTenantGroups: async () => {
+    try {
+      return await netboxService.getTenantGroups();
+    } catch (err) {
+      console.log('⚠️ Failed to load Tenant Groups from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Internal Infrastructure", slug: "internal-infrastructure" },
+        { id: 2, name: "External Clients", slug: "external-clients" }
+      ];
+    }
+  },
+  getVirtualChassises: async () => {
+    try {
+      return await netboxService.getVirtualChassises();
+    } catch (err) {
+      console.log('⚠️ Failed to load Virtual Chassis from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "BKK-VC-01" },
+        { id: 2, name: "CNX-VC-02" }
+      ];
+    }
+  },
+  getTags: async () => {
+    try {
+      return await netboxService.getTags();
+    } catch (err) {
+      console.log('⚠️ Failed to load Tags from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Production", slug: "production" },
+        { id: 2, name: "Staging", slug: "staging" },
+        { id: 3, name: "Core", slug: "core" }
+      ];
+    }
+  }
 };

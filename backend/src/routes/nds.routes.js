@@ -10,8 +10,24 @@ router.post('/projects', ndsController.createProject);
 
 // NetBox Devices (API connection)
 router.get('/devices', ndsController.listDevices);
+router.post('/devices', ndsController.createDevice);
+router.put('/devices/:id', ndsController.updateDevice);
+router.delete('/devices/:id', ndsController.deleteDevice);
 router.get('/regions', ndsController.listRegions);
 router.get('/netbox-redirect', ndsController.netboxRedirect);
+
+// Metadata Helpers for forms
+router.get('/device-types', ndsController.listDeviceTypes);
+router.get('/device-roles', ndsController.listDeviceRoles);
+router.get('/tenants', ndsController.listTenants);
+router.get('/locations', ndsController.listLocations);
+router.get('/racks', ndsController.listRacks);
+router.get('/platforms', ndsController.listPlatforms);
+router.get('/config-templates', ndsController.listConfigTemplates);
+router.get('/clusters', ndsController.listClusters);
+router.get('/tenant-groups', ndsController.listTenantGroups);
+router.get('/virtual-chassises', ndsController.listVirtualChassises);
+router.get('/tags', ndsController.listTags);
 
 // NDS CRUD Routes
 const registerCrud = (path, singular, plural) => {
