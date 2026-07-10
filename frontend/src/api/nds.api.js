@@ -28,6 +28,7 @@ export const ndsApi = {
   getTenantGroups: () => axiosClient.get('/nds/tenant-groups'),
   getVirtualChassises: () => axiosClient.get('/nds/virtual-chassises'),
   getTags: () => axiosClient.get('/nds/tags'),
+  getVlans: () => axiosClient.get('/nds/vlans'),
 
   // CRUD Bindings
   sites: makeCrudApi('sites'),

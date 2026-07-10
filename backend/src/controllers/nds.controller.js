@@ -181,6 +181,13 @@ async function listTags(req, res, next) {
   } catch (err) { return next(err); }
 }
 
+async function listVlans(req, res, next) {
+  try {
+    const data = await ndsService.getVlans();
+    return ok(res, data, 'ดึงรายการ VLANs สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 const netboxRedirect = (req, res, next) => {
   try {
     const { type, id } = req.query;
@@ -242,6 +249,7 @@ module.exports = {
   listTenantGroups,
   listVirtualChassises,
   listTags,
+  listVlans,
   
   // Sites
   listSites: siteHandlers.list, createSite: siteHandlers.create, updateSite: siteHandlers.update, deleteSite: siteHandlers.delete,

@@ -136,19 +136,35 @@ async function getPrefixes() {
       value: prefix.status?.value || 'active',
       label: prefix.status?.label || 'Active'
     },
+    status_value: prefix.status?.value || 'active',
     is_pool: prefix.is_pool || false,
+    mark_utilized: prefix.mark_utilized || false,
     vrf: prefix.vrf?.name || 'Global',
+    vrf_id: prefix.vrf?.id || null,
     tenant: prefix.tenant?.name || 'N/A',
+    tenant_id: prefix.tenant?.id || null,
+    tenant_group: prefix.tenant?.group?.name || 'N/A',
+    tenant_group_id: prefix.tenant?.group?.id || null,
     site: {
-      name: prefix.site?.name || 'N/A'
+      name: prefix.site?.name || 'N/A',
+      id: prefix.site?.id || null
     },
+    site_id: prefix.site?.id || null,
     role: prefix.role?.name || 'N/A',
+    role_id: prefix.role?.id || null,
     vlan: prefix.vlan ? {
       id: prefix.vlan.id,
       name: prefix.vlan.name,
       vid: prefix.vlan.vid,
       display: prefix.vlan.display
     } : null,
+    vlan_id: prefix.vlan?.id || null,
+    scope_type: prefix.scope_type || '',
+    scope_id: prefix.scope_id || null,
+    ringname: prefix.custom_fields?.ringname || 'N/A',
+    owner_group: prefix.custom_fields?.owner_group || 'N/A',
+    owner: prefix.custom_fields?.owner || 'N/A',
+    tags: prefix.tags ? prefix.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
     custom_fields: prefix.custom_fields || {},
     description: prefix.description || 'N/A',
     last_updated: prefix.last_updated ? new Date(prefix.last_updated).toLocaleString('th-TH') : 'N/A'
@@ -287,6 +303,59 @@ async function updatePrefix(id, data) {
   const result = await res.json();
   memoryCache.prefixes.data = null;
   return result;
+}
+
+async function createPrefix(data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/ipam/prefixes/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  const result = await res.json();
+  memoryCache.prefixes.data = null;
+  return result;
+}
+
+async function deletePrefix(id) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/ipam/prefixes/${id}/`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const errText = await res.text();
+    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+  }
+
+  memoryCache.prefixes.data = null;
+  return true;
 }
 
 async function updateSite(id, data) {
@@ -642,6 +711,21 @@ async function getTags() {
   return mapped;
 }
 
+async function getVlans() {
+  const now = Date.now();
+  if (!memoryCache.vlans) {
+    memoryCache.vlans = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.vlans.data && (now - memoryCache.vlans.timestamp < CACHE_TTL)) {
+    return memoryCache.vlans.data;
+  }
+  const raw = await fetchAllPages('/ipam/vlans/');
+  const mapped = raw.map(v => ({ id: v.id, name: v.name, vid: v.vid, display: `${v.name} (${v.vid})` }));
+  memoryCache.vlans.data = mapped;
+  memoryCache.vlans.timestamp = now;
+  return mapped;
+}
+
 module.exports = {
   getDevices,
   getPrefixes,
@@ -668,5 +752,9 @@ module.exports = {
   getClusters,
   getTenantGroups,
   getVirtualChassises,
-  getTags
+  getTags,
+  // Prefix new ones
+  createPrefix,
+  deletePrefix,
+  getVlans
 };

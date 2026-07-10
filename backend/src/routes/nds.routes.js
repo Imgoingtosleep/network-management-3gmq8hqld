@@ -28,6 +28,7 @@ router.get('/clusters', ndsController.listClusters);
 router.get('/tenant-groups', ndsController.listTenantGroups);
 router.get('/virtual-chassises', ndsController.listVirtualChassises);
 router.get('/tags', ndsController.listTags);
+router.get('/vlans', ndsController.listVlans);
 
 // NDS CRUD Routes
 const registerCrud = (path, singular, plural) => {

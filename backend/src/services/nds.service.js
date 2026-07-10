@@ -175,12 +175,27 @@ const getAllPrefixes = async () => {
           id: p.id,
           prefix: p.prefix,
           vlan: p.vlan?.vid || p.vlan?.name || p.prefix.split('.')[2] || 100,
+          vlan_id: p.vlan_id,
           vrf: p.vrf || 'Global',
+          vrf_id: p.vrf_id,
           tenant: p.tenant || 'N/A',
+          tenant_id: p.tenant_id,
+          tenant_group: p.tenant_group || 'N/A',
+          tenant_group_id: p.tenant_group_id,
           role: p.role || 'N/A',
+          role_id: p.role_id,
           siteName: p.site?.name || 'N/A',
+          site_id: p.site_id,
+          status_value: p.status_value,
+          is_pool: p.is_pool,
+          mark_utilized: p.mark_utilized,
+          scope_type: p.scope_type,
+          scope_id: p.scope_id,
+          ringname: p.ringname || 'N/A',
+          owner_group: p.owner_group || 'N/A',
+          owner: p.owner || 'N/A',
+          tags: p.tags || '',
           description: p.description || 'N/A',
-          ringname: p.custom_fields?.ringname || 'N/A',
           utilization: `${utilization}%`,
           last_updated: p.last_updated || 'N/A'
         };
@@ -201,28 +216,30 @@ const getAllPrefixes = async () => {
     last_updated: 'N/A'
   }));
 };
-const createPrefix = (payload) => ndsModel.createPrefix(payload);
+const createPrefix = async (payload) => {
+  try {
+    return await netboxService.createPrefix(payload);
+  } catch (err) {
+    console.error('⚠️ Failed to create Prefix in NetBox, creating in local database', err.message);
+  }
+  return ndsModel.createPrefix(payload);
+};
 const updatePrefix = async (id, payload) => {
   try {
-    const patchData = {};
-    if (payload.ringname !== undefined) {
-      patchData.custom_fields = {
-        ringname: payload.ringname || null
-      };
-    }
-    if (payload.description !== undefined) {
-      patchData.description = payload.description;
-    }
-    
-    if (Object.keys(patchData).length > 0) {
-      await netboxService.updatePrefix(id, patchData);
-    }
+    return await netboxService.updatePrefix(id, payload);
   } catch (err) {
-    console.error('⚠️ Failed to update Prefix in NetBox, updating local database', err);
+    console.error('⚠️ Failed to update Prefix in NetBox, updating local database', err.message);
   }
   return ndsModel.updatePrefix(id, payload);
 };
-const deletePrefix = (id) => ndsModel.deletePrefix(id);
+const deletePrefix = async (id) => {
+  try {
+    return await netboxService.deletePrefix(id);
+  } catch (err) {
+    console.error('⚠️ Failed to delete Prefix in NetBox, deleting from local database', err.message);
+  }
+  return ndsModel.deletePrefix(id);
+};
 
 // AGGs (ดึงตรงจาก NetBox)
 const getAllAGGs = async () => {
@@ -463,6 +480,18 @@ module.exports = {
         { id: 1, name: "Production", slug: "production" },
         { id: 2, name: "Staging", slug: "staging" },
         { id: 3, name: "Core", slug: "core" }
+      ];
+    }
+  },
+  getVlans: async () => {
+    try {
+      return await netboxService.getVlans();
+    } catch (err) {
+      console.log('⚠️ Failed to load VLANs from NetBox, using fallback mock data');
+      return [
+        { id: 1, name: "Management-VLAN", vid: 100, display: "Management-VLAN (100)" },
+        { id: 2, name: "Data-VLAN", vid: 200, display: "Data-VLAN (200)" },
+        { id: 3, name: "Voice-VLAN", vid: 300, display: "Voice-VLAN (300)" }
       ];
     }
   }
