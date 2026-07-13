@@ -840,15 +840,17 @@ export default function DeviceTypesPage() {
                   ) : existingInterfaces.length === 0 ? (
                     <div className="text-xs text-ink-500 font-mono">ไม่มีพอร์ตอยู่ในรุ่นนี้ (ว่างเปล่า)</div>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                    <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1">
                       {existingInterfaces.map(it => (
-                        <span 
+                        <div 
                           key={it.id} 
-                          className="px-2 py-0.5 rounded text-[10px] font-mono bg-base-950 border border-base-600/60 text-ink-400"
-                          title={`Type: ${it.type} | Label: ${it.label || 'N/A'}`}
+                          className="px-3 py-1.5 rounded bg-base-950 border border-base-600/60 font-mono text-[10px] text-ink-400 flex justify-between items-center"
                         >
-                          {it.name}
-                        </span>
+                          <span className="text-nds font-semibold select-all">{it.name}</span>
+                          <span className="text-ink-500">
+                            Type: {typeof it.type === 'object' ? it.type?.label || it.type?.value || 'N/A' : it.type} | Label: {it.label || 'N/A'}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1058,15 +1060,17 @@ export default function DeviceTypesPage() {
                       ) : sourceDeviceInterfaces.length === 0 ? (
                         <div className="text-xs text-ink-500 font-mono">ไม่พบพอร์ตในรุ่นต้นแบบนี้</div>
                       ) : (
-                        <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto pr-1">
+                        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
                           {sourceDeviceInterfaces.map(it => (
-                            <span 
+                            <div 
                               key={it.id} 
-                              className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-base-900 border border-base-600/60 text-ink-400"
-                              title={`Type: ${typeof it.type === 'object' ? it.type.label : it.type} | Label: ${it.label || 'N/A'}`}
+                              className="px-3 py-1.5 rounded bg-base-900 border border-base-600/60 font-mono text-[10px] text-ink-400 flex justify-between items-center"
                             >
-                              {it.name}
-                            </span>
+                              <span className="text-nds font-semibold select-all">{it.name}</span>
+                              <span className="text-ink-500">
+                                Type: {typeof it.type === 'object' ? it.type?.label || it.type?.value || 'N/A' : it.type} | Label: {it.label || 'N/A'}
+                              </span>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -1296,7 +1300,7 @@ export default function DeviceTypesPage() {
                 <div className="text-xs text-ink-400 font-mono">
                   ทั้งหมด {viewingInterfaces.length} พอร์ต:
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
+                <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
                   {viewingInterfaces.map(it => (
                     <div 
                       key={it.id} 
