@@ -93,10 +93,14 @@ const INTERFACE_TYPE_GROUPS = [
   {
     label: 'Fibre Channel',
     options: [
-      { value: 'fibrechannel-sf', label: 'FibreChannel (1G/2G/4G SFP)' },
-      { value: 'fibrechannel-sfp', label: 'FibreChannel (4G/8G/16G SFP+)' },
-      { value: 'fibrechannel-sfpp', label: 'FibreChannel (8G/16G/32G SFP+)' },
-      { value: 'fibrechannel-qsfpp', label: 'FibreChannel (QSFP)' }
+      { value: '1gfc-sfp', label: 'FibreChannel 1G (SFP)' },
+      { value: '2gfc-sfp', label: 'FibreChannel 2G (SFP)' },
+      { value: '4gfc-sfp', label: 'FibreChannel 4G (SFP)' },
+      { value: '8gfc-sfp-plus', label: 'FibreChannel 8G (SFP+)' },
+      { value: '16gfc-sfp-plus', label: 'FibreChannel 16G (SFP+)' },
+      { value: '32gfc-sfp28', label: 'FibreChannel 32G (SFP28)' },
+      { value: '64gfc-qsfpp', label: 'FibreChannel 64G (QSFP+)' },
+      { value: '128gfc-qsfp28', label: 'FibreChannel 128G (QSFP28)' }
     ]
   },
   {
@@ -327,13 +331,14 @@ export default function DeviceTypesPage() {
     setSaveError(null);
 
     try {
-      const selectedId = selectedDeviceTypes[0].id;
+      const selectedId = selectedDeviceTypes[0]?.id;
       await ndsApi.createInterfaceTemplates(selectedId, {
         ranges: portRanges.map(r => ({
           prefix: r.prefix.trim(),
           start: parseInt(r.start) || 0,
           count: parseInt(r.count) || 0,
-          type: r.type
+          type: r.type,
+          label: r.label || 'fiber'
         }))
       });
       setIsPortModalOpen(false);
@@ -369,7 +374,8 @@ export default function DeviceTypesPage() {
           prefix: r.prefix.trim(),
           start: parseInt(r.start) || 0,
           count: parseInt(r.count) || 0,
-          type: r.type
+          type: r.type,
+          label: r.label || 'fiber'
         }))
       });
       setIsPresetModalOpen(false);

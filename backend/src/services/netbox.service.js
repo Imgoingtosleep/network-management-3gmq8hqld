@@ -20,6 +20,20 @@ const memoryCache = {
   deviceTypes: { data: null, timestamp: 0 }
 };
 
+let cachedCustomFields = null;
+async function getAvailableCustomFields() {
+  if (cachedCustomFields) return cachedCustomFields;
+  try {
+    const fields = await fetchAllPages('/extras/custom-fields/');
+    // Extract valid custom field names/keys
+    cachedCustomFields = fields.map(f => f.name || f.key || '');
+    return cachedCustomFields;
+  } catch (err) {
+    console.warn('⚠️ Failed to fetch custom fields from NetBox:', err.message);
+    return [];
+  }
+}
+
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
 
 // ฟังก์ชันดึงข้อมูลแบบวนลูปทีละหน้าจนกว่าจะหมด เพื่อ bypass ขีดจำกัด MAX_PAGE_SIZE (1000) ของ NetBox
@@ -440,6 +454,26 @@ async function deleteSite(id) {
   return true;
 }
 
+async function sanitizeDeviceData(data) {
+  if (data.serial === null) data.serial = '';
+  if (data.description === null) data.description = '';
+
+  if (data.custom_fields && typeof data.custom_fields === 'object') {
+    try {
+      const available = await getAvailableCustomFields();
+      const cleanCF = {};
+      for (const [key, val] of Object.entries(data.custom_fields)) {
+        if (available.includes(key) && val !== null) {
+          cleanCF[key] = val;
+        }
+      }
+      data.custom_fields = cleanCF;
+    } catch (cfErr) {
+      data.custom_fields = {};
+    }
+  }
+}
+
 // Device CRUD Operations
 async function createDevice(data) {
   const baseUrl = getSanitizedUrl();
@@ -448,6 +482,8 @@ async function createDevice(data) {
   if (!baseUrl || !token) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
+
+  await sanitizeDeviceData(data);
 
   const res = await fetch(`${baseUrl}/dcim/devices/`, {
     method: 'POST',
@@ -676,6 +712,8 @@ async function updateDevice(id, data) {
   if (!baseUrl || !token) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
+
+  await sanitizeDeviceData(data);
 
   const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
     method: 'PATCH',
