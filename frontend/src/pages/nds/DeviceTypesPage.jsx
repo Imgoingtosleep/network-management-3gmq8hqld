@@ -817,7 +817,7 @@ export default function DeviceTypesPage() {
                 </div>
               )}
 
-              <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
+              {/* <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
                 <table className="w-full text-left text-xs font-mono">
                   <thead>
                     <tr className="text-ink-500 uppercase tracking-wider border-b border-base-600/30 pb-2">
@@ -919,7 +919,7 @@ export default function DeviceTypesPage() {
                     + Add Port Range (เพิ่มกลุ่มพอร์ต)
                   </button>
                 </div>
-              </div>
+              </div> */}
 
               <div className="mt-6 flex justify-end gap-3 border-t border-base-600/30 pt-4">
                 <button
