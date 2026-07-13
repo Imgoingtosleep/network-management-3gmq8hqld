@@ -40,20 +40,7 @@ let ndsRingNames = [
   { id: 2, ringName: 'CNX-NORTH-RING-02', aggId: 2, domainId: 2, bandwidth: '10G' }
 ];
 
-let ndsPortPresets = [
-  { id: 1, name: "24x 1G Copper + 4x 10G SFP+", ranges: [
-    { prefix: "GigabitEthernet0/0/", start: 1, count: 24, type: "1000base-t" },
-    { prefix: "TenGigabitEthernet0/1/", start: 1, count: 4, type: "10gbase-x-sfpp" }
-  ]},
-  { id: 2, name: "48x 1G Copper + 4x 10G SFP+", ranges: [
-    { prefix: "GigabitEthernet0/0/", start: 1, count: 48, type: "1000base-t" },
-    { prefix: "TenGigabitEthernet0/1/", start: 1, count: 4, type: "10gbase-x-sfpp" }
-  ]},
-  { id: 3, name: "20x 1G Fiber + 4x 10G SFP+ (Combo)", ranges: [
-    { prefix: "GigabitEthernet0/0/", start: 0, count: 20, type: "1000base-x-sfp" },
-    { prefix: "TenGigabitEthernet0/1/", start: 1, count: 4, type: "10gbase-x-sfpp" }
-  ]}
-];
+let ndsPortPresets = [];
 
 // Helper functions for CRUD operations
 function createHelper(list, payload) {

@@ -738,40 +738,7 @@ export default function DeviceTypesPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-mono text-ink-400">Interface Template (แม่แบบพอร์ตสำเร็จรูป)</label>
-                <select
-                  name="selectedPresetId"
-                  value={deviceTypeFormData.selectedPresetId}
-                  onChange={handleDeviceTypeInputChange}
-                  className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                >
-                  <option value="">-- ไม่สร้างพอร์ตล่วงหน้า (No port template) --</option>
-                  {presets.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
 
-              {deviceTypeFormData.selectedPresetId && (
-                <div className="rounded-lg border border-base-600/30 bg-base-950/20 p-3 space-y-1.5 animate-in fade-in duration-200">
-                  <h4 className="text-[11px] font-mono font-semibold text-ink-300">
-                    รายการพอร์ตที่จะสร้างขึ้นตามแม่แบบนี้:
-                  </h4>
-                  <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                    {presets
-                      .find(p => p.id === parseInt(deviceTypeFormData.selectedPresetId))
-                      ?.ranges?.map((range, idx) => (
-                        <div key={idx} className="text-[10px] font-mono text-ink-400 flex justify-between gap-4">
-                          <span className="text-nds font-medium select-all">{getRangePreview(range)}</span>
-                          <span className="text-ink-500 whitespace-nowrap">
-                            {range.type} ({range.label || 'fiber'})
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
