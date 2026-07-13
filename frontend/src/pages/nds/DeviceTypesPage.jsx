@@ -647,6 +647,13 @@ export default function DeviceTypesPage() {
         <div className="flex gap-2">
           <button
             type="button"
+            onClick={handleCreateClick}
+            className="px-4 py-2 text-xs font-semibold rounded-lg bg-nds border border-nds text-base-950 hover:bg-nds-hover transition-all shadow-[0_0_15px_rgba(76,141,255,0.15)]"
+          >
+            Create Device Type
+          </button>
+          <button
+            type="button"
             onClick={handleCreatePresetClick}
             className="px-4 py-2 text-xs font-semibold rounded-lg border border-base-600 bg-base-950 text-ink-100 hover:bg-base-800 transition-all"
           >
@@ -659,13 +666,7 @@ export default function DeviceTypesPage() {
           >
             Add Ports directly
           </button>
-          <button
-            type="button"
-            onClick={handleCreateClick}
-            className="px-4 py-2 text-xs font-semibold rounded-lg bg-nds border border-nds text-base-950 hover:bg-nds-hover transition-all shadow-[0_0_15px_rgba(76,141,255,0.15)]"
-          >
-            Create Device Type
-          </button>
+    
         </div>
       </div>
 
