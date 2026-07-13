@@ -664,33 +664,45 @@ async function createInterfaceTemplates(deviceTypeId, data) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  // Support both single group and multi ranges (ranges: [{prefix, start, count, type, label}])
-  const ranges = data.ranges || [
-    {
-      prefix: data.prefix || 'GigabitEthernet',
-      start: parseInt(data.start) !== undefined && !isNaN(parseInt(data.start)) ? parseInt(data.start) : 1,
-      count: parseInt(data.count) || 0,
-      type: data.type || '1000base-t',
-      label: data.label || ''
-    }
-  ];
-
   const interfaceTemplates = [];
-  for (const range of ranges) {
-    const prefix = range.prefix || 'GigabitEthernet';
-    const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
-    const count = parseInt(range.count) || 0;
-    const type = range.type || '1000base-t';
-    const label = range.label || '';
 
-    for (let i = 0; i < count; i++) {
-      const portNum = start + i;
+  if (data.interfaces && Array.isArray(data.interfaces)) {
+    for (const it of data.interfaces) {
       interfaceTemplates.push({
         device_type: parseInt(deviceTypeId),
-        name: `${prefix}${portNum}`,
-        type: type,
-        label: label
+        name: it.name,
+        type: it.type || '1000base-t',
+        label: it.label || ''
       });
+    }
+  } else {
+    // Support both single group and multi ranges (ranges: [{prefix, start, count, type, label}])
+    const ranges = data.ranges || [
+      {
+        prefix: data.prefix || 'GigabitEthernet',
+        start: parseInt(data.start) !== undefined && !isNaN(parseInt(data.start)) ? parseInt(data.start) : 1,
+        count: parseInt(data.count) || 0,
+        type: data.type || '1000base-t',
+        label: data.label || ''
+      }
+    ];
+
+    for (const range of ranges) {
+      const prefix = range.prefix || 'GigabitEthernet';
+      const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
+      const count = parseInt(range.count) || 0;
+      const type = range.type || '1000base-t';
+      const label = range.label || '';
+
+      for (let i = 0; i < count; i++) {
+        const portNum = start + i;
+        interfaceTemplates.push({
+          device_type: parseInt(deviceTypeId),
+          name: `${prefix}${portNum}`,
+          type: type,
+          label: label
+        });
+      }
     }
   }
 
@@ -710,6 +722,19 @@ async function createInterfaceTemplates(deviceTypeId, data) {
 
   if (!res.ok) {
     const errText = await res.text();
+    try {
+      const errObj = JSON.parse(errText);
+      if (Array.isArray(errObj)) {
+        const dupError = errObj.find(e => e && e.__all__ && e.__all__.some(msg => msg.includes('already exists')));
+        if (dupError) {
+          throw new Error('ไม่สามารถสร้างพอร์ตได้เนื่องจากมีบางพอร์ตที่ระบุ ถูกสร้างขึ้นในรุ่นนี้ไปแล้ว (มีชื่อพอร์ตซ้ำ)');
+        }
+      }
+    } catch (parseErr) {
+      if (parseErr.message.includes('มีบางพอร์ตที่ระบุ')) {
+        throw parseErr;
+      }
+    }
     throw new Error(`สร้าง Port Templates ล้มเหลว: ${errText}`);
   }
 

@@ -193,7 +193,11 @@ export default function DeviceTypesPage() {
 
   const [existingInterfaces, setExistingInterfaces] = useState([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(false);
-  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [portSourceMode, setPortSourceMode] = useState('manual'); // 'manual', 'preset', 'clone'
+  const [selectedSourcePresetId, setSelectedSourcePresetId] = useState('');
+  const [selectedSourceDeviceTypeId, setSelectedSourceDeviceTypeId] = useState('');
+  const [sourceDeviceInterfaces, setSourceDeviceInterfaces] = useState([]);
+  const [loadingSourceDeviceInterfaces, setLoadingSourceDeviceInterfaces] = useState(false);
 
   useEffect(() => {
     loadPresets();
@@ -219,6 +223,26 @@ export default function DeviceTypesPage() {
     };
     fetchExistingInterfaces();
   }, [selectedDeviceTypeId]);
+
+  useEffect(() => {
+    if (!selectedSourceDeviceTypeId) {
+      setSourceDeviceInterfaces([]);
+      return;
+    }
+    const fetchSourceInterfaces = async () => {
+      setLoadingSourceDeviceInterfaces(true);
+      try {
+        const res = await ndsApi.getInterfaceTemplates(selectedSourceDeviceTypeId);
+        setSourceDeviceInterfaces(res.data?.data || res.data || res || []);
+      } catch (err) {
+        console.error('Failed to load source interfaces:', err);
+        setSourceDeviceInterfaces([]);
+      } finally {
+        setLoadingSourceDeviceInterfaces(false);
+      }
+    };
+    fetchSourceInterfaces();
+  }, [selectedSourceDeviceTypeId]);
 
   const [cloningInterfaces, setCloningInterfaces] = useState([]);
   const [loadingCloningInterfaces, setLoadingCloningInterfaces] = useState(false);
@@ -346,6 +370,10 @@ export default function DeviceTypesPage() {
     } else {
       setSelectedDeviceTypeId('');
     }
+    setPortSourceMode('manual');
+    setSelectedSourcePresetId('');
+    setSelectedSourceDeviceTypeId('');
+    setSourceDeviceInterfaces([]);
     setPortRanges([
       { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
     ]);
@@ -374,6 +402,15 @@ export default function DeviceTypesPage() {
     setSaving(true);
     setSaveError(null);
 
+    // Resolve ranges from selected preset if any
+    let selectedRanges = [];
+    if (deviceTypeFormData.selectedPresetId) {
+      const selectedPreset = presets.find(p => p.id === parseInt(deviceTypeFormData.selectedPresetId));
+      if (selectedPreset) {
+        selectedRanges = selectedPreset.ranges || [];
+      }
+    }
+
     try {
       await ndsApi.createDeviceType({
         manufacturer: deviceTypeFormData.manufacturer.trim(),
@@ -381,7 +418,7 @@ export default function DeviceTypesPage() {
         part_number: deviceTypeFormData.part_number.trim(),
         u_height: parseInt(deviceTypeFormData.u_height) || 1,
         is_full_depth: deviceTypeFormData.is_full_depth,
-        clone_device_type_id: deviceTypeFormData.selectedPresetId ? parseInt(deviceTypeFormData.selectedPresetId) : null
+        interface_ranges: selectedRanges
       });
       setIsCreateModalOpen(false);
       setSelectedDeviceTypes([]);
@@ -395,22 +432,20 @@ export default function DeviceTypesPage() {
 
   const handleSavePorts = async (e) => {
     e.preventDefault();
-    const invalidRange = portRanges.some(r => !r.prefix.trim() || isNaN(parseInt(r.count)) || parseInt(r.count) <= 0);
-    if (invalidRange) {
-      setSaveError('กรุณากรอกข้อมูล Prefix และจำนวนพอร์ตให้ถูกต้องและมากกว่า 0 ทุกแถว');
-      return;
-    }
-
-    setSaving(true);
-    setSaveError(null);
-
     if (!selectedDeviceTypeId) {
       setSaveError('กรุณาเลือก Device Type ที่ต้องการสร้างพอร์ต');
       return;
     }
 
-    try {
-      await ndsApi.createInterfaceTemplates(parseInt(selectedDeviceTypeId), {
+    let payload = {};
+
+    if (portSourceMode === 'manual') {
+      const invalidRange = portRanges.some(r => !r.prefix.trim() || isNaN(parseInt(r.count)) || parseInt(r.count) <= 0);
+      if (invalidRange) {
+        setSaveError('กรุณากรอกข้อมูล Prefix และจำนวนพอร์ตให้ถูกต้องและมากกว่า 0 ทุกแถว');
+        return;
+      }
+      payload = {
         ranges: portRanges.map(r => ({
           prefix: r.prefix.trim(),
           start: parseInt(r.start) || 0,
@@ -418,7 +453,49 @@ export default function DeviceTypesPage() {
           type: r.type,
           label: r.label || 'fiber'
         }))
-      });
+      };
+    } else if (portSourceMode === 'preset') {
+      if (!selectedSourcePresetId) {
+        setSaveError('กรุณาเลือก Port Preset (แม่แบบพอร์ตสำเร็จรูป)');
+        return;
+      }
+      const preset = presets.find(p => p.id === parseInt(selectedSourcePresetId));
+      if (!preset || !preset.ranges || preset.ranges.length === 0) {
+        setSaveError('ไม่พบข้อมูลพอร์ตในแม่แบบที่เลือก หรือแม่แบบนี้ไม่มีพอร์ต');
+        return;
+      }
+      payload = {
+        ranges: preset.ranges.map(r => ({
+          prefix: r.prefix.trim(),
+          start: parseInt(r.start) || 0,
+          count: parseInt(r.count) || 0,
+          type: r.type,
+          label: r.label || 'fiber'
+        }))
+      };
+    } else if (portSourceMode === 'clone') {
+      if (!selectedSourceDeviceTypeId) {
+        setSaveError('กรุณาเลือกรุ่นต้นแบบใน NetBox เพื่อคัดลอกพอร์ต');
+        return;
+      }
+      if (sourceDeviceInterfaces.length === 0) {
+        setSaveError('ไม่พบพอร์ตในรุ่นต้นแบบที่ระบุ หรือข้อมูลกำลังโหลด...');
+        return;
+      }
+      payload = {
+        interfaces: sourceDeviceInterfaces.map(it => ({
+          name: it.name,
+          type: typeof it.type === 'object' ? it.type.value : it.type || '1000base-t',
+          label: it.label || ''
+        }))
+      };
+    }
+
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      await ndsApi.createInterfaceTemplates(parseInt(selectedDeviceTypeId), payload);
       setIsPortModalOpen(false);
       setSelectedDeviceTypes([]);
       setRefreshTrigger(prev => prev + 1);
@@ -662,18 +739,16 @@ export default function DeviceTypesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">คัดลอกพอร์ตจาก Device Type ที่มีอยู่ (ใน NetBox)</label>
+                <label className="block text-xs font-mono text-ink-400">Interface Template (แม่แบบพอร์ตสำเร็จรูป)</label>
                 <select
                   name="selectedPresetId"
                   value={deviceTypeFormData.selectedPresetId}
                   onChange={handleDeviceTypeInputChange}
                   className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
                 >
-                  <option value="">-- ไม่คัดลอกพอร์ต (สร้างพอร์ตว่างเปล่า) --</option>
-                  {deviceTypes.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.manufacturer || ''} - {t.model} {t.part_number ? `(${t.part_number})` : ''}
-                    </option>
+                  <option value="">-- ไม่สร้างพอร์ตล่วงหน้า (No port template) --</option>
+                  {presets.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
@@ -681,24 +756,20 @@ export default function DeviceTypesPage() {
               {deviceTypeFormData.selectedPresetId && (
                 <div className="rounded-lg border border-base-600/30 bg-base-950/20 p-3 space-y-1.5 animate-in fade-in duration-200">
                   <h4 className="text-[11px] font-mono font-semibold text-ink-300">
-                    รายการพอร์ตที่จะคัดลอกมาสร้าง ({cloningInterfaces.length} พอร์ต):
+                    รายการพอร์ตที่จะสร้างขึ้นตามแม่แบบนี้:
                   </h4>
-                  {loadingCloningInterfaces ? (
-                    <div className="text-xs text-ink-500 font-mono animate-pulse">กำลังดึงข้อมูลพอร์ตจาก NetBox...</div>
-                  ) : cloningInterfaces.length === 0 ? (
-                    <div className="text-xs text-ink-500 font-mono">ไม่พบพอร์ตในรุ่นที่เลือก (เป็นเครื่องเปล่า)</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto pr-1">
-                      {cloningInterfaces.map(it => (
-                        <span 
-                          key={it.id} 
-                          className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-base-950 border border-base-600/60 text-ink-400"
-                        >
-                          {it.name}
-                        </span>
+                  <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                    {presets
+                      .find(p => p.id === parseInt(deviceTypeFormData.selectedPresetId))
+                      ?.ranges?.map((range, idx) => (
+                        <div key={idx} className="text-[10px] font-mono text-ink-400 flex justify-between gap-4">
+                          <span className="text-nds font-medium select-all">{getRangePreview(range)}</span>
+                          <span className="text-ink-500 whitespace-nowrap">
+                            {range.type} ({range.label || 'fiber'})
+                          </span>
+                        </div>
                       ))}
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
 
@@ -817,109 +888,225 @@ export default function DeviceTypesPage() {
                 </div>
               )}
 
-              {/* <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead>
-                    <tr className="text-ink-500 uppercase tracking-wider border-b border-base-600/30 pb-2">
-                      <th className="pb-2 pr-4">Port Prefix / Slot</th>
-                      <th className="pb-2 pr-4 w-28">Start Index</th>
-                      <th className="pb-2 pr-4 w-28">Count</th>
-                      <th className="pb-2 pr-4">Port Type</th>
-                      <th className="pb-2 pr-4 w-32">UDP Type</th>
-                      <th className="pb-2 w-16 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-base-600/10">
-                    {portRanges.map((range, index) => (
-                      <tr key={index} className="align-top">
-                        <td className="py-3 pr-4">
-                          <input
-                            type="text"
-                            value={range.prefix}
-                            onChange={(e) => handleRangeChange(index, 'prefix', e.target.value)}
-                            placeholder="e.g. GigabitEthernet0/0/"
-                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                            required
-                          />
-                          <div className="mt-1 text-[10px] text-ink-500 font-mono whitespace-nowrap">
-                            Preview: <span className="text-nds select-all font-semibold">{getRangePreview(range)}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <input
-                            type="number"
-                            value={range.start}
-                            onChange={(e) => handleRangeChange(index, 'start', e.target.value)}
-                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                            min="0"
-                            required
-                          />
-                        </td>
-                        <td className="py-3 pr-4">
-                          <input
-                            type="number"
-                            value={range.count}
-                            onChange={(e) => handleRangeChange(index, 'count', e.target.value)}
-                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                            min="1"
-                            required
-                          />
-                        </td>
-                        <td className="py-3 pr-4">
-                          <select
-                            value={range.type}
-                            onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
-                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                          >
-                            {INTERFACE_TYPE_GROUPS.map((group) => (
-                              <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
-                                {group.options.map((opt) => (
-                                  <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <select
-                            value={range.label || 'fiber'}
-                            onChange={(e) => handleRangeChange(index, 'label', e.target.value)}
-                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
-                          >
-                            <option value="fiber">fiber</option>
-                            <option value="copper">copper</option>
-                            <option value="combo">combo</option>
-                          </select>
-                        </td>
+              <div className="flex gap-4 border-b border-base-600/30 pb-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setPortSourceMode('manual')}
+                  className={`pb-1 text-xs font-semibold border-b-2 transition-all ${
+                    portSourceMode === 'manual'
+                      ? 'border-nds text-nds'
+                      : 'border-transparent text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  📝 กำหนดพอร์ตเอง (Manual Table)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPortSourceMode('preset')}
+                  className={`pb-1 text-xs font-semibold border-b-2 transition-all ${
+                    portSourceMode === 'preset'
+                      ? 'border-nds text-nds'
+                      : 'border-transparent text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  📦 เลือกจากแม่แบบ (Port Preset)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPortSourceMode('clone')}
+                  className={`pb-1 text-xs font-semibold border-b-2 transition-all ${
+                    portSourceMode === 'clone'
+                      ? 'border-nds text-nds'
+                      : 'border-transparent text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  🔄 คัดลอกพอร์ตจากรุ่นอื่น (Clone Device Type)
+                </button>
+              </div>
 
-                        <td className="py-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => removePortRange(index)}
-                            disabled={portRanges.length === 1}
-                            className="p-1 rounded text-red-500 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                            title="ลบแถวนี้"
-                          >
-                            ✕
-                          </button>
-                        </td>
+              {/* Conditional Rendering of Method inputs */}
+              {portSourceMode === 'manual' && (
+                <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr className="text-ink-500 uppercase tracking-wider border-b border-base-600/30 pb-2">
+                        <th className="pb-2 pr-4">Port Prefix / Slot</th>
+                        <th className="pb-2 pr-4 w-28">Start Index</th>
+                        <th className="pb-2 pr-4 w-28">Count</th>
+                        <th className="pb-2 pr-4">Port Type</th>
+                        <th className="pb-2 pr-4 w-32">UDP Type</th>
+                        <th className="pb-2 w-16 text-center">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <div className="mt-3 flex justify-start">
-                  <button
-                    type="button"
-                    onClick={addPortRange}
-                    className="px-3 py-1.5 text-xs font-semibold rounded border border-base-600 bg-base-900 text-ink-300 hover:text-ink-100 hover:bg-base-800 transition-all"
-                  >
-                    + Add Port Range (เพิ่มกลุ่มพอร์ต)
-                  </button>
+                    </thead>
+                    <tbody className="divide-y divide-base-600/10">
+                      {portRanges.map((range, index) => (
+                        <tr key={index} className="align-top">
+                          <td className="py-3 pr-4">
+                            <input
+                              type="text"
+                              value={range.prefix}
+                              onChange={(e) => handleRangeChange(index, 'prefix', e.target.value)}
+                              placeholder="e.g. GigabitEthernet0/0/"
+                              className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                              required
+                            />
+                            <div className="mt-1 text-[10px] text-ink-500 font-mono whitespace-nowrap">
+                              Preview: <span className="text-nds select-all font-semibold">{getRangePreview(range)}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <input
+                              type="number"
+                              value={range.start}
+                              onChange={(e) => handleRangeChange(index, 'start', e.target.value)}
+                              className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                              min="0"
+                              required
+                            />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <input
+                              type="number"
+                              value={range.count}
+                              onChange={(e) => handleRangeChange(index, 'count', e.target.value)}
+                              className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                              min="1"
+                              required
+                            />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <select
+                              value={range.type}
+                              onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
+                              className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                            >
+                              {INTERFACE_TYPE_GROUPS.map((group) => (
+                                <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
+                                  {group.options.map((opt) => (
+                                    <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <select
+                              value={range.label || 'fiber'}
+                              onChange={(e) => handleRangeChange(index, 'label', e.target.value)}
+                              className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                            >
+                              <option value="fiber">fiber</option>
+                              <option value="copper">copper</option>
+                              <option value="combo">combo</option>
+                            </select>
+                          </td>
+                          <td className="py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removePortRange(index)}
+                              disabled={portRanges.length === 1}
+                              className="p-1 rounded text-red-500 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              title="ลบแถวนี้"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-3 flex justify-start">
+                    <button
+                      type="button"
+                      onClick={addPortRange}
+                      className="px-3 py-1.5 text-xs font-semibold rounded border border-base-600 bg-base-900 text-ink-300 hover:text-ink-100 hover:bg-base-800 transition-all"
+                    >
+                      + Add Port Range (เพิ่มกลุ่มพอร์ต)
+                    </button>
+                  </div>
                 </div>
-              </div> */}
+              )}
+
+              {portSourceMode === 'preset' && (
+                <div className="space-y-4 border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
+                  <div>
+                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือก Port Preset (แม่แบบพอร์ตสำเร็จรูป) *</label>
+                    <select
+                      value={selectedSourcePresetId}
+                      onChange={(e) => setSelectedSourcePresetId(e.target.value)}
+                      className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                    >
+                      <option value="">-- เลือก Port Preset --</option>
+                      {presets.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {selectedSourcePresetId && (
+                    <div className="rounded-lg bg-base-950 p-3 space-y-1.5">
+                      <h4 className="text-[11px] font-mono font-semibold text-ink-300">พอร์ตที่จะนำมาสร้าง:</h4>
+                      <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                        {presets
+                          .find(p => p.id === parseInt(selectedSourcePresetId))
+                          ?.ranges?.map((range, idx) => (
+                            <div key={idx} className="text-[10px] font-mono text-ink-400 flex justify-between gap-4 py-1 border-b border-base-600/10 last:border-b-0">
+                              <span className="text-nds font-medium select-all">{getRangePreview(range)}</span>
+                              <span className="text-ink-500 whitespace-nowrap">{range.type} ({range.label || 'fiber'})</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {portSourceMode === 'clone' && (
+                <div className="space-y-4 border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
+                  <div>
+                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือกรุ่นต้นแบบเพื่อคัดลอกพอร์ต (Clone Device Type) *</label>
+                    <select
+                      value={selectedSourceDeviceTypeId}
+                      onChange={(e) => setSelectedSourceDeviceTypeId(e.target.value)}
+                      className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                    >
+                      <option value="">-- เลือกรุ่นต้นแบบ (NetBox) --</option>
+                      {deviceTypes
+                        .filter(t => t.id !== parseInt(selectedDeviceTypeId)) // Don't allow cloning from itself
+                        .map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.manufacturer || ''} - {t.model} {t.part_number ? `(${t.part_number})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  {selectedSourceDeviceTypeId && (
+                    <div className="rounded-lg bg-base-950 p-3 space-y-1.5">
+                      <h4 className="text-[11px] font-mono font-semibold text-ink-300">
+                        พอร์ตที่จะคัดลอกมาสร้าง ({sourceDeviceInterfaces.length} พอร์ต):
+                      </h4>
+                      {loadingSourceDeviceInterfaces ? (
+                        <div className="text-xs text-ink-500 font-mono animate-pulse">กำลังดึงข้อมูลพอร์ตต้นแบบจาก NetBox...</div>
+                      ) : sourceDeviceInterfaces.length === 0 ? (
+                        <div className="text-xs text-ink-500 font-mono">ไม่พบพอร์ตในรุ่นต้นแบบนี้</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto pr-1">
+                          {sourceDeviceInterfaces.map(it => (
+                            <span 
+                              key={it.id} 
+                              className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-base-900 border border-base-600/60 text-ink-400"
+                              title={`Type: ${typeof it.type === 'object' ? it.type.label : it.type} | Label: ${it.label || 'N/A'}`}
+                            >
+                              {it.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-6 flex justify-end gap-3 border-t border-base-600/30 pt-4">
                 <button

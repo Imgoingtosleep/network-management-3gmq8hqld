@@ -16,6 +16,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(config.env === 'development' ? 'dev' : 'combined'));
 
+// ปิดการแคชของเบราว์เซอร์สำหรับ API ทั้งหมดเพื่อให้หน้าเว็บอัปเดตข้อมูลล่าสุดเสมอ
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // ทุก endpoint ของ API อยู่ภายใต้ prefix /api
 app.use('/api', routes);
 
