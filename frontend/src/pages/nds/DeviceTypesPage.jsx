@@ -2,6 +2,121 @@ import { useState, useEffect } from 'react';
 import NDSPageContainer from '../../components/NDSPageContainer.jsx';
 import { ndsApi } from '../../api/nds.api.js';
 
+const INTERFACE_TYPE_GROUPS = [
+  {
+    label: 'Virtual',
+    options: [
+      { value: 'virtual', label: 'Virtual (พอร์ตเสมือน)' },
+      { value: 'lag', label: 'Link Aggregation Group (LAG)' },
+      { value: 'bridge', label: 'Bridge' }
+    ]
+  },
+  {
+    label: 'Ethernet (fixed)',
+    options: [
+      { value: '100base-tx', label: '100BASE-TX (10/100ME Copper)' },
+      { value: '1000base-t', label: '1000BASE-T (1GE Copper)' },
+      { value: '2.5gbase-t', label: '2.5GBASE-T (2.5GE Copper)' },
+      { value: '5gbase-t', label: '5GBASE-T (5GE Copper)' },
+      { value: '10gbase-t', label: '10GBASE-T (10GE Copper)' },
+      { value: '100base-t1', label: '100BASE-T1 (Single Pair)' },
+      { value: '1000base-t1', label: '1000BASE-T1 (Single Pair)' }
+    ]
+  },
+  {
+    label: 'Ethernet (modular)',
+    options: [
+      { value: '100base-fx', label: '100BASE-FX (10/100ME Fiber)' },
+      { value: '100base-lfx', label: '100BASE-LFX (10/100ME Fiber)' },
+      { value: '1000base-x-sfp', label: '1000BASE-X (SFP Fiber)' },
+      { value: '10gbase-x-sfpp', label: '10GBASE-X (SFP+)' },
+      { value: '10gbase-x-cx4', label: '10GBASE-CX4 (10GE Coaxial)' },
+      { value: '25gbase-x-sfp28', label: '25GBASE-X (SFP28)' },
+      { value: '50gbase-x-sfp56', label: '50GBASE-X (SFP56)' },
+      { value: '40gbase-x-qsfpp', label: '40GBASE-X (QSFP+)' },
+      { value: '100gbase-x-cfp', label: '100GBASE-X (CFP)' },
+      { value: '100gbase-x-cfp2', label: '100GBASE-X (CFP2)' },
+      { value: '100gbase-x-cfp4', label: '100GBASE-X (CFP4)' },
+      { value: '100gbase-x-qsfp28', label: '100GBASE-X (QSFP28)' },
+      { value: '200gbase-x-qsfp56', label: '200GBASE-X (QSFP56)' },
+      { value: '200gbase-x-cfp2', label: '200GBASE-X (CFP2)' },
+      { value: '400gbase-x-qsfpdd', label: '400GBASE-X (QSFP-DD)' },
+      { value: '400gbase-x-osfp', label: '400GBASE-X (OSFP)' },
+      { value: '800gbase-x-qsfpdd8', label: '800GBASE-X (QSFP-DD8)' },
+      { value: '800gbase-x-osfp8', label: '800GBASE-X (OSFP8)' }
+    ]
+  },
+  {
+    label: 'Wireless',
+    options: [
+      { value: 'ieee802.11a', label: 'IEEE 802.11a' },
+      { value: 'ieee802.11g', label: 'IEEE 802.11g' },
+      { value: 'ieee802.11n', label: 'IEEE 802.11n' },
+      { value: 'ieee802.11ac', label: 'IEEE 802.11ac' },
+      { value: 'ieee802.11ad', label: 'IEEE 802.11ad' },
+      { value: 'ieee802.11ax', label: 'IEEE 802.11ax' },
+      { value: 'ieee802.11ay', label: 'IEEE 802.11ay' },
+      { value: 'ieee802.15.4', label: 'IEEE 802.15.4 (PAN)' }
+    ]
+  },
+  {
+    label: 'Cellular',
+    options: [
+      { value: 'gsm', label: 'GSM (Cellular)' },
+      { value: 'cdma', label: 'CDMA (Cellular)' },
+      { value: 'lte', label: 'LTE (4G Cellular)' }
+    ]
+  },
+  {
+    label: 'PON',
+    options: [
+      { value: 'gpon', label: 'GPON (ITU-T G.984)' },
+      { value: 'xg-pon', label: 'XG-PON (ITU-T G.987)' },
+      { value: 'xgs-pon', label: 'XGS-PON (ITU-T G.9807.1)' },
+      { value: 'ng-pon2', label: 'NG-PON2 (ITU-T G.989)' },
+      { value: 'epon', label: 'EPON (IEEE 802.3ah)' },
+      { value: '10g-epon', label: '10G-EPON (IEEE 802.3av)' }
+    ]
+  },
+  {
+    label: 'Stacking',
+    options: [
+      { value: 'cisco-stackwise', label: 'Cisco StackWise' },
+      { value: 'cisco-stackwise-plus', label: 'Cisco StackWise Plus' },
+      { value: 'juniper-vcp', label: 'Juniper VCP' },
+      { value: 'extreme-summitstack', label: 'Extreme SummitStack' },
+      { value: 'extreme-summitstack-128', label: 'Extreme SummitStack-128' },
+      { value: 'extreme-summitstack-256', label: 'Extreme SummitStack-256' },
+      { value: 'extreme-summitstack-i', label: 'Extreme SummitStack-i' }
+    ]
+  },
+  {
+    label: 'Fibre Channel',
+    options: [
+      { value: 'fibrechannel-sf', label: 'FibreChannel (1G/2G/4G SFP)' },
+      { value: 'fibrechannel-sfp', label: 'FibreChannel (4G/8G/16G SFP+)' },
+      { value: 'fibrechannel-sfpp', label: 'FibreChannel (8G/16G/32G SFP+)' },
+      { value: 'fibrechannel-qsfpp', label: 'FibreChannel (QSFP)' }
+    ]
+  },
+  {
+    label: 'Serial',
+    options: [
+      { value: 't1', label: 'T1 (1.544 Mbps)' },
+      { value: 'e1', label: 'E1 (2.048 Mbps)' },
+      { value: 't3', label: 'T3 (44.736 Mbps)' },
+      { value: 'e3', label: 'E3 (34.368 Mbps)' },
+      { value: 'sis', label: 'SIS' }
+    ]
+  },
+  {
+    label: 'Other',
+    options: [
+      { value: 'other', label: 'Other (อื่นๆ)' }
+    ]
+  }
+];
+
 export default function DeviceTypesPage() {
   const [selectedDeviceTypes, setSelectedDeviceTypes] = useState([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -29,14 +144,14 @@ export default function DeviceTypesPage() {
 
   // Custom Port Templates state (for direct assignment modal)
   const [portRanges, setPortRanges] = useState([
-    { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp' }
+    { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
   ]);
 
   // Port Preset Form state (for creating a reusable template)
   const [presetFormData, setPresetFormData] = useState({
     name: '',
     ranges: [
-      { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp' }
+      { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
     ]
   });
 
@@ -76,7 +191,7 @@ export default function DeviceTypesPage() {
   const addPortRange = () => {
     setPortRanges(prev => [
       ...prev,
-      { prefix: 'TenGigabitEthernet0/1/', start: 1, count: 4, type: '10gbase-x-sfpp' }
+      { prefix: 'TenGigabitEthernet0/1/', start: 1, count: 4, type: '10gbase-x-sfpp', label: 'fiber' }
     ]);
   };
 
@@ -105,7 +220,7 @@ export default function DeviceTypesPage() {
       ...prev,
       ranges: [
         ...prev.ranges,
-        { prefix: 'TenGigabitEthernet0/1/', start: 1, count: 4, type: '10gbase-x-sfpp' }
+        { prefix: 'TenGigabitEthernet0/1/', start: 1, count: 4, type: '10gbase-x-sfpp', label: 'fiber' }
       ]
     }));
   };
@@ -134,7 +249,7 @@ export default function DeviceTypesPage() {
   const handlePortClick = () => {
     if (selectedDeviceTypes.length !== 1) return;
     setPortRanges([
-      { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp' }
+      { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
     ]);
     setSaveError(null);
     setIsPortModalOpen(true);
@@ -144,7 +259,7 @@ export default function DeviceTypesPage() {
     setPresetFormData({
       name: '',
       ranges: [
-        { prefix: 'GigabitEthernet0/0/', start: 0, count: 24, type: '1000base-t' }
+        { prefix: 'GigabitEthernet0/0/', start: 0, count: 24, type: '1000base-t', label: 'copper' }
       ]
     });
     setSaveError(null);
@@ -542,7 +657,8 @@ export default function DeviceTypesPage() {
                       <th className="pb-2 pr-4">Port Prefix / Slot</th>
                       <th className="pb-2 pr-4 w-28">Start Index</th>
                       <th className="pb-2 pr-4 w-28">Count</th>
-                      <th className="pb-2 pr-4">Port Type (ความเร็ว/มีเดีย)</th>
+                      <th className="pb-2 pr-4">Port Type</th>
+                      <th className="pb-2 pr-4 w-32">UDP Type</th>
                       <th className="pb-2 w-16 text-center">Action</th>
                     </tr>
                   </thead>
@@ -585,13 +701,26 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            {/* <option value="1000base-t">1G Copper (1000Base-T)</option>
-                            <option value="1000base-x-sfp">1G Fiber SFP (1000Base-X)</option>
-                            <option value="10gbase-x-sfpp">10G SFP+ (10GBASE-X)</option>
-                            <option value="40gbase-x-qsfpp">40G QSFP+ (40GBASE-X)</option>
-                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option> */}
-                            {/* <option value="virtual">Virtual (พอร์ตเสมือน)</option>
-                            <option value="other">Other (อื่นๆ)</option> */}
+                            {INTERFACE_TYPE_GROUPS.map((group) => (
+                              <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
+                                {group.options.map((opt) => (
+                                  <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <select
+                            value={range.label || 'fiber'}
+                            onChange={(e) => handleRangeChange(index, 'label', e.target.value)}
+                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                          >
+                            <option value="fiber">fiber</option>
+                            <option value="copper">copper</option>
+                            <option value="combo">combo</option>
                           </select>
                         </td>
                         <td className="py-3 text-center">
@@ -684,9 +813,10 @@ export default function DeviceTypesPage() {
                   <thead>
                     <tr className="text-ink-500 uppercase tracking-wider border-b border-base-600/30 pb-2">
                       <th className="pb-2 pr-4">Port Prefix / Slot</th>
-                      <th className="pb-2 pr-4 w-28">Start Index</th>
-                      <th className="pb-2 pr-4 w-28">Count</th>
-                      <th className="pb-2 pr-4">Port Type (ความเร็ว/มีเดีย)</th>
+                      <th className="pb-2 pr-4 w-20">Start Index</th>
+                      <th className="pb-2 pr-4 w-20">Count</th>
+                      <th className="pb-2 pr-4">Port Type</th>
+                      <th className="pb-2 pr-4 w-28">Label</th>
                       <th className="pb-2 w-16 text-center">Action</th>
                     </tr>
                   </thead>
@@ -729,13 +859,26 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handlePresetRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            {/* <option value="1000base-t">1G Copper (1000Base-T)</option>
-                            <option value="1000base-x-sfp">1G Fiber SFP (1000Base-X)</option>
-                            <option value="10gbase-x-sfpp">10G SFP+ (10GBASE-X)</option>
-                            <option value="40gbase-x-qsfpp">40G QSFP+ (40GBASE-X)</option>
-                            <option value="100gbase-x-qsfp28">100G QSFP28 (100GBASE-X)</option> */}
-                            {/* <option value="virtual">Virtual (พอร์ตเสมือน)</option>
-                            <option value="other">Other (อื่นๆ)</option> */}
+                            {INTERFACE_TYPE_GROUPS.map((group) => (
+                              <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
+                                {group.options.map((opt) => (
+                                  <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <select
+                            value={range.label || 'fiber'}
+                            onChange={(e) => handlePresetRangeChange(index, 'label', e.target.value)}
+                            className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                          >
+                            <option value="fiber">fiber</option>
+                            <option value="copper">copper</option>
+                            <option value="combo">combo</option>
                           </select>
                         </td>
                         <td className="py-3 text-center">

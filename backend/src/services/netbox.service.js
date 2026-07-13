@@ -553,13 +553,15 @@ async function createDeviceType(data) {
       const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
       const count = parseInt(range.count) || 0;
       const type = range.type || '1000base-t';
+      const label = range.label || '';
 
       for (let i = 0; i < count; i++) {
         const portNum = start + i;
         interfaceTemplates.push({
           device_type: result.id,
           name: `${prefix}${portNum}`,
-          type: type
+          type: type,
+          label: label
         });
       }
     }
@@ -571,7 +573,8 @@ async function createDeviceType(data) {
         interfaceTemplates.push({
           device_type: result.id,
           name: `GigabitEthernet${i}`,
-          type: '1000base-t'
+          type: '1000base-t',
+          label: ''
         });
       }
     }
@@ -610,13 +613,14 @@ async function createInterfaceTemplates(deviceTypeId, data) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  // Support both single group and multi ranges (ranges: [{prefix, start, count, type}])
+  // Support both single group and multi ranges (ranges: [{prefix, start, count, type, label}])
   const ranges = data.ranges || [
     {
       prefix: data.prefix || 'GigabitEthernet',
       start: parseInt(data.start) !== undefined && !isNaN(parseInt(data.start)) ? parseInt(data.start) : 1,
       count: parseInt(data.count) || 0,
-      type: data.type || '1000base-t'
+      type: data.type || '1000base-t',
+      label: data.label || ''
     }
   ];
 
@@ -626,13 +630,15 @@ async function createInterfaceTemplates(deviceTypeId, data) {
     const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
     const count = parseInt(range.count) || 0;
     const type = range.type || '1000base-t';
+    const label = range.label || '';
 
     for (let i = 0; i < count; i++) {
       const portNum = start + i;
       interfaceTemplates.push({
         device_type: parseInt(deviceTypeId),
         name: `${prefix}${portNum}`,
-        type: type
+        type: type,
+        label: label
       });
     }
   }
