@@ -117,6 +117,17 @@ const INTERFACE_TYPE_GROUPS = [
   }
 ];
 
+const getRangePreview = (range) => {
+  const start = parseInt(range.start);
+  const count = parseInt(range.count);
+  if (isNaN(start) || isNaN(count) || count <= 0) return 'N/A';
+  const prefix = range.prefix || '';
+  if (count === 1) {
+    return `${prefix}${start}`;
+  }
+  return `${prefix}${start} - ${prefix}${start + count - 1}`;
+};
+
 export default function DeviceTypesPage() {
   const [selectedDeviceTypes, setSelectedDeviceTypes] = useState([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -664,7 +675,7 @@ export default function DeviceTypesPage() {
                   </thead>
                   <tbody className="divide-y divide-base-600/10">
                     {portRanges.map((range, index) => (
-                      <tr key={index} className="align-middle">
+                      <tr key={index} className="align-top">
                         <td className="py-3 pr-4">
                           <input
                             type="text"
@@ -674,6 +685,9 @@ export default function DeviceTypesPage() {
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                             required
                           />
+                          <div className="mt-1 text-[10px] text-ink-500 font-mono whitespace-nowrap">
+                            Preview: <span className="text-nds select-all font-semibold">{getRangePreview(range)}</span>
+                          </div>
                         </td>
                         <td className="py-3 pr-4">
                           <input
@@ -723,6 +737,7 @@ export default function DeviceTypesPage() {
                             <option value="combo">combo</option>
                           </select>
                         </td>
+
                         <td className="py-3 text-center">
                           <button
                             type="button"
@@ -822,7 +837,7 @@ export default function DeviceTypesPage() {
                   </thead>
                   <tbody className="divide-y divide-base-600/10">
                     {presetFormData.ranges.map((range, index) => (
-                      <tr key={index} className="align-middle">
+                      <tr key={index} className="align-top">
                         <td className="py-3 pr-4">
                           <input
                             type="text"
@@ -832,6 +847,9 @@ export default function DeviceTypesPage() {
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                             required
                           />
+                          <div className="mt-1 text-[10px] text-ink-500 font-mono whitespace-nowrap">
+                            Preview: <span className="text-nds select-all font-semibold">{getRangePreview(range)}</span>
+                          </div>
                         </td>
                         <td className="py-3 pr-4">
                           <input
@@ -881,6 +899,7 @@ export default function DeviceTypesPage() {
                             <option value="combo">combo</option>
                           </select>
                         </td>
+
                         <td className="py-3 text-center">
                           <button
                             type="button"
