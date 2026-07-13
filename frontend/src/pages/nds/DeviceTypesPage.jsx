@@ -847,7 +847,7 @@ export default function DeviceTypesPage() {
 
             <form onSubmit={handleSavePorts} className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-mono text-ink-400 mb-1.5">Device Type (เลือกรุ่นอุปกรณ์ใน NetBox) *</label>
+                {/* <label className="block text-xs font-mono text-ink-400 mb-1.5">Device Type (เลือกรุ่นอุปกรณ์ใน NetBox) *</label>
                 <select
                   value={selectedDeviceTypeId}
                   onChange={(e) => setSelectedDeviceTypeId(e.target.value)}
@@ -860,7 +860,7 @@ export default function DeviceTypesPage() {
                       {t.manufacturer || ''} - {t.model} {t.part_number ? `(${t.part_number})` : ''}
                     </option>
                   ))}
-                </select>
+                </select> */}
               </div>
 
               {selectedDeviceTypeId && (
@@ -898,7 +898,7 @@ export default function DeviceTypesPage() {
                       : 'border-transparent text-ink-400 hover:text-ink-200'
                   }`}
                 >
-                  📝 กำหนดพอร์ตเอง (Manual Table)
+                  กำหนดพอร์ตเอง (Manual Table)
                 </button>
                 <button
                   type="button"
@@ -909,7 +909,7 @@ export default function DeviceTypesPage() {
                       : 'border-transparent text-ink-400 hover:text-ink-200'
                   }`}
                 >
-                  📦 เลือกจากแม่แบบ (Port Preset)
+                  เลือกจากแม่แบบ (Port Preset)
                 </button>
                 <button
                   type="button"
@@ -920,7 +920,7 @@ export default function DeviceTypesPage() {
                       : 'border-transparent text-ink-400 hover:text-ink-200'
                   }`}
                 >
-                  🔄 คัดลอกพอร์ตจากรุ่นอื่น (Clone Device Type)
+                  คัดลอกพอร์ตจากรุ่นอื่น (Clone Device Type)
                 </button>
               </div>
 
