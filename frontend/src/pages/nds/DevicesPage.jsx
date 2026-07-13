@@ -61,7 +61,9 @@ export default function DevicesPage() {
     asset_tag: '',
     tags: '',
     nodeid: '',
-    local_context_data: ''
+    local_context_data: '',
+    create_vlanif100: false,
+    create_vlanif115: false
   });
 
   useEffect(() => {
@@ -141,7 +143,9 @@ export default function DevicesPage() {
       asset_tag: '',
       tags: '',
       nodeid: '',
-      local_context_data: ''
+      local_context_data: '',
+      create_vlanif100: false,
+      create_vlanif115: false
     });
     setSaveError(null);
     setModalMode('create');
@@ -186,7 +190,9 @@ export default function DevicesPage() {
       asset_tag: device.asset_tag || '',
       tags: device.tags || '',
       nodeid: device.nodeid || '',
-      local_context_data: device.local_context_data || ''
+      local_context_data: device.local_context_data || '',
+      create_vlanif100: false,
+      create_vlanif115: false
     });
 
     setSaveError(null);
@@ -261,6 +267,8 @@ export default function DevicesPage() {
 
     try {
       if (modalMode === 'create') {
+        payload.create_vlanif100 = formData.create_vlanif100;
+        payload.create_vlanif115 = formData.create_vlanif115;
         await ndsApi.createDevice(payload);
       } else {
         await ndsApi.updateDevice(selectedDevices[0].id, payload);
@@ -305,14 +313,12 @@ export default function DevicesPage() {
       setSelectedDevices(prev => [...prev, item]);
     }
   };
-
   const renderDeviceTable = (fullList) => {
-    const uniqueRoles = ['All', ...Array.from(new Set(fullList.map(item => item.role).filter(Boolean)))];
+    const staticRoles = ['All', 'Provider Edge', 'Provider', 'Network', 'Aggregation'];
+    const dynamicRoles = Array.from(new Set(allDevices.map(item => item.role).filter(Boolean)));
+    const uniqueRoles = Array.from(new Set([...staticRoles, ...dynamicRoles]));
 
-    const filteredList = fullList.filter(item => {
-      if (selectedRoleFilter === 'All') return true;
-      return item.role === selectedRoleFilter;
-    });
+    const filteredList = fullList;
 
     return (
       <div>
@@ -390,17 +396,16 @@ export default function DevicesPage() {
                 </th>
                 <th className="px-5 py-3.5">nodeid</th>
                 <th className="px-5 py-3.5">Name</th>
+                <th className="px-5 py-3.5">Role</th>
                 <th className="px-5 py-3.5">Status</th>
                 <th className="px-5 py-3.5">Tenant</th>
                 <th className="px-5 py-3.5">Site</th>
                 <th className="px-5 py-3.5">Location</th>
                 <th className="px-5 py-3.5">Rack</th>
-                <th className="px-5 py-3.5">Role</th>
-                <th className="px-5 py-3.5">Platform</th>
+                <th className="px-5 py-3.5">Manufacturer</th>
                 <th className="px-5 py-3.5">Type</th>
                 <th className="px-5 py-3.5">IP Address</th>
                 <th className="px-5 py-3.5">Description</th>
-                <th className="px-5 py-3.5">Last Updated</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-base-600/30">
@@ -422,6 +427,19 @@ export default function DevicesPage() {
                     <td className="px-5 py-4 font-mono text-xs text-ink-500">{item.nodeid}</td>
                     <td className="px-5 py-4 font-mono font-medium text-ink-100">{item.name}</td>
                     <td className="px-5 py-4">
+                       <span className={`rounded px-2 py-0.5 text-xs border font-semibold uppercase font-mono ${
+                         (item.role || '').toLowerCase().includes('network')
+                           ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                           : (item.role || '').toLowerCase().includes('aggregation')
+                           ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                           : (item.role || '').toLowerCase().includes('provider edge')
+                           ? 'bg-base-600/30 text-ink-400 border-base-600/50'
+                           : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                       }`}>
+                         {item.role}
+                       </span>
+                     </td>
+                    <td className="px-5 py-4">
                       <span className="rounded bg-green-500/10 px-2 py-0.5 text-xs text-green-400 border border-green-500/20 uppercase font-mono">
                         {item.status}
                       </span>
@@ -430,18 +448,16 @@ export default function DevicesPage() {
                     <td className="px-5 py-4 text-ink-400">{item.site}</td>
                     <td className="px-5 py-4 text-ink-400">{item.location}</td>
                     <td className="px-5 py-4 text-ink-400">{item.rack}</td>
-                    <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.role}</td>
-                    <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.platform}</td>
+                    <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.manufacturer}</td>
                     <td className="px-5 py-4 text-ink-400">{item.type}</td>
                     <td className="px-5 py-4 font-mono text-nds">{item.ip}</td>
                     <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
-                    <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>
                   </tr>
                 );
               })}
               {filteredList.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลดีไวซ์ตามฟิลเตอร์นี้จาก NetBox</td>
+                  <td colSpan={13} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">ไม่พบข้อมูลดีไวซ์ตามฟิลเตอร์นี้จาก NetBox</td>
                 </tr>
               )}
             </tbody>
@@ -457,6 +473,8 @@ export default function DevicesPage() {
         fetchData={() => ndsApi.getDevices()}
         refreshTrigger={refreshTrigger}
         renderTable={renderDeviceTable}
+        extraFilter={selectedRoleFilter === 'All' ? null : (item) => item.role === selectedRoleFilter}
+        onDataLoaded={(data) => setAllDevices(data)}
       />
 
       {/* Create / Edit Modal */}
@@ -639,6 +657,34 @@ export default function DevicesPage() {
                       placeholder="คำอธิบายอุปกรณ์..."
                     />
                   </div>
+
+                  {modalMode === 'create' && (
+                    <div className="col-span-1 sm:col-span-2 border border-base-600/30 rounded-xl bg-base-950/30 p-4 mt-2">
+                      <label className="block text-xs font-mono font-semibold text-nds mb-2">Virtual Interfaces (อินเตอร์เฟสเสมือน)</label>
+                      <div className="flex gap-6">
+                        <label className="inline-flex items-center text-xs font-mono text-ink-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="create_vlanif100"
+                            checked={formData.create_vlanif100}
+                            onChange={(e) => setFormData(prev => ({ ...prev, create_vlanif100: e.target.checked }))}
+                            className="rounded border-base-600 text-nds focus:ring-nds bg-base-950 w-4 h-4 cursor-pointer mr-2"
+                          />
+                          สร้าง Vlanif100 (Type: virtual)
+                        </label>
+                        <label className="inline-flex items-center text-xs font-mono text-ink-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="create_vlanif115"
+                            checked={formData.create_vlanif115}
+                            onChange={(e) => setFormData(prev => ({ ...prev, create_vlanif115: e.target.checked }))}
+                            className="rounded border-base-600 text-nds focus:ring-nds bg-base-950 w-4 h-4 cursor-pointer mr-2"
+                          />
+                          สร้าง Vlanif115 (Type: virtual)
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

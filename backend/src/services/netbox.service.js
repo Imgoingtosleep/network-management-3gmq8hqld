@@ -485,7 +485,10 @@ async function createDevice(data) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  await sanitizeDeviceData(data);
+  // แยกฟิลด์สำหรับสร้าง Vlanif ออกจากข้อมูลดีไวซ์หลัก
+  const { create_vlanif100, create_vlanif115, ...deviceData } = data;
+
+  await sanitizeDeviceData(deviceData);
 
   const res = await fetch(`${baseUrl}/dcim/devices/`, {
     method: 'POST',
@@ -494,7 +497,7 @@ async function createDevice(data) {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(deviceData)
   });
 
   if (!res.ok) {
@@ -504,6 +507,35 @@ async function createDevice(data) {
 
   const result = await res.json();
   memoryCache.devices.data = null;
+
+  // สร้างอินเตอร์เฟสเสมือน Vlanif100 / Vlanif115 ด้วย type virtual หากมีการระบุ
+  const virtualInterfaces = [];
+  if (create_vlanif100) {
+    virtualInterfaces.push({ device: result.id, name: 'Vlanif100', type: 'virtual' });
+  }
+  if (create_vlanif115) {
+    virtualInterfaces.push({ device: result.id, name: 'Vlanif115', type: 'virtual' });
+  }
+
+  if (virtualInterfaces.length > 0) {
+    try {
+      const vifRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(virtualInterfaces)
+      });
+      if (!vifRes.ok) {
+        console.warn('⚠️ Failed to create virtual Vlanif interfaces:', await vifRes.text());
+      }
+    } catch (vifErr) {
+      console.warn('⚠️ Error creating virtual Vlanif interfaces:', vifErr.message);
+    }
+  }
+
   return result;
 }
 
