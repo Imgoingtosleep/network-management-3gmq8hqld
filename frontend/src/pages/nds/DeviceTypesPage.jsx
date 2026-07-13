@@ -146,6 +146,8 @@ export default function DeviceTypesPage() {
 
   // Loaded presets list
   const [presets, setPresets] = useState([]);
+  const [deviceTypes, setDeviceTypes] = useState([]);
+  const [selectedDeviceTypeId, setSelectedDeviceTypeId] = useState('');
 
   // Device Type Form state
   const [deviceTypeFormData, setDeviceTypeFormData] = useState({
@@ -180,9 +182,86 @@ export default function DeviceTypesPage() {
     }
   };
 
+  const loadDeviceTypes = async () => {
+    try {
+      const res = await ndsApi.getDeviceTypes();
+      setDeviceTypes(res.data?.data || res.data || res || []);
+    } catch (err) {
+      console.error('Failed to load device types:', err);
+    }
+  };
+
+  const [existingInterfaces, setExistingInterfaces] = useState([]);
+  const [loadingInterfaces, setLoadingInterfaces] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+
   useEffect(() => {
     loadPresets();
-  }, []);
+    loadDeviceTypes();
+  }, [refreshTrigger]);
+
+  useEffect(() => {
+    if (!selectedDeviceTypeId) {
+      setExistingInterfaces([]);
+      return;
+    }
+    const fetchExistingInterfaces = async () => {
+      setLoadingInterfaces(true);
+      try {
+        const res = await ndsApi.getInterfaceTemplates(selectedDeviceTypeId);
+        setExistingInterfaces(res.data?.data || res.data || res || []);
+      } catch (err) {
+        console.error('Failed to load interface templates for device type:', err);
+        setExistingInterfaces([]);
+      } finally {
+        setLoadingInterfaces(false);
+      }
+    };
+    fetchExistingInterfaces();
+  }, [selectedDeviceTypeId]);
+
+  const [cloningInterfaces, setCloningInterfaces] = useState([]);
+  const [loadingCloningInterfaces, setLoadingCloningInterfaces] = useState(false);
+
+  useEffect(() => {
+    if (!deviceTypeFormData.selectedPresetId) {
+      setCloningInterfaces([]);
+      return;
+    }
+    const loadCloningInterfaces = async () => {
+      setLoadingCloningInterfaces(true);
+      try {
+        const res = await ndsApi.getInterfaceTemplates(deviceTypeFormData.selectedPresetId);
+        setCloningInterfaces(res.data?.data || res.data || res || []);
+      } catch (err) {
+        console.error('Failed to load cloning interfaces:', err);
+        setCloningInterfaces([]);
+      } finally {
+        setLoadingCloningInterfaces(false);
+      }
+    };
+    loadCloningInterfaces();
+  }, [deviceTypeFormData.selectedPresetId]);
+
+  const [viewingDeviceType, setViewingDeviceType] = useState(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingInterfaces, setViewingInterfaces] = useState([]);
+  const [loadingViewingInterfaces, setLoadingViewingInterfaces] = useState(false);
+
+  const handleViewInterfacesClick = async (deviceType) => {
+    setViewingDeviceType(deviceType);
+    setIsViewModalOpen(true);
+    setLoadingViewingInterfaces(true);
+    try {
+      const res = await ndsApi.getInterfaceTemplates(deviceType.id);
+      setViewingInterfaces(res.data?.data || res.data || res || []);
+    } catch (err) {
+      console.error('Failed to load interfaces for view:', err);
+      setViewingInterfaces([]);
+    } finally {
+      setLoadingViewingInterfaces(false);
+    }
+  };
 
   const handleDeviceTypeInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -262,7 +341,11 @@ export default function DeviceTypesPage() {
   };
 
   const handlePortClick = () => {
-    if (selectedDeviceTypes.length !== 1) return;
+    if (selectedDeviceTypes.length === 1) {
+      setSelectedDeviceTypeId(selectedDeviceTypes[0].id.toString());
+    } else {
+      setSelectedDeviceTypeId('');
+    }
     setPortRanges([
       { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
     ]);
@@ -291,15 +374,6 @@ export default function DeviceTypesPage() {
     setSaving(true);
     setSaveError(null);
 
-    // Resolve ranges from selected preset if any
-    let selectedRanges = [];
-    if (deviceTypeFormData.selectedPresetId) {
-      const selectedPreset = presets.find(p => p.id === parseInt(deviceTypeFormData.selectedPresetId));
-      if (selectedPreset) {
-        selectedRanges = selectedPreset.ranges || [];
-      }
-    }
-
     try {
       await ndsApi.createDeviceType({
         manufacturer: deviceTypeFormData.manufacturer.trim(),
@@ -307,7 +381,7 @@ export default function DeviceTypesPage() {
         part_number: deviceTypeFormData.part_number.trim(),
         u_height: parseInt(deviceTypeFormData.u_height) || 1,
         is_full_depth: deviceTypeFormData.is_full_depth,
-        interface_ranges: selectedRanges
+        clone_device_type_id: deviceTypeFormData.selectedPresetId ? parseInt(deviceTypeFormData.selectedPresetId) : null
       });
       setIsCreateModalOpen(false);
       setSelectedDeviceTypes([]);
@@ -330,9 +404,13 @@ export default function DeviceTypesPage() {
     setSaving(true);
     setSaveError(null);
 
+    if (!selectedDeviceTypeId) {
+      setSaveError('กรุณาเลือก Device Type ที่ต้องการสร้างพอร์ต');
+      return;
+    }
+
     try {
-      const selectedId = selectedDeviceTypes[0]?.id;
-      await ndsApi.createInterfaceTemplates(selectedId, {
+      await ndsApi.createInterfaceTemplates(parseInt(selectedDeviceTypeId), {
         ranges: portRanges.map(r => ({
           prefix: r.prefix.trim(),
           start: parseInt(r.start) || 0,
@@ -447,7 +525,19 @@ export default function DeviceTypesPage() {
                 <td className="px-5 py-4 text-ink-400 font-mono">{item.u_height ? `${item.u_height}U` : '0U'}</td>
                 <td className="px-5 py-4 text-ink-400">{item.is_full_depth || 'No'}</td>
                 <td className="px-5 py-4 text-ink-400 font-mono">{item.device_count || 0}</td>
-                <td className="px-5 py-4 text-ink-400 font-mono">{item.interface_count || 0}</td>
+                <td className="px-5 py-4 font-mono">
+                  {item.interface_count > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => handleViewInterfacesClick(item)}
+                      className="text-nds font-semibold hover:underline hover:text-nds-hover transition-all focus:outline-none"
+                    >
+                      {item.interface_count} พอร์ต
+                    </button>
+                  ) : (
+                    <span className="text-ink-500">0</span>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -488,12 +578,7 @@ export default function DeviceTypesPage() {
           <button
             type="button"
             onClick={handlePortClick}
-            disabled={selectedDeviceTypes.length !== 1}
-            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
-              selectedDeviceTypes.length === 1
-                ? 'bg-base-950 border-base-600 text-ink-100 hover:bg-base-800'
-                : 'bg-base-950 border-base-600 text-ink-500 cursor-not-allowed opacity-50'
-            }`}
+            className="px-4 py-2 text-xs font-semibold rounded-lg border border-base-600 bg-base-950 text-ink-100 hover:bg-base-800 transition-all"
           >
             Add Ports directly
           </button>
@@ -577,19 +662,45 @@ export default function DeviceTypesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Interface Template</label>
+                <label className="block text-xs font-mono text-ink-400">คัดลอกพอร์ตจาก Device Type ที่มีอยู่ (ใน NetBox)</label>
                 <select
                   name="selectedPresetId"
                   value={deviceTypeFormData.selectedPresetId}
                   onChange={handleDeviceTypeInputChange}
                   className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
                 >
-                  <option value="">-- ไม่สร้างพอร์ตล่วงหน้า (No port template) --</option>
-                  {presets.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                  <option value="">-- ไม่คัดลอกพอร์ต (สร้างพอร์ตว่างเปล่า) --</option>
+                  {deviceTypes.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.manufacturer || ''} - {t.model} {t.part_number ? `(${t.part_number})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
+
+              {deviceTypeFormData.selectedPresetId && (
+                <div className="rounded-lg border border-base-600/30 bg-base-950/20 p-3 space-y-1.5 animate-in fade-in duration-200">
+                  <h4 className="text-[11px] font-mono font-semibold text-ink-300">
+                    รายการพอร์ตที่จะคัดลอกมาสร้าง ({cloningInterfaces.length} พอร์ต):
+                  </h4>
+                  {loadingCloningInterfaces ? (
+                    <div className="text-xs text-ink-500 font-mono animate-pulse">กำลังดึงข้อมูลพอร์ตจาก NetBox...</div>
+                  ) : cloningInterfaces.length === 0 ? (
+                    <div className="text-xs text-ink-500 font-mono">ไม่พบพอร์ตในรุ่นที่เลือก (เป็นเครื่องเปล่า)</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto pr-1">
+                      {cloningInterfaces.map(it => (
+                        <span 
+                          key={it.id} 
+                          className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-base-950 border border-base-600/60 text-ink-400"
+                        >
+                          {it.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -645,12 +756,9 @@ export default function DeviceTypesPage() {
       {isPortModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-4xl rounded-xl border border-base-600 bg-base-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-left my-8">
-            <div className="flex justify-between items-center border-b border-base-600/30 pb-3">
+            <div className="flex justify-between items-center border-b border-base-600/30 pb-3 mb-4">
               <h3 className="font-display text-lg font-semibold text-ink-100 flex items-center gap-2">
                 <span>สร้าง Port Templates ไปยังรุ่นโดยตรง</span>
-                <span className="text-xs bg-nds/10 border border-nds/20 px-2.5 py-0.5 rounded-full font-mono text-nds font-medium">
-                  {selectedDeviceTypes[0]?.manufacturer || ''} {selectedDeviceTypes[0]?.model || ''}
-                </span>
               </h3>
               <button 
                 onClick={() => setIsPortModalOpen(false)}
@@ -667,6 +775,48 @@ export default function DeviceTypesPage() {
             )}
 
             <form onSubmit={handleSavePorts} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-ink-400 mb-1.5">Device Type (เลือกรุ่นอุปกรณ์ใน NetBox) *</label>
+                <select
+                  value={selectedDeviceTypeId}
+                  onChange={(e) => setSelectedDeviceTypeId(e.target.value)}
+                  className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none animate-in fade-in duration-300"
+                  required
+                >
+                  <option value="">-- เลือก Device Type (Model) --</option>
+                  {deviceTypes.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.manufacturer || ''} - {t.model} {t.part_number ? `(${t.part_number})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedDeviceTypeId && (
+                <div className="border border-base-600/30 rounded-xl bg-base-950/20 p-4 animate-in fade-in duration-300">
+                  <h4 className="text-xs font-mono font-semibold text-ink-300 mb-2">
+                    พอร์ตเดิมที่มีอยู่แล้วในระบบ ({existingInterfaces.length} พอร์ต):
+                  </h4>
+                  {loadingInterfaces ? (
+                    <div className="text-xs text-ink-500 font-mono animate-pulse">กำลังโหลดข้อมูลพอร์ตเดิมจาก NetBox...</div>
+                  ) : existingInterfaces.length === 0 ? (
+                    <div className="text-xs text-ink-500 font-mono">ไม่มีพอร์ตอยู่ในรุ่นนี้ (ว่างเปล่า)</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {existingInterfaces.map(it => (
+                        <span 
+                          key={it.id} 
+                          className="px-2 py-0.5 rounded text-[10px] font-mono bg-base-950 border border-base-600/60 text-ink-400"
+                          title={`Type: ${it.type} | Label: ${it.label || 'N/A'}`}
+                        >
+                          {it.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
                 <table className="w-full text-left text-xs font-mono">
                   <thead>
@@ -951,6 +1101,76 @@ export default function DeviceTypesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* View Interfaces Modal */}
+      {isViewModalOpen && viewingDeviceType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-xl border border-base-600 bg-base-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-left my-8">
+            <div className="flex justify-between items-center border-b border-base-600/30 pb-3 mb-4">
+              <div>
+                <h3 className="font-display text-lg font-semibold text-ink-100">
+                  รายการพอร์ตในรุ่น (Interfaces List)
+                </h3>
+                <p className="text-xs text-ink-400 font-mono mt-0.5">
+                  {viewingDeviceType.manufacturer || ''} - {viewingDeviceType.model || ''}
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  setViewingDeviceType(null);
+                  setViewingInterfaces([]);
+                }}
+                className="text-ink-400 hover:text-ink-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingViewingInterfaces ? (
+              <div className="py-8 text-center text-xs text-ink-500 font-mono animate-pulse">
+                กำลังโหลดพอร์ตจาก NetBox...
+              </div>
+            ) : viewingInterfaces.length === 0 ? (
+              <div className="py-8 text-center text-xs text-ink-500 font-mono">
+                ไม่พบพอร์ตในรุ่นนี้
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-xs text-ink-400 font-mono">
+                  ทั้งหมด {viewingInterfaces.length} พอร์ต:
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
+                  {viewingInterfaces.map(it => (
+                    <div 
+                      key={it.id} 
+                      className="px-3 py-2 rounded-lg bg-base-950 border border-base-600/40 font-mono flex flex-col justify-center hover:border-nds/50 transition-colors"
+                    >
+                      <span className="text-xs text-nds font-semibold select-all">{it.name}</span>
+                      <span className="text-[10px] text-ink-500 mt-0.5">
+                        Type: {typeof it.type === 'object' ? it.type?.label || it.type?.value || 'N/A' : it.type} | Label: {it.label || 'N/A'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end border-t border-base-600/30 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  setViewingDeviceType(null);
+                  setViewingInterfaces([]);
+                }}
+                className="rounded-lg border border-base-600 bg-base-950 px-4 py-2 text-xs text-ink-400 hover:bg-base-800 transition-colors"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
           </div>
         </div>
       )}

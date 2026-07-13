@@ -20,6 +20,7 @@ export const ndsApi = {
   getDeviceTypes: () => axiosClient.get('/nds/device-types'),
   createDeviceType: (payload) => axiosClient.post('/nds/device-types', payload),
   createInterfaceTemplates: (id, payload) => axiosClient.post(`/nds/device-types/${id}/interfaces`, payload),
+  getInterfaceTemplates: (id) => axiosClient.get(`/nds/device-types/${id}/interfaces`),
   getPortPresets: () => axiosClient.get('/nds/port-presets'),
   createPortPreset: (payload) => axiosClient.post('/nds/port-presets', payload),
   getDeviceRoles: () => axiosClient.get('/nds/device-roles'),

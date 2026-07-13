@@ -46,7 +46,8 @@ async function fetchAllPages(endpointPath) {
   }
 
   let results = [];
-  let nextUrl = `${baseUrl}${endpointPath}?limit=1000`;
+  const separator = endpointPath.includes('?') ? '&' : '?';
+  let nextUrl = `${baseUrl}${endpointPath}${separator}limit=1000`;
 
   while (nextUrl) {
     const res = await fetch(nextUrl, {
@@ -57,7 +58,8 @@ async function fetchAllPages(endpointPath) {
     });
 
     if (!res.ok) {
-      throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${res.statusText}`);
+      const errText = await res.text();
+      throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
     }
 
     const data = await res.json();
@@ -579,12 +581,25 @@ async function createDeviceType(data) {
 
   const result = await res.json();
 
-  // Create interface templates if interface_ranges is specified
-  const interfaceRanges = data.interface_ranges || [];
+  // Create interface templates if clone_device_type_id is specified OR interface_ranges are specified
   const interfaceTemplates = [];
 
-  if (interfaceRanges.length > 0) {
-    for (const range of interfaceRanges) {
+  if (data.clone_device_type_id) {
+    try {
+      const templatesToClone = await fetchAllPages(`/dcim/interface-templates/?device_type_id=${data.clone_device_type_id}`);
+      for (const t of templatesToClone) {
+        interfaceTemplates.push({
+          device_type: result.id,
+          name: t.name,
+          type: typeof t.type === 'object' ? t.type.value : t.type || '1000base-t',
+          label: t.label || ''
+        });
+      }
+    } catch (cloneErr) {
+      console.warn('⚠️ Failed to fetch interface templates for cloning:', cloneErr.message);
+    }
+  } else if (data.interface_ranges && data.interface_ranges.length > 0) {
+    for (const range of data.interface_ranges) {
       const prefix = range.prefix || 'GigabitEthernet';
       const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 1;
       const count = parseInt(range.count) || 0;
@@ -972,6 +987,18 @@ async function getVlans() {
   return mapped;
 }
 
+async function getInterfaceTemplates(deviceTypeId) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const results = await fetchAllPages(`/dcim/interface-templates/?device_type_id=${deviceTypeId}`);
+  return results;
+}
+
 module.exports = {
   getDevices,
   getPrefixes,
@@ -986,6 +1013,7 @@ module.exports = {
   createDevice,
   createDeviceType,
   createInterfaceTemplates,
+  getInterfaceTemplates,
   updateDevice,
   deleteDevice,
   getDeviceTypes,

@@ -353,6 +353,7 @@ module.exports = {
   createDevice: async (payload) => netboxService.createDevice(payload),
   createDeviceType: async (payload) => netboxService.createDeviceType(payload),
   createInterfaceTemplates: async (deviceTypeId, payload) => netboxService.createInterfaceTemplates(deviceTypeId, payload),
+  getInterfaceTemplates: async (deviceTypeId) => netboxService.getInterfaceTemplates(deviceTypeId),
   updateDevice: async (id, payload) => netboxService.updateDevice(id, payload),
   deleteDevice: async (id) => netboxService.deleteDevice(id),
 

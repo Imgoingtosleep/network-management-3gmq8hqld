@@ -125,6 +125,13 @@ async function createInterfaceTemplates(req, res, next) {
   } catch (err) { return next(err); }
 }
 
+async function listInterfaceTemplates(req, res, next) {
+  try {
+    const data = await ndsService.getInterfaceTemplates(req.params.id);
+    return ok(res, data, 'ดึงรายการ Interface Templates สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 async function listPortPresets(req, res, next) {
   try {
     const data = await ndsService.getPortPresets();
@@ -269,6 +276,7 @@ module.exports = {
   listDeviceTypes,
   createDeviceType,
   createInterfaceTemplates,
+  listInterfaceTemplates,
   listPortPresets,
   createPortPreset,
   listDeviceRoles,
