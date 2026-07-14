@@ -123,33 +123,64 @@ const INTERFACE_TYPE_GROUPS = [
 
 const groupInterfaceChoices = (choices) => {
   const groups = {
-    'Virtual / Logical': [],
-    'Ethernet (Copper)': [],
-    'Ethernet (Fiber / Modular)': [],
+    'Virtual': [],
+    'Ethernet (fixed)': [],
+    'Pluggable transceivers': [],
+    'Backplane': [],
     'Stacking': [],
-    'Wireless / Cellular': [],
+    'Fibre Channel': [],
+    'Serial': [],
     'PON': [],
-    'Fibre Channel & InfiniBand': [],
+    'Wireless': [],
+    'Cellular': [],
     'Other': []
   };
 
   choices.forEach(opt => {
     const val = opt.value.toLowerCase();
+    
+    // Virtual
     if (['virtual', 'lag', 'bridge', 'loopback'].some(k => val.includes(k))) {
-      groups['Virtual / Logical'].push(opt);
-    } else if (['base-t', 'base-tx', 'base-t1'].some(k => val.includes(k))) {
-      groups['Ethernet (Copper)'].push(opt);
-    } else if (['base-x', 'sfpp', 'sfp28', 'qsfp', 'cfp', 'osfp', 'base-fx', 'base-lfx', 'base-kr', 'base-kp', 'base-kx', '1.6tbase'].some(k => val.includes(k))) {
-      groups['Ethernet (Fiber / Modular)'].push(opt);
-    } else if (['stack', 'vcp'].some(k => val.includes(k))) {
+      groups['Virtual'].push(opt);
+    } 
+    // Ethernet (fixed)
+    else if (['base-t', 'base-tx', 'base-t1'].some(k => val.includes(k) && !val.includes('base-x') && !val.includes('base-kr') && !val.includes('base-kx'))) {
+      groups['Ethernet (fixed)'].push(opt);
+    } 
+    // Backplane
+    else if (['base-kr', 'base-kp', 'base-kx', '-kr', '-kp', '-kx'].some(k => val.includes(k))) {
+      groups['Backplane'].push(opt);
+    }
+    // Stacking
+    else if (['stack', 'vcp', 'flexstack'].some(k => val.includes(k))) {
       groups['Stacking'].push(opt);
-    } else if (['ieee802', 'wireless', 'gsm', 'cdma', 'lte', '4g', '5g'].some(k => val.includes(k))) {
-      groups['Wireless / Cellular'].push(opt);
-    } else if (['pon', 'epon'].some(k => val.includes(k))) {
+    }
+    // PON
+    else if (['pon', 'epon'].some(k => val.includes(k))) {
       groups['PON'].push(opt);
-    } else if (['fc', 'infiniband', 'sdr', 'ddr', 'qdr', 'fdr', 'edr', 'hdr', 'ndr', 'xdr'].some(k => val.includes(k))) {
-      groups['Fibre Channel & InfiniBand'].push(opt);
-    } else {
+    }
+    // Wireless
+    else if (['ieee802.11', 'wireless'].some(k => val.includes(k))) {
+      groups['Wireless'].push(opt);
+    }
+    // Cellular
+    else if (['gsm', 'cdma', 'lte', '4g', '5g'].some(k => val === k || val.includes(k))) {
+      groups['Cellular'].push(opt);
+    }
+    // Fibre Channel
+    else if (['fc', 'fibrechannel'].some(k => val.includes(k))) {
+      groups['Fibre Channel'].push(opt);
+    }
+    // Serial
+    else if (['t1', 'e1', 't3', 'e3', 'sis'].some(k => val === k)) {
+      groups['Serial'].push(opt);
+    }
+    // Pluggable transceivers (equivalent to NetBox Ethernet modular)
+    else if (['sfp', 'sfpp', 'sfp28', 'sfp56', 'sfpdd', 'qsfp', 'qsfpp', 'qsfp28', 'qsfp56', 'qsfpdd', 'cfp', 'cfp2', 'cfp4', 'osfp', 'cdfp', 'cxp', 'cpak', 'xfp', 'xenpak', 'x2', 'gbic', 'base-x', 'base-fx', 'base-lfx', '1.6tbase'].some(k => val.includes(k))) {
+      groups['Pluggable transceivers'].push(opt);
+    }
+    // Other
+    else {
       groups['Other'].push(opt);
     }
   });
