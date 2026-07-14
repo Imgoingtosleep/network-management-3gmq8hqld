@@ -48,4 +48,13 @@ async function listSites(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites };
+async function listIpAddresses(req, res, next) {
+  try {
+    const data = await netboxService.getIpAddresses();
+    return ok(res, data, 'ดึงรายการ IP Addresses จาก Netbox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses };

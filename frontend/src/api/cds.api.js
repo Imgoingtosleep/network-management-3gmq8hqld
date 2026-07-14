@@ -7,4 +7,5 @@ export const cdsApi = {
   createProject: (payload) => axiosClient.post('/cds/projects', payload),
   getPrefixes: () => axiosClient.get('/cds/prefixes'),
   getSites: () => axiosClient.get('/cds/sites'),
+  getIpAddresses: () => axiosClient.get('/cds/ip-addresses'),
 };

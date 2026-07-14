@@ -12,5 +12,6 @@ router.post('/projects', cdsController.createProject);
 
 router.get('/prefixes', cdsController.listPrefixes);
 router.get('/sites', cdsController.listSites);
+router.get('/ip-addresses', cdsController.listIpAddresses);
 
 module.exports = router;

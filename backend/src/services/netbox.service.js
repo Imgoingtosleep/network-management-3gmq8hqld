@@ -289,7 +289,16 @@ async function getIpAddresses() {
   
   const mapped = rawIps.map(ip => ({
     id: ip.id,
-    address: ip.address ? ip.address.split('/')[0] : ''
+    address: ip.address ? ip.address.split('/')[0] : '',
+    full_address: ip.address || '',
+    status: ip.status?.value || 'active',
+    role: ip.role?.value || 'N/A',
+    tenant: ip.tenant?.name || 'N/A',
+    dns_name: ip.dns_name || '',
+    description: ip.description || '',
+    interface: ip.assigned_object?.name || 'N/A',
+    device: ip.assigned_object?.device?.name || 'N/A',
+    device_id: ip.assigned_object?.device?.id || null
   }));
 
   memoryCache.ipAddresses.data = mapped;
