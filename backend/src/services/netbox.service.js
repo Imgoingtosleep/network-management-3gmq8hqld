@@ -82,7 +82,7 @@ async function getDevices() {
   
   const mapped = rawDevices.map(device => ({
     id: device.id,
-    nodeid: device.custom_fields?.node_id || device.id,
+    nodeid: device.custom_fields?.nodeid || device.custom_fields?.node_id || '-',
     name: device.name || 'Unnamed Device',
     status: device.status?.label || device.status?.value || 'Active',
     status_value: device.status?.value || 'active',
@@ -106,7 +106,10 @@ async function getDevices() {
     manufacturer: device.device_type?.manufacturer?.name || 'N/A',
     type: device.device_type?.model || device.device_type?.name || 'N/A',
     device_type_id: device.device_type?.id || null,
-    ip: device.primary_ip?.address || 'N/A',
+    ip: device.primary_ip4?.address || device.primary_ip?.address || 'N/A',
+    primary_ip4: device.primary_ip4?.address || '',
+    primary_ip6: device.primary_ip6?.address || '',
+    oob_ip: device.oob_ip?.address || '',
     description: device.description || 'N/A',
     airflow: device.airflow?.value || device.airflow || '',
     serial: device.serial || '',
@@ -476,6 +479,154 @@ async function sanitizeDeviceData(data) {
   }
 }
 
+async function getOrCreateInterface(deviceId, name, type = 'virtual') {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+  
+  const searchRes = await fetch(`${baseUrl}/dcim/interfaces/?device_id=${deviceId}&name=${name}`, {
+    headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+  });
+  if (searchRes.ok) {
+    const data = await searchRes.json();
+    if (data.results && data.results.length > 0) {
+      return data.results[0].id;
+    }
+  }
+  
+  const createRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({
+      device: deviceId,
+      name: name,
+      type: type
+    })
+  });
+  if (!createRes.ok) {
+    throw new Error(`Failed to create interface ${name}: ${await createRes.text()}`);
+  }
+  const result = await createRes.json();
+  return result.id;
+}
+
+async function getOrCreateIPAddress(addressStr, interfaceId) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+  
+  let normalized = addressStr.trim();
+  if (!normalized.includes('/')) {
+    if (normalized.includes(':')) {
+      normalized += '/128';
+    } else {
+      normalized += '/32';
+    }
+  }
+  
+  const searchRes = await fetch(`${baseUrl}/ipam/ip-addresses/?address=${encodeURIComponent(normalized)}`, {
+    headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+  });
+  let ipId = null;
+  if (searchRes.ok) {
+    const data = await searchRes.json();
+    if (data.results && data.results.length > 0) {
+      ipId = data.results[0].id;
+      const ipObj = data.results[0];
+      if (ipObj.assigned_object?.id !== interfaceId) {
+        const updateRes = await fetch(`${baseUrl}/ipam/ip-addresses/${ipId}/`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            assigned_object_type: 'dcim.interface',
+            assigned_object_id: interfaceId
+          })
+        });
+        if (!updateRes.ok) {
+          console.warn(`Failed to reassign IP ${normalized}:`, await updateRes.text());
+        }
+      }
+      return ipId;
+    }
+  }
+  
+  const createRes = await fetch(`${baseUrl}/ipam/ip-addresses/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({
+      address: normalized,
+      assigned_object_type: 'dcim.interface',
+      assigned_object_id: interfaceId
+    })
+  });
+  if (!createRes.ok) {
+    throw new Error(`Failed to create IP Address ${normalized}: ${await createRes.text()}`);
+  }
+  const result = await createRes.json();
+  return result.id;
+}
+
+async function handleDeviceIPAssignments(deviceId, primaryIp4, primaryIp6, oobIp) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+  const patchData = {};
+  
+  if (primaryIp4 !== undefined) {
+    if (primaryIp4 && primaryIp4.trim()) {
+      const interfaceId = await getOrCreateInterface(deviceId, 'Loopback0', 'virtual');
+      const ipId = await getOrCreateIPAddress(primaryIp4, interfaceId);
+      patchData.primary_ip4 = ipId;
+    } else {
+      patchData.primary_ip4 = null;
+    }
+  }
+
+  if (primaryIp6 !== undefined) {
+    if (primaryIp6 && primaryIp6.trim()) {
+      const interfaceId = await getOrCreateInterface(deviceId, 'Loopback0', 'virtual');
+      const ipId = await getOrCreateIPAddress(primaryIp6, interfaceId);
+      patchData.primary_ip6 = ipId;
+    } else {
+      patchData.primary_ip6 = null;
+    }
+  }
+
+  if (oobIp !== undefined) {
+    if (oobIp && oobIp.trim()) {
+      const interfaceId = await getOrCreateInterface(deviceId, 'Management', 'virtual');
+      const ipId = await getOrCreateIPAddress(oobIp, interfaceId);
+      patchData.oob_ip = ipId;
+    } else {
+      patchData.oob_ip = null;
+    }
+  }
+
+  if (Object.keys(patchData).length > 0) {
+    const patchRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Token ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(patchData)
+    });
+    if (!patchRes.ok) {
+      throw new Error(`Failed to assign IPs to device ${deviceId}: ${await patchRes.text()}`);
+    }
+  }
+}
+
 // Device CRUD Operations
 async function createDevice(data) {
   const baseUrl = getSanitizedUrl();
@@ -485,8 +636,8 @@ async function createDevice(data) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  // แยกฟิลด์สำหรับสร้าง Vlanif ออกจากข้อมูลดีไวซ์หลัก
-  const { create_vlanif100, create_vlanif115, ...deviceData } = data;
+  // แยกฟิลด์สำหรับสร้าง Vlanif และ IP Address ออกจากข้อมูลดีไวซ์หลัก
+  const { create_vlanif100, create_vlanif115, primary_ip4, primary_ip6, oob_ip, ...deviceData } = data;
 
   await sanitizeDeviceData(deviceData);
 
@@ -507,6 +658,9 @@ async function createDevice(data) {
 
   const result = await res.json();
   memoryCache.devices.data = null;
+
+  // จัดการสร้าง/ผูก IP Address กับอุปกรณ์
+  await handleDeviceIPAssignments(result.id, primary_ip4, primary_ip6, oob_ip);
 
   // สร้างอินเตอร์เฟสเสมือน Vlanif100 / Vlanif115 ด้วย type virtual หากมีการระบุ
   const virtualInterfaces = [];
@@ -785,7 +939,10 @@ async function updateDevice(id, data) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  await sanitizeDeviceData(data);
+  // แยกฟิลด์สำหรับจัดการ IP Address ออกจากข้อมูลดีไวซ์หลัก
+  const { primary_ip4, primary_ip6, oob_ip, ...deviceData } = data;
+
+  await sanitizeDeviceData(deviceData);
 
   const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
     method: 'PATCH',
@@ -794,7 +951,7 @@ async function updateDevice(id, data) {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(deviceData)
   });
 
   if (!res.ok) {
@@ -804,6 +961,10 @@ async function updateDevice(id, data) {
 
   const result = await res.json();
   memoryCache.devices.data = null;
+
+  // จัดการสร้าง/ผูก IP Address กับอุปกรณ์
+  await handleDeviceIPAssignments(id, primary_ip4, primary_ip6, oob_ip);
+
   return result;
 }
 

@@ -107,7 +107,7 @@ export default function LoginPage() {
           className="group w-full rounded-lg border border-cds/40 bg-cds/10 px-4 py-2.5 text-sm font-semibold text-cds shadow-lg transition-all hover:bg-cds/20 active:scale-[0.98]"
         >
           <span className="flex items-center justify-center gap-2">
-            🚀 Quick Demo Login
+            Demo Login
           </span>
         </button>
 

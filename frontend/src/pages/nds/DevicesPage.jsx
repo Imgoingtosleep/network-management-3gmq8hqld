@@ -61,6 +61,9 @@ export default function DevicesPage() {
     asset_tag: '',
     tags: '',
     nodeid: '',
+    primary_ip4: '',
+    primary_ip6: '',
+    oob_ip: '',
     local_context_data: '',
     create_vlanif100: false,
     create_vlanif115: false
@@ -143,6 +146,9 @@ export default function DevicesPage() {
       asset_tag: '',
       tags: '',
       nodeid: '',
+      primary_ip4: '',
+      primary_ip6: '',
+      oob_ip: '',
       local_context_data: '',
       create_vlanif100: false,
       create_vlanif115: false
@@ -189,7 +195,10 @@ export default function DevicesPage() {
       serial: device.serial || '',
       asset_tag: device.asset_tag || '',
       tags: device.tags || '',
-      nodeid: device.nodeid || '',
+      nodeid: device.nodeid === '-' ? '' : device.nodeid || '',
+      primary_ip4: device.primary_ip4 || '',
+      primary_ip6: device.primary_ip6 || '',
+      oob_ip: device.oob_ip || '',
       local_context_data: device.local_context_data || '',
       create_vlanif100: false,
       create_vlanif115: false
@@ -251,8 +260,11 @@ export default function DevicesPage() {
       serial: formData.serial || null,
       asset_tag: formData.asset_tag || null,
       local_context_data: parsedLocalContext,
+      primary_ip4: formData.primary_ip4 || null,
+      primary_ip6: formData.primary_ip6 || null,
+      oob_ip: formData.oob_ip || null,
       custom_fields: {
-        node_id: formData.nodeid,
+        nodeid: formData.nodeid,
         owner_group: formData.owner_group || null,
         owner: formData.owner || null,
         latitude: formData.latitude || null,
@@ -632,6 +644,42 @@ export default function DevicesPage() {
                         <option key={ct.id} value={ct.id}>{ct.name}</option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-ink-400">Primary IPv4 Address</label>
+                    <input
+                      type="text"
+                      name="primary_ip4"
+                      value={formData.primary_ip4}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 10.255.0.1/32"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-ink-400">Primary IPv6 Address</label>
+                    <input
+                      type="text"
+                      name="primary_ip6"
+                      value={formData.primary_ip6}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 2001:db8::1/128"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="col-span-1 sm:col-span-2">
+                    <label className="block text-xs font-mono text-ink-400">Out-of-band (OOB) IP Address</label>
+                    <input
+                      type="text"
+                      name="oob_ip"
+                      value={formData.oob_ip}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 192.168.1.1/24"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                    />
                   </div>
 
                   <div className="col-span-1 sm:col-span-2">
