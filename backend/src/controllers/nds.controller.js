@@ -259,6 +259,13 @@ const netboxRedirect = (req, res, next) => {
   }
 };
 
+async function listInterfaceTypeChoices(req, res, next) {
+  try {
+    const data = await ndsService.getInterfaceTypeChoices();
+    return ok(res, data, 'ดึงรายการ Choices ของ Interface Types สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 module.exports = {
   listProjects,
   getProject,
@@ -290,6 +297,7 @@ module.exports = {
   listVirtualChassises,
   listTags,
   listVlans,
+  listInterfaceTypeChoices,
   
   // Sites
   listSites: siteHandlers.list, createSite: siteHandlers.create, updateSite: siteHandlers.update, deleteSite: siteHandlers.delete,

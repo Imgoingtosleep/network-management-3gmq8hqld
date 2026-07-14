@@ -1217,6 +1217,30 @@ async function getInterfaceTemplates(deviceTypeId) {
   return results;
 }
 
+async function getInterfaceTypeChoices() {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/interfaces/`, {
+    method: 'OPTIONS',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`NetBox API OPTIONS request failed with status ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.actions?.POST?.type?.choices || [];
+}
+
 module.exports = {
   getDevices,
   getPrefixes,
@@ -1249,5 +1273,6 @@ module.exports = {
   // Prefix new ones
   createPrefix,
   deletePrefix,
-  getVlans
+  getVlans,
+  getInterfaceTypeChoices
 };

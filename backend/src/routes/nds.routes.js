@@ -23,6 +23,7 @@ router.get('/device-types/:id/interfaces', ndsController.listInterfaceTemplates)
 router.post('/device-types/:id/interfaces', ndsController.createInterfaceTemplates);
 router.get('/port-presets', ndsController.listPortPresets);
 router.post('/port-presets', ndsController.createPortPreset);
+router.get('/interface-type-choices', ndsController.listInterfaceTypeChoices);
 router.get('/device-roles', ndsController.listDeviceRoles);
 router.get('/tenants', ndsController.listTenants);
 router.get('/locations', ndsController.listLocations);

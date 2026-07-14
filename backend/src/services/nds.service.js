@@ -501,5 +501,6 @@ module.exports = {
   
   // Port Presets (Templates)
   getPortPresets: async () => ndsModel.findPortPresets(),
-  createPortPreset: async (payload) => ndsModel.createPortPreset(payload)
+  createPortPreset: async (payload) => ndsModel.createPortPreset(payload),
+  getInterfaceTypeChoices: async () => netboxService.getInterfaceTypeChoices()
 };

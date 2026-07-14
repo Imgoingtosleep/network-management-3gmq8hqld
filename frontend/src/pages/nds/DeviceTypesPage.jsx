@@ -121,6 +121,44 @@ const INTERFACE_TYPE_GROUPS = [
   }
 ];
 
+const groupInterfaceChoices = (choices) => {
+  const groups = {
+    'Virtual / Logical': [],
+    'Ethernet (Copper)': [],
+    'Ethernet (Fiber / Modular)': [],
+    'Stacking': [],
+    'Wireless / Cellular': [],
+    'PON': [],
+    'Fibre Channel & InfiniBand': [],
+    'Other': []
+  };
+
+  choices.forEach(opt => {
+    const val = opt.value.toLowerCase();
+    if (['virtual', 'lag', 'bridge', 'loopback'].some(k => val.includes(k))) {
+      groups['Virtual / Logical'].push(opt);
+    } else if (['base-t', 'base-tx', 'base-t1'].some(k => val.includes(k))) {
+      groups['Ethernet (Copper)'].push(opt);
+    } else if (['base-x', 'sfpp', 'sfp28', 'qsfp', 'cfp', 'osfp', 'base-fx', 'base-lfx', 'base-kr', 'base-kp', 'base-kx', '1.6tbase'].some(k => val.includes(k))) {
+      groups['Ethernet (Fiber / Modular)'].push(opt);
+    } else if (['stack', 'vcp'].some(k => val.includes(k))) {
+      groups['Stacking'].push(opt);
+    } else if (['ieee802', 'wireless', 'gsm', 'cdma', 'lte', '4g', '5g'].some(k => val.includes(k))) {
+      groups['Wireless / Cellular'].push(opt);
+    } else if (['pon', 'epon'].some(k => val.includes(k))) {
+      groups['PON'].push(opt);
+    } else if (['fc', 'infiniband', 'sdr', 'ddr', 'qdr', 'fdr', 'edr', 'hdr', 'ndr', 'xdr'].some(k => val.includes(k))) {
+      groups['Fibre Channel & InfiniBand'].push(opt);
+    } else {
+      groups['Other'].push(opt);
+    }
+  });
+
+  return Object.entries(groups)
+    .filter(([_, list]) => list.length > 0)
+    .map(([label, options]) => ({ label, options }));
+};
+
 const getRangePreview = (range) => {
   const start = parseInt(range.start);
   const count = parseInt(range.count);
@@ -191,6 +229,16 @@ export default function DeviceTypesPage() {
     }
   };
 
+  const [interfaceTypeChoices, setInterfaceTypeChoices] = useState([]);
+  const loadInterfaceTypeChoices = async () => {
+    try {
+      const res = await ndsApi.getInterfaceTypeChoices();
+      setInterfaceTypeChoices(res.data?.data || res.data || res || []);
+    } catch (err) {
+      console.error('Failed to load interface type choices:', err);
+    }
+  };
+
   const [existingInterfaces, setExistingInterfaces] = useState([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(false);
   const [portSourceMode, setPortSourceMode] = useState('manual'); // 'manual', 'preset', 'clone'
@@ -202,6 +250,7 @@ export default function DeviceTypesPage() {
   useEffect(() => {
     loadPresets();
     loadDeviceTypes();
+    loadInterfaceTypeChoices();
   }, [refreshTrigger]);
 
   useEffect(() => {
@@ -950,11 +999,11 @@ export default function DeviceTypesPage() {
                               onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
                               className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                             >
-                              {INTERFACE_TYPE_GROUPS.map((group) => (
+                              {(interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS).map((group) => (
                                 <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
                                   {group.options.map((opt) => (
                                     <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
-                                      {opt.label}
+                                      {opt.display_name || opt.label || opt.value}
                                     </option>
                                   ))}
                                 </optgroup>
@@ -1192,11 +1241,11 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handlePresetRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            {INTERFACE_TYPE_GROUPS.map((group) => (
+                            {(interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS).map((group) => (
                               <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
                                 {group.options.map((opt) => (
                                   <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
-                                    {opt.label}
+                                    {opt.display_name || opt.label || opt.value}
                                   </option>
                                 ))}
                               </optgroup>

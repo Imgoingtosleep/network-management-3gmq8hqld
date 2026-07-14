@@ -23,6 +23,7 @@ export const ndsApi = {
   getInterfaceTemplates: (id) => axiosClient.get(`/nds/device-types/${id}/interfaces`),
   getPortPresets: () => axiosClient.get('/nds/port-presets'),
   createPortPreset: (payload) => axiosClient.post('/nds/port-presets', payload),
+  getInterfaceTypeChoices: () => axiosClient.get('/nds/interface-type-choices'),
   getDeviceRoles: () => axiosClient.get('/nds/device-roles'),
   getTenants: () => axiosClient.get('/nds/tenants'),
   getLocations: () => axiosClient.get('/nds/locations'),
