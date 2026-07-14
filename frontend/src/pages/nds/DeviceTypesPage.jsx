@@ -702,7 +702,7 @@ export default function DeviceTypesPage() {
 
             <form onSubmit={handleSaveDeviceType} className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-mono text-ink-400">Manufacturer (ผู้ผลิต) *</label>
+                <label className="block text-xs font-mono text-ink-400">Manufacturer (ผู้ผลิต) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="manufacturer"
@@ -715,7 +715,7 @@ export default function DeviceTypesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Model Name (ชื่อรุ่น) *</label>
+                <label className="block text-xs font-mono text-ink-400">Model Name (ชื่อรุ่น) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="model"
@@ -1002,7 +1002,7 @@ export default function DeviceTypesPage() {
               {portSourceMode === 'preset' && (
                 <div className="space-y-4 border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
                   <div>
-                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือก Port Preset (แม่แบบพอร์ตสำเร็จรูป) *</label>
+                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือก Port Preset (แม่แบบพอร์ตสำเร็จรูป) <span className="text-red-500">*</span></label>
                     <select
                       value={selectedSourcePresetId}
                       onChange={(e) => setSelectedSourcePresetId(e.target.value)}
@@ -1035,7 +1035,7 @@ export default function DeviceTypesPage() {
               {portSourceMode === 'clone' && (
                 <div className="space-y-4 border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
                   <div>
-                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือกรุ่นต้นแบบเพื่อคัดลอกพอร์ต (Clone Device Type) *</label>
+                    <label className="block text-xs font-mono text-ink-400 mb-1.5">เลือกรุ่นต้นแบบเพื่อคัดลอกพอร์ต (Clone Device Type) <span className="text-red-500">*</span></label>
                     <select
                       value={selectedSourceDeviceTypeId}
                       onChange={(e) => setSelectedSourceDeviceTypeId(e.target.value)}
@@ -1126,7 +1126,7 @@ export default function DeviceTypesPage() {
 
             <form onSubmit={handleSavePreset} className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-mono text-ink-400">Preset Name (ชื่อแม่แบบสำเร็จรูป) *</label>
+                <label className="block text-xs font-mono text-ink-400">Preset Name (ชื่อแม่แบบสำเร็จรูป) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="name"

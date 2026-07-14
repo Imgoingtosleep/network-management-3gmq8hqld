@@ -540,7 +540,7 @@ export default function DevicesPage() {
               {activeTab === 'general' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in duration-150">
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Device Name *</label>
+                    <label className="block text-xs font-mono text-ink-400">Device Name <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       name="name"
@@ -553,7 +553,7 @@ export default function DevicesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Node ID (Custom field) *</label>
+                    <label className="block text-xs font-mono text-ink-400">Node ID (Custom field) <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       name="nodeid"
@@ -566,7 +566,7 @@ export default function DevicesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Status *</label>
+                    <label className="block text-xs font-mono text-ink-400">Status <span className="text-red-500">*</span></label>
                     <select
                       name="status"
                       value={formData.status}
@@ -585,7 +585,7 @@ export default function DevicesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Device Role *</label>
+                    <label className="block text-xs font-mono text-ink-400">Device Role <span className="text-red-500">*</span></label>
                     <select
                       name="role"
                       value={formData.role}
@@ -601,7 +601,7 @@ export default function DevicesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Device Type *</label>
+                    <label className="block text-xs font-mono text-ink-400">Device Type <span className="text-red-500">*</span></label>
                     <select
                       name="device_type"
                       value={formData.device_type}
@@ -740,7 +740,7 @@ export default function DevicesPage() {
               {activeTab === 'location' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in duration-150">
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Site *</label>
+                    <label className="block text-xs font-mono text-ink-400">Site <span className="text-red-500">*</span></label>
                     <select
                       name="site"
                       value={formData.site}

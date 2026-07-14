@@ -463,7 +463,7 @@ export default function PrefixesPage() {
               {activeTab === 'general' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in duration-150">
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Prefix *</label>
+                    <label className="block text-xs font-mono text-ink-400">Prefix <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       name="prefix"
@@ -476,7 +476,7 @@ export default function PrefixesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-ink-400">Status *</label>
+                    <label className="block text-xs font-mono text-ink-400">Status <span className="text-red-500">*</span></label>
                     <select
                       name="status"
                       value={formData.status}

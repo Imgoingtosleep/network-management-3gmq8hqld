@@ -355,7 +355,7 @@ export default function SitesPage() {
               </div>
               
               <div>
-                <label className="block text-xs font-mono text-ink-400">Name *</label>
+                <label className="block text-xs font-mono text-ink-400">Name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="name"
@@ -367,7 +367,7 @@ export default function SitesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Slug *</label>
+                <label className="block text-xs font-mono text-ink-400">Slug <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="slug"
@@ -379,7 +379,7 @@ export default function SitesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Status *</label>
+                <label className="block text-xs font-mono text-ink-400">Status <span className="text-red-500">*</span></label>
                 <select
                   name="status"
                   value={formData.status}
@@ -559,7 +559,7 @@ export default function SitesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Name thai *</label>
+                <label className="block text-xs font-mono text-ink-400">Name thai <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="name_thai"
@@ -571,7 +571,7 @@ export default function SitesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-ink-400">Site name *</label>
+                <label className="block text-xs font-mono text-ink-400">Site name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="site_name"
