@@ -153,28 +153,77 @@ export default function CDSDomainIPPage() {
               className="w-full rounded bg-base-950 border border-base-600/60 px-2 py-1 text-[11px] text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none"
             />
           </div>
-          <div className="flex-1 overflow-y-auto divide-y divide-base-600/20">
+          <div className="flex-1 overflow-y-auto pr-1">
             {loading ? (
               <div className="p-8 text-center text-xs text-ink-600 font-mono">กำลังโหลด...</div>
-            ) : filteredRegions.length > 0 ? (
-              filteredRegions.map(r => {
-                const isSelected = selectedRegion?.id === r.id;
-                return (
-                  <div
-                    key={r.id}
-                    onClick={() => setSelectedRegion(r)}
-                    className={`px-4 py-2.5 cursor-pointer text-xs font-mono transition-all flex justify-between items-center ${
-                      isSelected
-                        ? 'bg-cds/5 border-l-4 border-cds text-cds font-semibold'
-                        : 'hover:bg-base-750/30 border-l-4 border-transparent text-ink-300'
-                    }`}
-                  >
-                    <span>{r.name}</span>
-                    <span className="text-[10px] text-ink-600">ID: {r.id}</span>
-                  </div>
-                );
-              })
-            ) : (
+            ) : filteredRegions.length > 0 ? (() => {
+              const roots = [];
+              const childrenMap = {};
+
+              filteredRegions.forEach(r => {
+                if (!r.parent) {
+                  roots.push(r);
+                } else {
+                  const pId = r.parent.id;
+                  if (!childrenMap[pId]) {
+                    childrenMap[pId] = [];
+                  }
+                  childrenMap[pId].push(r);
+                }
+              });
+
+              filteredRegions.forEach(r => {
+                if (r.parent && !roots.some(parent => parent.id === r.parent.id) && !roots.some(item => item.id === r.id)) {
+                  roots.push(r);
+                }
+              });
+
+              return (
+                <div className="divide-y divide-base-600/20">
+                  {roots.map(root => {
+                    const isRootSelected = selectedRegion?.id === root.id;
+                    const children = childrenMap[root.id] || [];
+                    return (
+                      <div key={root.id} className="py-1">
+                        <div
+                          onClick={() => setSelectedRegion(root)}
+                          className={`px-4 py-2.5 cursor-pointer text-xs font-mono transition-all flex justify-between items-center ${
+                            isRootSelected
+                              ? 'bg-cds/10 text-cds font-bold'
+                              : 'hover:bg-base-750/30 text-ink-100 font-semibold'
+                          }`}
+                        >
+                          <span>📁 {root.name}</span>
+                          <span className="text-[9px] text-ink-600">ID: {root.id}</span>
+                        </div>
+
+                        {children.length > 0 && (
+                          <div className="pl-6 border-l border-base-600/30 ml-4 my-1 space-y-1">
+                            {children.map(child => {
+                              const isChildSelected = selectedRegion?.id === child.id;
+                              return (
+                                <div
+                                  key={child.id}
+                                  onClick={() => setSelectedRegion(child)}
+                                  className={`px-3 py-1.5 cursor-pointer text-xs font-mono transition-all flex justify-between items-center rounded ${
+                                    isChildSelected
+                                      ? 'bg-cds/5 text-cds font-semibold'
+                                      : 'hover:bg-base-750/20 text-ink-400'
+                                  }`}
+                                >
+                                  <span>↳ {child.name}</span>
+                                  <span className="text-[8px] text-ink-600">ID: {child.id}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })() : (
               <div className="p-8 text-center text-xs text-ink-650 font-mono">ไม่พบข้อมูล</div>
             )}
           </div>

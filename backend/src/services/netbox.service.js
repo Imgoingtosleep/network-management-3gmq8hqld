@@ -243,7 +243,12 @@ async function getRegions() {
     return memoryCache.regions.data;
   }
   const raw = await fetchAllPages('/dcim/regions/');
-  const mapped = raw.map(r => ({ id: r.id, name: r.name, slug: r.slug }));
+  const mapped = raw.map(r => ({ 
+    id: r.id, 
+    name: r.name, 
+    slug: r.slug,
+    parent: r.parent ? { id: r.parent.id, name: r.parent.name } : null
+  }));
   memoryCache.regions.data = mapped;
   memoryCache.regions.timestamp = now;
   return mapped;
