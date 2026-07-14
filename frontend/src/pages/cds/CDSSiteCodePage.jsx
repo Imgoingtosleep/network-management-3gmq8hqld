@@ -226,7 +226,23 @@ export default function CDSSiteCodePage() {
                         <td className="px-4 py-3.5 text-ink-400">{device.tenant}</td>
                         <td className="px-4 py-3.5 text-ink-400">{device.location}</td>
                         <td className="px-4 py-3.5 text-ink-400">{device.rack}</td>
-                        <td className="px-4 py-3.5 text-ink-400 font-mono">{device.role}</td>
+                        <td className="px-4 py-3.5">
+                          {device.role ? (
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border font-mono ${
+                              device.role.toLowerCase() === 'aggregation' || device.role.toLowerCase() === 'agg'
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : device.role.toLowerCase() === 'network'
+                                ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                : device.role.toLowerCase() === 'provider edge' || device.role.toLowerCase() === 'pe'
+                                ? 'bg-base-600/30 text-ink-400 border-base-600/50'
+                                : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            }`}>
+                              {device.role}
+                            </span>
+                          ) : (
+                            <span className="text-ink-650">-</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3.5 text-ink-400 font-mono">{device.manufacturer}</td>
                         <td className="px-4 py-3.5 text-ink-400">{device.type}</td>
                         <td className="px-4 py-3.5 font-mono text-cds">{device.ip}</td>
