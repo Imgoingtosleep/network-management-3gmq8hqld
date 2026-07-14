@@ -9,7 +9,7 @@ export default function Sidebar({ accent = 'nds', items = [] }) {
     : 'border-nds text-nds bg-nds/5 font-semibold';
 
   return (
-    <aside className="hidden w-56 shrink-0 border-r border-base-600/60 pr-6 md:block">
+    <aside className="hidden w-56 shrink-0 border-r border-base-600/60 pr-6 md:block sticky top-28 self-start">
       <p className="mb-3 px-2 text-xs font-mono uppercase tracking-widest text-ink-600">
         เมนู
       </p>
