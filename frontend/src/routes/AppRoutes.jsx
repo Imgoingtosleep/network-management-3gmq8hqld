@@ -6,7 +6,14 @@ import DevicesPage from '../pages/nds/DevicesPage.jsx';
 import DeviceTypesPage from '../pages/nds/DeviceTypesPage.jsx';
 import PrefixesPage from '../pages/nds/PrefixesPage.jsx';
 import DomainsPage from '../pages/nds/DomainsPage.jsx';
-import CDSHomePage from '../pages/cds/CDSHomePage.jsx';
+import CDSLayout from '../pages/cds/CDSLayout.jsx';
+import CDSDashboardPage from '../pages/cds/CDSDashboardPage.jsx';
+import CDSSearchReservePage from '../pages/cds/CDSSearchReservePage.jsx';
+import CDSTopologyMapPage from '../pages/cds/CDSTopologyMapPage.jsx';
+import CDSBulkImportPage from '../pages/cds/CDSBulkImportPage.jsx';
+import CDSDomainIPPage from '../pages/cds/CDSDomainIPPage.jsx';
+import CDSModelsPage from '../pages/cds/CDSModelsPage.jsx';
+import CDSSiteCodePage from '../pages/cds/CDSSiteCodePage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
 import LoginPage from '../pages/LoginPage.jsx';
 import MainLayout from '../layouts/MainLayout.jsx';
@@ -42,7 +49,16 @@ export default function AppRoutes() {
           </Route>
 
           {/* ทีม CDS */}
-          <Route path="/cds" element={<CDSHomePage />} />
+          <Route path="/cds" element={<CDSLayout />}>
+            <Route index element={<Navigate to="/cds/dashboard" replace />} />
+            <Route path="dashboard" element={<CDSDashboardPage />} />
+            <Route path="search-reserve" element={<CDSSearchReservePage />} />
+            <Route path="topology-map" element={<CDSTopologyMapPage />} />
+            <Route path="bulk-import" element={<CDSBulkImportPage />} />
+            <Route path="domain-ip" element={<CDSDomainIPPage />} />
+            <Route path="models" element={<CDSModelsPage />} />
+            <Route path="site-code" element={<CDSSiteCodePage />} />
+          </Route>
         </Route>
       </Route>
 

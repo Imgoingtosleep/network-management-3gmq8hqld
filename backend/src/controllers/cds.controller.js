@@ -39,4 +39,13 @@ async function listPrefixes(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes };
+async function listSites(req, res, next) {
+  try {
+    const data = await netboxService.getSites();
+    return ok(res, data, 'ดึงรายการ Sites จาก Netbox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites };

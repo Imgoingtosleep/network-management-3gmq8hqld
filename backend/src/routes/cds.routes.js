@@ -11,5 +11,6 @@ router.get('/projects/:id', cdsController.getProject);
 router.post('/projects', cdsController.createProject);
 
 router.get('/prefixes', cdsController.listPrefixes);
+router.get('/sites', cdsController.listSites);
 
 module.exports = router;
