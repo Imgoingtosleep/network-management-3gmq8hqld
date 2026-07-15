@@ -79,7 +79,7 @@ until $(curl --output /dev/null --silent --head --fail http://localhost:2500/hea
     sleep 2
     COUNT=$((COUNT+1))
     if [ $COUNT -eq $MAX_RETRIES ]; then
-        echo -e "\n${RED}WARNING: Backend ใช้เวลารันนานผิดปกติ โปรดตรวจสอบด้วย 'docker logs netops-backend'${NC}"
+        echo -e "\n${RED}WARNING: Backend ใช้เวลารันนานผิดปกติ โปรดตรวจสอบด้วย 'docker logs netops-portal-backend'${NC}"
         break
     fi
 done

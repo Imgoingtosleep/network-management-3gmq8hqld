@@ -139,7 +139,7 @@ export default function CDSDomainIPPage() {
           <div className="p-3 border-b border-base-600/50 bg-base-900/50 flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <h3 className="text-xs font-bold text-ink-100 uppercase tracking-wider font-mono">
-                🌐 Domain (Region)
+                Domain (Region)
               </h3>
               <span className="text-[9px] font-mono text-ink-600">
                 {filteredRegions.length} Regions
@@ -234,7 +234,7 @@ export default function CDSDomainIPPage() {
           <div className="p-3 border-b border-base-600/50 bg-base-900/50 flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <h3 className="text-xs font-bold text-ink-100 uppercase tracking-wider font-mono">
-                🔴 Aggregation Devices
+                Aggregation Devices
               </h3>
               <span className="text-[9px] font-mono text-ink-600">
                 {aggDevices.length} Devices
@@ -289,7 +289,7 @@ export default function CDSDomainIPPage() {
           <div className="p-3 border-b border-base-600/50 bg-base-900/50 flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <h3 className="text-xs font-bold text-ink-100 uppercase tracking-wider font-mono">
-                📂 IP Network (VRF / Prefixes)
+                IP Network (VRF / Prefixes)
               </h3>
               <span className="text-[9px] font-mono text-ink-600">
                 {filteredPrefixes.length} Networks
@@ -350,7 +350,7 @@ export default function CDSDomainIPPage() {
           <div className="p-3 border-b border-base-600/50 bg-base-900/50 flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <h3 className="text-xs font-bold text-ink-100 uppercase tracking-wider font-mono">
-                🔎 IP Address
+                IP Address
               </h3>
               <span className="text-[9px] font-mono text-ink-600">
                 {filteredIps.length} IPs
