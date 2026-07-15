@@ -303,7 +303,9 @@ async function getIpAddresses() {
     description: ip.description || '',
     interface: ip.assigned_object?.name || 'N/A',
     device: ip.assigned_object?.device?.name || 'N/A',
-    device_id: ip.assigned_object?.device?.id || null
+    device_id: ip.assigned_object?.device?.id || null,
+    vrf: ip.vrf?.name || 'Global',
+    vrf_id: ip.vrf?.id || null
   }));
 
   memoryCache.ipAddresses.data = mapped;

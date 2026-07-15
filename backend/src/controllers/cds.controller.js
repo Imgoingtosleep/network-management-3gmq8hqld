@@ -57,4 +57,13 @@ async function listIpAddresses(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses };
+async function getDashboardData(req, res, next) {
+  try {
+    const data = await cdsService.getDashboardData();
+    return ok(res, data, 'ดึงรายการแดชบอร์ด CDS สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData };

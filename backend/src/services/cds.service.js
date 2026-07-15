@@ -21,4 +21,8 @@ async function createProject(payload) {
   return cdsModel.create(payload);
 }
 
-module.exports = { getAllProjects, getProjectById, createProject };
+async function getDashboardData() {
+  return cdsModel.getDashboardData();
+}
+
+module.exports = { getAllProjects, getProjectById, createProject, getDashboardData };

@@ -8,4 +8,5 @@ export const cdsApi = {
   getPrefixes: () => axiosClient.get('/cds/prefixes'),
   getSites: () => axiosClient.get('/cds/sites'),
   getIpAddresses: () => axiosClient.get('/cds/ip-addresses'),
+  getDashboard: () => axiosClient.get('/cds/dashboard'),
 };
