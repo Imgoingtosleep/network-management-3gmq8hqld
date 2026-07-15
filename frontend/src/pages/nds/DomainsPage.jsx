@@ -43,7 +43,8 @@ export default function DomainsPage() {
 
   // Search queries
   const [searchVrfQuery, setSearchVrfQuery] = useState('');
-  const [searchIpQuery, setSearchIpQuery] = useState('');
+  const [searchNetworkQuery, setSearchNetworkQuery] = useState('');
+  const [searchIpsByPrefix, setSearchIpsByPrefix] = useState({});
 
   // Global Error Listener for debugging
   useEffect(() => {
@@ -137,19 +138,21 @@ export default function DomainsPage() {
     return p.vrf_id === selectedVrf.id || p.vrf === selectedVrf.name;
   });
 
-  // Filter IPs in the selected VRF
-  const filteredIps = ipAddresses.filter(ip => {
+  // Filter Prefixes based on searchNetworkQuery (กล่องค้นหาหลัก)
+  const filteredPrefixes = vrfPrefixes.filter(p => {
+    if (!p || !p.prefix) return false;
+    const query = searchNetworkQuery.toLowerCase();
+    return (
+      p.prefix.toLowerCase().includes(query) ||
+      (p.ringname || '').toLowerCase().includes(query) ||
+      (p.vlan && String(typeof p.vlan === 'object' ? (p.vlan.vid || p.vlan.name || p.vlan.display) : p.vlan).toLowerCase().includes(query))
+    );
+  });
+
+  // Filter IPs in the selected VRF (ดึงมาทั้งหมดเพื่อนำมาจัดกลุ่ม และใช้กล่องค้นหาย่อยในแต่ละวงกรองทีหลัง)
+  const allVrfIps = ipAddresses.filter(ip => {
     if (!selectedVrf || !ip) return false;
     return ip.vrf_id === selectedVrf.id || ip.vrf === selectedVrf.name;
-  }).filter(ip => {
-    const query = searchIpQuery.toLowerCase();
-    return (
-      (ip.address || '').toLowerCase().includes(query) ||
-      (ip.full_address || '').toLowerCase().includes(query) ||
-      (ip.device || '').toLowerCase().includes(query) ||
-      (ip.interface || '').toLowerCase().includes(query) ||
-      (ip.description || '').toLowerCase().includes(query)
-    );
   });
 
   // Group IPs by Prefix
@@ -161,7 +164,7 @@ export default function DomainsPage() {
   });
   const unassignedIps = [];
 
-  filteredIps.forEach(ip => {
+  allVrfIps.forEach(ip => {
     if (!ip) return;
     const matchedPrefix = vrfPrefixes.find(p => p && p.prefix && ipInCidr(ip.address, p.prefix));
     if (matchedPrefix && matchedPrefix.prefix && ipsByPrefix[matchedPrefix.prefix]) {
@@ -265,14 +268,14 @@ export default function DomainsPage() {
                     </h2>
                   </div>
                   <span className="text-[10px] font-mono text-ink-600 px-2 py-0.5 rounded bg-base-950 border border-base-600/30">
-                    {filteredIps.length} Total IPs
+                    {allVrfIps.length} Total IPs
                   </span>
                 </div>
                 <input
                   type="text"
-                  placeholder="ค้นหา IP Address, Prefix, Device, Interface..."
-                  value={searchIpQuery}
-                  onChange={(e) => setSearchIpQuery(e.target.value)}
+                  placeholder="ค้นหา Network / Prefix"
+                  value={searchNetworkQuery}
+                  onChange={(e) => setSearchNetworkQuery(e.target.value)}
                   className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none transition-colors"
                 />
               </div>
@@ -283,17 +286,29 @@ export default function DomainsPage() {
                   <div className="p-12 text-center text-xs text-ink-600 font-mono">
                     <span className="inline-block animate-spin mr-2">⚙️</span> กำลังโหลดข้อมูล...
                   </div>
-                ) : vrfPrefixes.length > 0 || unassignedIps.length > 0 ? (
+                ) : filteredPrefixes.length > 0 || unassignedIps.length > 0 ? (
                   <>
                     {/* Loop over Prefixes */}
-                    {vrfPrefixes.map(p => {
+                    {filteredPrefixes.map(p => {
                       if (!p || !p.prefix) return null;
                       const ips = ipsByPrefix[p.prefix] || [];
+                      const prefixQuery = (searchIpsByPrefix[p.prefix] || '').toLowerCase();
+                      const visibleIps = ips.filter(ip => {
+                        if (!prefixQuery) return true;
+                        return (
+                          (ip.address || '').toLowerCase().includes(prefixQuery) ||
+                          (ip.full_address || '').toLowerCase().includes(prefixQuery) ||
+                          (ip.device || '').toLowerCase().includes(prefixQuery) ||
+                          (ip.interface || '').toLowerCase().includes(prefixQuery) ||
+                          (ip.description || '').toLowerCase().includes(prefixQuery)
+                        );
+                      });
+
                       return (
                         <div key={p.id} className="rounded-lg border border-base-600 bg-base-950/20 overflow-hidden">
                           {/* Prefix Header */}
                           <div className="px-4 py-2 bg-base-950 border-b border-base-600/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="text-xs font-mono font-bold text-cds">{p.prefix}</span>
                               {p.vlan && (
                                 <span className="text-[9px] font-mono bg-base-800 text-ink-300 border border-base-600/30 px-1.5 py-0.5 rounded">
@@ -306,13 +321,25 @@ export default function DomainsPage() {
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] font-mono text-ink-500">
-                              {ips.length} IPs
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="ค้นหา IP หรืออุปกรณ์ในวงนี้..."
+                                value={searchIpsByPrefix[p.prefix] || ''}
+                                onChange={(e) => setSearchIpsByPrefix({
+                                  ...searchIpsByPrefix,
+                                  [p.prefix]: e.target.value
+                                })}
+                                className="rounded border border-base-600 bg-base-900 px-2 py-0.5 text-[10px] text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none w-36 transition-colors"
+                              />
+                              <span className="text-[10px] font-mono text-ink-500">
+                                {visibleIps.length} / {ips.length} IPs
+                              </span>
+                            </div>
                           </div>
 
                           {/* Prefix IPs Table */}
-                          {ips.length > 0 ? (
+                          {visibleIps.length > 0 ? (
                             <table className="w-full text-left text-xs whitespace-nowrap">
                               <thead className="bg-base-900/30 text-[9px] font-mono uppercase text-ink-600 border-b border-base-600/30">
                                 <tr>
@@ -324,7 +351,7 @@ export default function DomainsPage() {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-base-600/10">
-                                {ips.map((ip) => (
+                                {visibleIps.map((ip) => (
                                   <tr key={ip.id} className="hover:bg-base-750/20 transition-colors">
                                     <td className="px-4 py-2.5 font-mono text-nds">{ip.full_address}</td>
                                     <td className="px-4 py-2.5">
@@ -343,7 +370,7 @@ export default function DomainsPage() {
                             </table>
                           ) : (
                             <div className="p-4 text-center text-xs text-ink-600 font-mono">
-                              ไม่มี IP Address ภายใต้เครือข่ายย่อยนี้
+                              ไม่มี IP Address ที่ตรงกับการค้นหาภายใต้เครือข่ายย่อยนี้
                             </div>
                           )}
                         </div>
@@ -351,42 +378,76 @@ export default function DomainsPage() {
                     })}
 
                     {/* Unassigned/Other IPs */}
-                    {unassignedIps.length > 0 && (
-                      <div className="rounded-lg border border-base-600 bg-base-950/20 overflow-hidden">
-                        <div className="px-4 py-2 bg-base-950 border-b border-base-600/50 flex justify-between items-center">
-                          <span className="text-xs font-mono font-bold text-ink-400">📁 Global / Unassigned IPs</span>
-                          <span className="text-[10px] font-mono text-ink-500">{unassignedIps.length} IPs</span>
+                    {unassignedIps.length > 0 && (() => {
+                      const unassignedQuery = (searchIpsByPrefix['unassigned'] || '').toLowerCase();
+                      const visibleUnassigned = unassignedIps.filter(ip => {
+                        if (!unassignedQuery) return true;
+                        return (
+                          (ip.address || '').toLowerCase().includes(unassignedQuery) ||
+                          (ip.full_address || '').toLowerCase().includes(unassignedQuery) ||
+                          (ip.device || '').toLowerCase().includes(unassignedQuery) ||
+                          (ip.interface || '').toLowerCase().includes(unassignedQuery) ||
+                          (ip.description || '').toLowerCase().includes(unassignedQuery)
+                        );
+                      });
+
+                      return (
+                        <div className="rounded-lg border border-base-600 bg-base-950/20 overflow-hidden">
+                          <div className="px-4 py-2 bg-base-950 border-b border-base-600/50 flex justify-between items-center">
+                            <span className="text-xs font-mono font-bold text-ink-400">📁 Global / Unassigned IPs</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="ค้นหา IP หรืออุปกรณ์..."
+                                value={searchIpsByPrefix['unassigned'] || ''}
+                                onChange={(e) => setSearchIpsByPrefix({
+                                  ...searchIpsByPrefix,
+                                  unassigned: e.target.value
+                                })}
+                                className="rounded border border-base-600 bg-base-900 px-2 py-0.5 text-[10px] text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none w-36 transition-colors"
+                              />
+                              <span className="text-[10px] font-mono text-ink-500">
+                                {visibleUnassigned.length} / {unassignedIps.length} IPs
+                              </span>
+                            </div>
+                          </div>
+                          {visibleUnassigned.length > 0 ? (
+                            <table className="w-full text-left text-xs whitespace-nowrap">
+                              <thead className="bg-base-900/30 text-[9px] font-mono uppercase text-ink-600 border-b border-base-600/30">
+                                <tr>
+                                  <th className="px-4 py-2">IP Address</th>
+                                  <th className="px-4 py-2">Status</th>
+                                  <th className="px-4 py-2">Device</th>
+                                  <th className="px-4 py-2">Interface</th>
+                                  <th className="px-4 py-2">Description</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-base-600/10">
+                                {visibleUnassigned.map((ip) => (
+                                  <tr key={ip.id} className="hover:bg-base-750/20 transition-colors">
+                                    <td className="px-4 py-2.5 font-mono text-nds">{ip.full_address}</td>
+                                    <td className="px-4 py-2.5">
+                                      <span className="rounded bg-green-500/10 px-1.5 py-0.2 text-[9px] text-green-400 border border-green-500/10 uppercase font-mono">
+                                        {ip.status}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-ink-200">{ip.device}</td>
+                                    <td className="px-4 py-2.5 font-mono text-ink-400">{ip.interface}</td>
+                                    <td className="px-4 py-2.5 text-ink-600 max-w-[150px] truncate" title={ip.description}>
+                                      {ip.description || '-'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="p-4 text-center text-xs text-ink-600 font-mono">
+                              ไม่มี IP Address ที่ตรงกับการค้นหา
+                            </div>
+                          )}
                         </div>
-                        <table className="w-full text-left text-xs whitespace-nowrap">
-                          <thead className="bg-base-900/30 text-[9px] font-mono uppercase text-ink-600 border-b border-base-600/30">
-                            <tr>
-                              <th className="px-4 py-2">IP Address</th>
-                              <th className="px-4 py-2">Status</th>
-                              <th className="px-4 py-2">Device</th>
-                              <th className="px-4 py-2">Interface</th>
-                              <th className="px-4 py-2">Description</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-base-600/10">
-                            {unassignedIps.map((ip) => (
-                              <tr key={ip.id} className="hover:bg-base-750/20 transition-colors">
-                                <td className="px-4 py-2.5 font-mono text-nds">{ip.full_address}</td>
-                                <td className="px-4 py-2.5">
-                                  <span className="rounded bg-green-500/10 px-1.5 py-0.2 text-[9px] text-green-400 border border-green-500/10 uppercase font-mono">
-                                    {ip.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2.5 text-ink-200">{ip.device}</td>
-                                <td className="px-4 py-2.5 font-mono text-ink-400">{ip.interface}</td>
-                                <td className="px-4 py-2.5 text-ink-600 max-w-[150px] truncate" title={ip.description}>
-                                  {ip.description || '-'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="p-12 text-center text-xs text-ink-650 font-mono">

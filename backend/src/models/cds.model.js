@@ -1,5 +1,5 @@
 /**
- * Model ของทีม CDS (Core Design Services)
+ * Model ของทีม CDS (Customer Design Service)
  * ตอนนี้เป็น in-memory mock data — พร้อมสลับไปใช้ฐานข้อมูลจริงในอนาคต
  */
 

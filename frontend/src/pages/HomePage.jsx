@@ -67,7 +67,7 @@ export default function HomePage() {
             CDS WORKSPACE
           </span>
           <h2 className="mt-4 font-display text-4xl md:text-5xl font-bold text-ink-100 transition-colors duration-300 group-hover:text-cds">
-            Core Design Services
+            Customer Design Service
           </h2>
           {/* <p className="mt-3 max-w-md text-sm text-ink-400 leading-relaxed">
             ระบบควบคุมและจัดการ Core Network, Data Center Interconnect และมาตรฐานโครงสร้างพื้นฐานของทีม CDS

@@ -1,6 +1,6 @@
 # Network Portal — NDS / CDS
 
-เว็บพอร์ทัลกลางสำหรับทีม **NDS (Network Design Services)** และ **CDS (Core Design Services)**
+เว็บพอร์ทัลกลางสำหรับทีม **NDS (Network Design Services)** และ **CDS (Customer Design Service)**
 งานด้าน Network โดยแยกหน้าการทำงานของแต่ละทีมออกจากกันตั้งแต่ต้น แต่ใช้ backend และ component กลางร่วมกัน
 เพื่อให้ต่อยอด (เพิ่มทีมใหม่ / เพิ่มฟีเจอร์ใหม่) ได้ง่ายในอนาคต
 

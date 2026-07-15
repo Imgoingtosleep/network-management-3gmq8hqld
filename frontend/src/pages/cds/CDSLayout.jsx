@@ -24,13 +24,13 @@ export default function CDSLayout() {
         <div className="flex items-center justify-between border-b border-base-600/30 pb-6">
           <div>
             <span className="rounded-full border border-cds/30 bg-cds/10 px-3 py-1 font-mono text-xs tracking-widest text-cds">
-              CDS CORE DESIGN SERVICES
+              CDS CUSTOMER DESIGN SERVICE
             </span>
             <h1 className="mt-4 font-display text-3xl font-semibold text-ink-100 uppercase tracking-wide">
               {currentItem?.label}
             </h1>
             <p className="mt-1 text-xs text-ink-400">
-              ระบบบริหารจัดการและโครงสร้างพื้นฐานสำหรับทีม Core Design Services (CDS)
+              ระบบบริหารจัดการและโครงสร้างพื้นฐานสำหรับทีม Customer Design Service (CDS)
             </p>
           </div>
         </div>
