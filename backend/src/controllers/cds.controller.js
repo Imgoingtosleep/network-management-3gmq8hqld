@@ -66,4 +66,13 @@ async function getDashboardData(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData };
+async function listVlans(req, res, next) {
+  try {
+    const data = await netboxService.getVlans();
+    return ok(res, data, 'ดึงรายการ VLANs จาก Netbox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans };

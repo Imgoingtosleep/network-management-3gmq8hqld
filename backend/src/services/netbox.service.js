@@ -1215,7 +1215,19 @@ async function getVlans() {
     return memoryCache.vlans.data;
   }
   const raw = await fetchAllPages('/ipam/vlans/');
-  const mapped = raw.map(v => ({ id: v.id, name: v.name, vid: v.vid, display: `${v.name} (${v.vid})` }));
+  const mapped = raw.map(v => ({
+    id: v.id,
+    name: v.name,
+    vid: v.vid,
+    display: `${v.name} (${v.vid})`,
+    site: v.site ? v.site.name : '-',
+    group: v.group ? v.group.name : '-',
+    prefixes: v.prefixes ? v.prefixes.map(p => p.prefix).join(', ') : '-',
+    tenant: v.tenant ? v.tenant.name : '-',
+    status: v.status ? (typeof v.status === 'object' ? v.status.label : v.status) : '-',
+    role: v.role ? v.role.name : '-',
+    description: v.description || '-'
+  }));
   memoryCache.vlans.data = mapped;
   memoryCache.vlans.timestamp = now;
   return mapped;

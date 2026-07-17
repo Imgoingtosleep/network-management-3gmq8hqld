@@ -7,6 +7,7 @@ const menuItems = [
   { label: 'Device Types', value: 'device-types', path: '/nds/device-types' },
   { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
   { label: 'Domains', value: 'domains', path: '/nds/domains' },
+  { label: 'VLANs', value: 'vlans', path: '/nds/vlans' },
 ];
 
 export default function NDSLayout() {
