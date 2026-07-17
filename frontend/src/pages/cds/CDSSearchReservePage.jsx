@@ -105,6 +105,23 @@ export default function CDSSearchReservePage() {
     setShowNodeDropdown(false);
   };
 
+  // ล้างข้อมูล Step 2 ทั้งหมด
+  const handleClearReserve = () => {
+    setReserveData({
+      remark: '',
+      jobRef: '',
+      ipAddress: '',
+      ipGateway: '',
+      modelLSW: '',
+      ipNetwork: '',
+      portUplinkMain: '',
+      portUplinkBackup: '',
+      portDownlinkMain: '',
+      portDownlinkBackup: '',
+      selectedPeRows: [],
+    });
+  };
+
   const handleReserveChange = (field, value) => {
     setReserveData((prev) => ({ ...prev, [field]: value }));
   };
@@ -582,16 +599,25 @@ export default function CDSSearchReservePage() {
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4">
-              <button
-                onClick={() => setActiveStep(1)}
-                className="inline-flex items-center gap-2 rounded-lg border border-base-600 bg-base-950/60 px-5 py-2.5 text-sm font-semibold text-ink-400 
-                           hover:text-ink-100 hover:bg-base-800 active:scale-[0.97] transition-all duration-200"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
-                </svg>
-                Back
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveStep(1)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-base-600 bg-base-950/60 px-5 py-2.5 text-sm font-semibold text-ink-400 
+                             hover:text-ink-100 hover:bg-base-800 active:scale-[0.97] transition-all duration-200"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                  </svg>
+                  Back
+                </button>
+                <button
+                  onClick={handleClearReserve}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-5 py-2.5 text-sm font-semibold text-red-400 
+                             hover:bg-red-500/20 active:scale-[0.97] transition-all duration-200"
+                >
+                  Clear
+                </button>
+              </div>
               <button
                 className="inline-flex items-center gap-2 rounded-lg border border-cds/30 bg-cds px-6 py-2.5 text-sm font-semibold text-base-950 
                            hover:bg-cds/90 active:scale-[0.97] transition-all duration-200 shadow-[0_0_20px_rgba(255,154,61,0.2)]"
