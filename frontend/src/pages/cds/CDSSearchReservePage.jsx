@@ -514,6 +514,72 @@ export default function CDSSearchReservePage() {
               <DisplayField label="Ring Name" value={selectedNode?.ringName} placeholder="—" />
             </div>
 
+            {/* Select Port PE Section Header */}
+            <div className="flex items-center gap-3 pt-4">
+              <div className="h-px flex-1 bg-gradient-to-r from-cds/40 to-transparent" />
+              <span className="text-xs font-mono font-bold text-cds uppercase tracking-widest">Select Port PE</span>
+              <div className="h-px flex-1 bg-gradient-to-l from-cds/40 to-transparent" />
+            </div>
+
+            {/* Select Port PE Table */}
+            <div className="rounded-xl border border-base-600 bg-base-950 overflow-hidden shadow-glow">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono border-collapse">
+                  <thead>
+                    <tr className="border-b border-base-600 bg-base-900/80 text-ink-400 font-semibold uppercase tracking-wider">
+                      <th className="px-4 py-3 text-center w-12">Select</th>
+                      <th className="px-4 py-3">PE ID</th>
+                      <th className="px-4 py-3">PE Name</th>
+                      <th className="px-4 py-3">PE IP</th>
+                      <th className="px-4 py-3">PE Port (MTU)</th>
+                      <th className="px-4 py-3">AGG Name</th>
+                      <th className="px-4 py-3">AGG Port</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-base-600/30 text-ink-100">
+                    {[
+                      { peId: 'PE-01', peName: 'PE-BKK-01', peIp: '10.254.1.1', pePort: 'GigabitEthernet0/0/1', mtu: '1500', aggName: selectedNode?.aggregation || 'AGG-BKK-01', aggPort: '10G-Port-1/1' },
+                      { peId: 'PE-02', peName: 'PE-BKK-02', peIp: '10.254.1.2', pePort: 'GigabitEthernet0/0/2', mtu: '9000', aggName: selectedNode?.aggregation || 'AGG-BKK-01', aggPort: '10G-Port-1/2' },
+                    ].map((row, idx) => {
+                      const isRowSelected = reserveData.selectedPeRows?.includes(row.peId) || false;
+                      return (
+                        <tr
+                          key={idx}
+                          className={`hover:bg-cds/5 transition-colors duration-150 ${isRowSelected ? 'bg-cds/5' : ''}`}
+                        >
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isRowSelected}
+                              onChange={(e) => {
+                                const selected = reserveData.selectedPeRows || [];
+                                const nextSelected = e.target.checked
+                                  ? [...selected, row.peId]
+                                  : selected.filter(id => id !== row.peId);
+                                handleReserveChange('selectedPeRows', nextSelected);
+                              }}
+                              className="rounded border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap font-semibold text-cds">{row.peId}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">{row.peName}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-blue-400">{row.peIp}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span>{row.pePort}</span>
+                              <span className="text-[10px] text-ink-600">MTU: {row.mtu}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">{row.aggName}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">{row.aggPort}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4">
               <button
