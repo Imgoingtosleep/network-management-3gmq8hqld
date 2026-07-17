@@ -30,9 +30,6 @@ export default function CDSLayout() {
             <h1 className="mt-4 font-display text-3xl font-semibold text-ink-100 uppercase tracking-wide">
               {currentItem?.label}
             </h1>
-            <p className="mt-1 text-xs text-ink-400">
-              ระบบบริหารจัดการและโครงสร้างพื้นฐานสำหรับทีม Customer Design Service (CDS)
-            </p>
           </div>
         </div>
 

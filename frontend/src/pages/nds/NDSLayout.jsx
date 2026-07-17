@@ -27,9 +27,6 @@ export default function NDSLayout() {
             <h1 className="mt-4 font-display text-3xl font-semibold text-ink-100 uppercase tracking-wide">
               {currentItem?.label}
             </h1>
-            <p className="mt-1 text-xs text-ink-400">
-              การบริหารจัดการและสถาปัตยกรรมโครงข่ายทีม Network Design Services (NDS)
-            </p>
           </div>
         </div>
 
