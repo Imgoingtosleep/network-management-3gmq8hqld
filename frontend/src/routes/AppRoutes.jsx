@@ -12,6 +12,7 @@ import CDSSearchReservePage from '../pages/cds/CDSSearchReservePage.jsx';
 import CDSTopologyMapPage from '../pages/cds/CDSTopologyMapPage.jsx';
 import CDSBulkImportPage from '../pages/cds/CDSBulkImportPage.jsx';
 import CDSDomainIPPage from '../pages/cds/CDSDomainIPPage.jsx';
+import CDSDomainDemoPage from '../pages/cds/CDSDomainDemoPage.jsx';
 import CDSModelsPage from '../pages/cds/CDSModelsPage.jsx';
 import CDSSiteCodePage from '../pages/cds/CDSSiteCodePage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
@@ -56,6 +57,7 @@ export default function AppRoutes() {
             <Route path="topology-map" element={<CDSTopologyMapPage />} />
             <Route path="bulk-import" element={<CDSBulkImportPage />} />
             <Route path="domain-ip" element={<CDSDomainIPPage />} />
+            <Route path="domain-demo" element={<CDSDomainDemoPage />} />
             <Route path="models" element={<CDSModelsPage />} />
             <Route path="site-code" element={<CDSSiteCodePage />} />
           </Route>
