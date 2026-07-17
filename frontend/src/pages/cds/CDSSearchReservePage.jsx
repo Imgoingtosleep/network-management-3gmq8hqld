@@ -6,16 +6,7 @@ const steps = [
 ];
 
 // ตัวอย่างข้อมูล Node ID พร้อมรายละเอียด Network (จะเปลี่ยนเป็นดึงจาก API ได้ภายหลัง)
-const mockNodeData = [
-  { nodeId: 'ACC-SW-BKK-01', idNetwork: 'NW-001', areaGroup: 'Central', area: 'Bangkok', ipAddress: '10.0.1.1', siteCode: 'BKK-DC-01', siteName: 'Bangkok Data Center 1', nodeType: 'Access Switch', nodeName: 'BKK-ACC-SW-01', status: 'Active', domain: 'VRF-CUSTOMER-A', aggregation: 'AGG-BKK-01', ipNetworks: ['10.0.1.0/24', '10.0.1.128/25', '172.16.1.0/24'], useFor: 'Corporate Clients', ringName: 'RING-BKK-01' },
-  { nodeId: 'ACC-SW-BKK-02', idNetwork: 'NW-002', areaGroup: 'Central', area: 'Bangkok', ipAddress: '10.0.1.2', siteCode: 'BKK-DC-02', siteName: 'Bangkok Data Center 2', nodeType: 'Access Switch', nodeName: 'BKK-ACC-SW-02', status: 'Active', domain: 'VRF-CUSTOMER-B', aggregation: 'AGG-BKK-02', ipNetworks: ['10.0.2.0/24', '10.0.2.128/25'], useFor: 'Government Projects', ringName: 'RING-BKK-02' },
-  { nodeId: 'ACC-SW-CNX-01', idNetwork: 'NW-003', areaGroup: 'North', area: 'Chiang Mai', ipAddress: '10.0.2.1', siteCode: 'CNX-DC-01', siteName: 'Chiang Mai Data Center', nodeType: 'Distribution Switch', nodeName: 'CNX-ACC-SW-01', status: 'Active', domain: 'VRF-CUSTOMER-A', aggregation: 'AGG-CNX-01', ipNetworks: ['10.0.3.0/24', '172.16.3.0/24'], useFor: 'Retail Chain', ringName: 'RING-CNX-01' },
-  { nodeId: 'ACC-SW-CNX-02', idNetwork: 'NW-004', areaGroup: 'North', area: 'Chiang Mai', ipAddress: '10.0.2.2', siteCode: 'CNX-DC-02', siteName: 'Chiang Mai Data Center 2', nodeType: 'Access Switch', nodeName: 'CNX-ACC-SW-02', status: 'Planned', domain: 'VRF-CUSTOMER-C', aggregation: 'AGG-CNX-01', ipNetworks: ['10.0.4.0/24'], useFor: 'Public Wi-Fi', ringName: 'RING-CNX-02' },
-  { nodeId: 'ACC-SW-HKT-01', idNetwork: 'NW-005', areaGroup: 'South', area: 'Phuket', ipAddress: '10.0.3.1', siteCode: 'HKT-DC-01', siteName: 'Phuket Data Center', nodeType: 'Access Switch', nodeName: 'HKT-ACC-SW-01', status: 'Active', domain: 'VRF-CUSTOMER-A', aggregation: 'AGG-HKT-01', ipNetworks: ['10.0.5.0/24', '172.16.5.0/24'], useFor: 'Hotel Group', ringName: 'RING-HKT-01' },
-  { nodeId: 'ACC-SW-KKN-01', idNetwork: 'NW-006', areaGroup: 'Northeast', area: 'Khon Kaen', ipAddress: '10.0.4.1', siteCode: 'KKN-DC-01', siteName: 'Khon Kaen Data Center', nodeType: 'Distribution Switch', nodeName: 'KKN-ACC-SW-01', status: 'Active', domain: 'VRF-CUSTOMER-B', aggregation: 'AGG-KKN-01', ipNetworks: ['10.0.6.0/24'], useFor: 'University Network', ringName: 'RING-KKN-01' },
-  { nodeId: 'ACC-SW-NKR-01', idNetwork: 'NW-007', areaGroup: 'Central', area: 'Nakhon Ratchasima', ipAddress: '10.0.5.1', siteCode: 'NKR-DC-01', siteName: 'Nakhon Ratchasima DC', nodeType: 'Access Switch', nodeName: 'NKR-ACC-SW-01', status: 'Maintenance', domain: 'VRF-CUSTOMER-A', aggregation: 'AGG-NKR-01', ipNetworks: ['10.0.7.0/24', '172.16.7.0/24'], useFor: 'Industrial Zone', ringName: 'RING-NKR-01' },
-  { nodeId: 'ACC-SW-UDN-01', idNetwork: 'NW-008', areaGroup: 'Northeast', area: 'Udon Thani', ipAddress: '10.0.6.1', siteCode: 'UDN-DC-01', siteName: 'Udon Thani Data Center', nodeType: 'Access Switch', nodeName: 'UDN-ACC-SW-01', status: 'Active', domain: 'VRF-CUSTOMER-C', aggregation: 'AGG-UDN-01', ipNetworks: ['10.0.8.0/24'], useFor: 'Smart City Project', ringName: 'RING-UDN-01' },
-];
+const mockNodeData = [];
 
 // ตัวอย่าง Model LSW จาก Netbox (จะเปลี่ยนเป็นดึงจาก API ได้ภายหลัง)
 const mockModelLSW = [
