@@ -800,6 +800,64 @@ async function getDeviceDetails(deviceId) {
   }
 }
 
+async function getAvailableIps(prefixStr) {
+  try {
+    if (!prefixStr) return { success: false, available_ips: [] };
+    const cleanPrefix = prefixStr.split(' ')[0].trim();
+
+    // 1. ค้นหา Prefix ID จาก NetBox
+    try {
+      const prefixObjResp = await netboxService.get(`/ipam/prefixes/?prefix=${encodeURIComponent(cleanPrefix)}&limit=1`);
+      if (Array.isArray(prefixObjResp) && prefixObjResp.length > 0 && prefixObjResp[0].id) {
+        const prefixId = prefixObjResp[0].id;
+        // เรียก NetBox Native Endpoint /available-ips/
+        const availResp = await netboxService.getSingle(`/ipam/prefixes/${prefixId}/available-ips/`);
+        if (Array.isArray(availResp) && availResp.length > 0) {
+          const ips = availResp.map((item) => (typeof item === 'object' && item.address ? item.address.split('/')[0] : String(item)));
+          return { success: true, prefix: cleanPrefix, available_ips: ips };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('NetBox native available-ips endpoint warning:', apiErr.message);
+    }
+
+    // 2. Fallback: ดึงรายการ IP Address ที่ถูกใช้งานแล้วใน NetBox (Assigned IPs)
+    const assignedIpSet = new Set();
+    try {
+      const assignedResp = await netboxService.get(`/ipam/ip-addresses/?parent=${encodeURIComponent(cleanPrefix)}&limit=1000`);
+      if (Array.isArray(assignedResp)) {
+        assignedResp.forEach((ipObj) => {
+          if (ipObj.address) {
+            assignedIpSet.add(ipObj.address.split('/')[0]);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('NetBox parent IP query warning:', e.message);
+    }
+
+    // 3. กรองเฉพาะ IP Address ที่ยังไม่เคยถูกสร้าง/แจกจ่ายใน NetBox
+    const match = cleanPrefix.match(/(\d+\.\d+\.\d+)\.\d+/);
+    if (match) {
+      const basePrefix = match[1];
+      const freeIps = [];
+      for (let host = 2; host <= 254; host++) {
+        const candidate = `${basePrefix}.${host}`;
+        if (!assignedIpSet.has(candidate)) {
+          freeIps.push(candidate);
+          if (freeIps.length >= 50) break;
+        }
+      }
+      return { success: true, prefix: cleanPrefix, available_ips: freeIps };
+    }
+
+    return { success: false, available_ips: [] };
+  } catch (err) {
+    console.error('Error getting available IPs for prefix:', err);
+    return { success: false, available_ips: [] };
+  }
+}
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -809,4 +867,5 @@ module.exports = {
   getSiteTopology,
   getPathTrace,
   getDeviceDetails,
+  getAvailableIps,
 };

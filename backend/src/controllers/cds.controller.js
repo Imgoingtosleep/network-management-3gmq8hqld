@@ -113,4 +113,14 @@ async function getDeviceDetails(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace, getDeviceDetails };
+async function getAvailableIps(req, res, next) {
+  try {
+    const prefix = req.query.prefix || '';
+    const data = await cdsService.getAvailableIps(prefix);
+    return ok(res, data, 'ดึงรายการ IP Address ที่ว่างสำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace, getDeviceDetails, getAvailableIps };

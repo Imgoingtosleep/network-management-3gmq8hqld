@@ -20,5 +20,6 @@ router.get('/topology', cdsController.getSiteTopology);
 router.get('/topology/:site_code', cdsController.getSiteTopology);
 router.get('/path-trace', cdsController.getPathTrace);
 router.get('/device-details/:id', cdsController.getDeviceDetails);
+router.get('/available-ips', cdsController.getAvailableIps);
 
 module.exports = router;

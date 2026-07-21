@@ -14,4 +14,5 @@ export const cdsApi = {
   getSiteTopology: (siteCode = '') => axiosClient.get(`/cds/topology${siteCode ? `/${encodeURIComponent(siteCode)}` : ''}`),
   getPathTrace: (query = '') => axiosClient.get(`/cds/path-trace?query=${encodeURIComponent(query)}`),
   getDeviceDetails: (id) => axiosClient.get(`/cds/device-details/${id}`),
+  getAvailableIps: (prefix = '') => axiosClient.get(`/cds/available-ips?prefix=${encodeURIComponent(prefix)}`),
 };

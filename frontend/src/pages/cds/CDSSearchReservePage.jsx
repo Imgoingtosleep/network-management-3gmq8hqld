@@ -409,30 +409,40 @@ export default function CDSSearchReservePage() {
   // State สำหรับรายการ IP Address ที่ว่างใน IP Network ที่เลือก
   const [availableIpOptions, setAvailableIpOptions] = useState([]);
 
-  // เมื่อเลือก IP Network → คำนวณ Gateway IP อัตโนมัติ + สร้างรายการ IP Address ที่ว่างเป็น Dropdown
-  const handleIpNetworkSelect = (netVal) => {
+  // เมื่อเลือก IP Network → ดึงรายการ IP Address ที่ยังว่างอยู่จาก NetBox IPAM โดยตรง + คำนวณ Gateway IP
+  const handleIpNetworkSelect = async (netVal) => {
     let gatewayIp = '';
-    let freeIps = [];
 
     if (netVal) {
       const match = netVal.match(/(\d+\.\d+\.\d+)\.\d+/);
       if (match) {
-        const prefix = match[1]; // เช่น "10.134.100"
-        gatewayIp = `${prefix}.1`;
-        
-        // สร้างรายการ IP Address ที่ว่างใน Subnet นั้น
-        const ipNumbers = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25, 30, 50, 100];
-        freeIps = ipNumbers.map((num) => `${prefix}.${num}`);
+        gatewayIp = `${match[1]}.1`;
       }
     }
 
-    setAvailableIpOptions(freeIps);
     setReserveData((prev) => ({
       ...prev,
       ipNetwork: netVal,
       ipGateway: gatewayIp,
-      ipAddress: freeIps.length > 0 ? freeIps[0] : '',
+      ipAddress: '',
     }));
+    setAvailableIpOptions([]);
+
+    if (netVal) {
+      try {
+        const res = await cdsApi.getAvailableIps(netVal);
+        const freeIps = res.data?.data?.available_ips || res.data?.available_ips || [];
+        if (Array.isArray(freeIps) && freeIps.length > 0) {
+          setAvailableIpOptions(freeIps);
+          setReserveData((prev) => ({
+            ...prev,
+            ipAddress: freeIps[0],
+          }));
+        }
+      } catch (err) {
+        console.error('Error fetching available IPs from NetBox:', err);
+      }
+    }
   };
 
   // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
