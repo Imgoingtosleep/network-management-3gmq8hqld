@@ -1245,6 +1245,11 @@ async function getInterfaceTemplates(deviceTypeId) {
   return results;
 }
 
+async function getDeviceInterfaces(deviceId) {
+  const results = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+  return results;
+}
+
 async function getInterfaceTypeChoices() {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -1302,5 +1307,6 @@ module.exports = {
   createPrefix,
   deletePrefix,
   getVlans,
-  getInterfaceTypeChoices
+  getInterfaceTypeChoices,
+  getDeviceInterfaces
 };

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import NDSPageContainer from '../../components/NDSPageContainer.jsx';
 import { ndsApi } from '../../api/nds.api.js';
 
-export default function DevicesPage() {
+export default function CDSDevicesPage() {
   const [selectedDevices, setSelectedDevices] = useState([]);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('All');
   const [selectedDeviceType, setSelectedDeviceType] = useState('All');
@@ -370,7 +370,7 @@ export default function DevicesPage() {
                 setSelectedRoleFilter(e.target.value);
                 setSelectedDevices([]); // Clear selected when filter changes
               }}
-              className="rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none font-mono min-w-[180px]"
+              className="rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-cds focus:outline-none font-mono min-w-[180px]"
             >
               {uniqueRoles.map(role => (
                 <option key={role} value={role}>{role}</option>
@@ -378,7 +378,7 @@ export default function DevicesPage() {
             </select>
             {selectedDevices.length > 0 && (
               <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4 animate-in fade-in duration-200">
-                Selected: <span className="text-nds font-bold">{selectedDevices.length}</span> devices
+                Selected: <span className="text-cds font-bold">{selectedDevices.length}</span> devices
               </span>
             )}
           </div>
@@ -386,7 +386,7 @@ export default function DevicesPage() {
             <button
               type="button"
               onClick={handleCreateClick}
-              className="px-4 py-2 text-xs font-semibold rounded-lg bg-nds border border-nds text-base-950 hover:bg-nds-hover transition-all shadow-[0_0_15px_rgba(76,141,255,0.15)]"
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-cds border border-cds text-base-950 hover:bg-cds/95 transition-all shadow-[0_0_15px_rgba(255,154,61,0.15)]"
             >
               Create Device
             </button>
@@ -427,7 +427,7 @@ export default function DevicesPage() {
                     type="checkbox"
                     checked={filteredList.length > 0 && selectedDevices.length === filteredList.length}
                     onChange={() => toggleSelectAll(filteredList)}
-                    className="rounded border-base-600 text-nds focus:ring-nds focus:ring-opacity-25 bg-base-950 w-4 h-4 cursor-pointer"
+                    className="rounded border-base-600 text-cds focus:ring-cds focus:ring-opacity-25 bg-base-950 w-4 h-4 cursor-pointer"
                   />
                 </th>
                 <th className="px-5 py-3.5">nodeid</th>
@@ -450,21 +450,21 @@ export default function DevicesPage() {
                 return (
                   <tr 
                     key={item.id} 
-                    className={`hover:bg-base-700/20 transition-colors ${isSelected ? 'bg-nds/5' : ''}`}
+                    className={`hover:bg-base-700/20 transition-colors ${isSelected ? 'bg-cds/5' : ''}`}
                   >
                     <td className="px-5 py-4 text-center">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelectOne(item)}
-                        className="rounded border-base-600 text-nds focus:ring-nds focus:ring-opacity-25 bg-base-950 w-4 h-4 cursor-pointer"
+                        className="rounded border-base-600 text-cds focus:ring-cds focus:ring-opacity-25 bg-base-950 w-4 h-4 cursor-pointer"
                       />
                     </td>
                     <td className="px-5 py-4 font-mono text-xs text-ink-500">{item.nodeid}</td>
                     <td className="px-5 py-4 font-mono font-medium text-ink-100">
                       <button
                         onClick={() => handleViewInterfaces(item)}
-                        className="text-nds hover:underline focus:outline-none text-left font-semibold"
+                        className="text-cds hover:underline focus:outline-none text-left font-semibold"
                       >
                         {item.name}
                       </button>
@@ -493,7 +493,7 @@ export default function DevicesPage() {
                     <td className="px-5 py-4 text-ink-400">{item.rack}</td>
                     <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.manufacturer}</td>
                     <td className="px-5 py-4 text-ink-400">{item.type}</td>
-                    <td className="px-5 py-4 font-mono text-nds">{item.ip}</td>
+                    <td className="px-5 py-4 font-mono text-cds">{item.ip}</td>
                     <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
                   </tr>
                 );
@@ -512,7 +512,7 @@ export default function DevicesPage() {
 
   return (
     <div>
-      <NDSPageContainer
+      <NDSPageContainer accent="cds"
         fetchData={() => ndsApi.getDevices()}
         refreshTrigger={refreshTrigger}
         renderTable={renderDeviceTable}
@@ -551,7 +551,7 @@ export default function DevicesPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-2 text-xs font-mono border-b-2 transition-all ${
                     activeTab === tab.id
-                      ? 'border-nds text-nds font-semibold'
+                      ? 'border-cds text-cds font-semibold'
                       : 'border-transparent text-ink-400 hover:text-ink-200'
                   }`}
                 >
@@ -578,7 +578,7 @@ export default function DevicesPage() {
                       value={formData.name}
                       onChange={handleInputChange}
                       placeholder="e.g. bkk-pe-01"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     />
                   </div>
@@ -591,7 +591,7 @@ export default function DevicesPage() {
                       value={formData.nodeid}
                       onChange={handleInputChange}
                       placeholder="e.g. NODE-BKK-01"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     />
                   </div>
@@ -602,7 +602,7 @@ export default function DevicesPage() {
                       name="status"
                       value={formData.status}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     >
                       <option value="active">Active</option>
@@ -621,7 +621,7 @@ export default function DevicesPage() {
                       name="role"
                       value={formData.role}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     >
                       <option value="">-- เลือก Device Role --</option>
@@ -637,7 +637,7 @@ export default function DevicesPage() {
                       name="device_type"
                       value={formData.device_type}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     >
                       <option value="">-- เลือก Device Type (Model) --</option>
@@ -653,7 +653,7 @@ export default function DevicesPage() {
                       name="platform"
                       value={formData.platform}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Platform --</option>
                       {platforms.map(p => (
@@ -668,7 +668,7 @@ export default function DevicesPage() {
                       name="config_template"
                       value={formData.config_template}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Config Template --</option>
                       {configTemplates.map(ct => (
@@ -685,7 +685,7 @@ export default function DevicesPage() {
                       value={formData.primary_ip4}
                       onChange={handleInputChange}
                       placeholder="e.g. 10.255.0.1/32"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -697,7 +697,7 @@ export default function DevicesPage() {
                       value={formData.primary_ip6}
                       onChange={handleInputChange}
                       placeholder="e.g. 2001:db8::1/128"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -709,7 +709,7 @@ export default function DevicesPage() {
                       value={formData.oob_ip}
                       onChange={handleInputChange}
                       placeholder="e.g. 192.168.1.1/24"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -721,7 +721,7 @@ export default function DevicesPage() {
                       value={formData.tags}
                       onChange={handleInputChange}
                       placeholder="e.g. Production, Core, NDS"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -732,14 +732,14 @@ export default function DevicesPage() {
                       value={formData.description}
                       onChange={handleInputChange}
                       rows={2}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none resize-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none resize-none"
                       placeholder="คำอธิบายอุปกรณ์..."
                     />
                   </div>
 
                   {modalMode === 'create' && (
                     <div className="col-span-1 sm:col-span-2 border border-base-600/30 rounded-xl bg-base-950/30 p-4 mt-2">
-                      <label className="block text-xs font-mono font-semibold text-nds mb-2">Virtual Interfaces (อินเตอร์เฟสเสมือน)</label>
+                      <label className="block text-xs font-mono font-semibold text-cds mb-2">Virtual Interfaces (อินเตอร์เฟสเสมือน)</label>
                       <div className="flex gap-6">
                         <label className="inline-flex items-center text-xs font-mono text-ink-400 cursor-pointer">
                           <input
@@ -747,7 +747,7 @@ export default function DevicesPage() {
                             name="create_vlanif100"
                             checked={formData.create_vlanif100}
                             onChange={(e) => setFormData(prev => ({ ...prev, create_vlanif100: e.target.checked }))}
-                            className="rounded border-base-600 text-nds focus:ring-nds bg-base-950 w-4 h-4 cursor-pointer mr-2"
+                            className="rounded border-base-600 text-cds focus:ring-cds bg-base-950 w-4 h-4 cursor-pointer mr-2"
                           />
                           สร้าง Vlanif100 (Type: virtual)
                         </label>
@@ -757,7 +757,7 @@ export default function DevicesPage() {
                             name="create_vlanif115"
                             checked={formData.create_vlanif115}
                             onChange={(e) => setFormData(prev => ({ ...prev, create_vlanif115: e.target.checked }))}
-                            className="rounded border-base-600 text-nds focus:ring-nds bg-base-950 w-4 h-4 cursor-pointer mr-2"
+                            className="rounded border-base-600 text-cds focus:ring-cds bg-base-950 w-4 h-4 cursor-pointer mr-2"
                           />
                           สร้าง Vlanif115 (Type: virtual)
                         </label>
@@ -776,7 +776,7 @@ export default function DevicesPage() {
                       name="site"
                       value={formData.site}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                       required
                     >
                       <option value="">-- เลือก Site --</option>
@@ -792,7 +792,7 @@ export default function DevicesPage() {
                       name="location"
                       value={formData.location}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Location --</option>
                       {locations.filter(l => !formData.site || l.site === parseInt(formData.site)).map(l => (
@@ -807,7 +807,7 @@ export default function DevicesPage() {
                       name="rack"
                       value={formData.rack}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Rack --</option>
                       {racks.filter(r => !formData.site || r.site === parseInt(formData.site)).map(r => (
@@ -822,7 +822,7 @@ export default function DevicesPage() {
                       name="face"
                       value={formData.face}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือกด้าน (Face) --</option>
                       <option value="front">Front (ด้านหน้า)</option>
@@ -838,7 +838,7 @@ export default function DevicesPage() {
                       value={formData.position}
                       onChange={handleInputChange}
                       placeholder="e.g. 42"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -852,7 +852,7 @@ export default function DevicesPage() {
                       value={formData.latitude}
                       onChange={handleInputChange}
                       placeholder="e.g. 13.736717"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -864,7 +864,7 @@ export default function DevicesPage() {
                       value={formData.longitude}
                       onChange={handleInputChange}
                       placeholder="e.g. 100.523186"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
                 </div>
@@ -881,7 +881,7 @@ export default function DevicesPage() {
                       value={formData.airflow}
                       onChange={handleInputChange}
                       placeholder="e.g. front-to-back"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -893,7 +893,7 @@ export default function DevicesPage() {
                       value={formData.serial}
                       onChange={handleInputChange}
                       placeholder="S/N"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -905,7 +905,7 @@ export default function DevicesPage() {
                       value={formData.asset_tag}
                       onChange={handleInputChange}
                       placeholder="Asset Tag"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -915,7 +915,7 @@ export default function DevicesPage() {
                       name="virtual_chassis"
                       value={formData.virtual_chassis}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Virtual Chassis --</option>
                       {virtualChassises.map(vc => (
@@ -932,7 +932,7 @@ export default function DevicesPage() {
                       value={formData.vc_position}
                       onChange={handleInputChange}
                       placeholder="e.g. 0"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -944,7 +944,7 @@ export default function DevicesPage() {
                       value={formData.vc_priority}
                       onChange={handleInputChange}
                       placeholder="e.g. 255"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
                 </div>
@@ -959,7 +959,7 @@ export default function DevicesPage() {
                       name="tenant_group"
                       value={formData.tenant_group}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Tenant group --</option>
                       {tenantGroups.map(tg => (
@@ -974,7 +974,7 @@ export default function DevicesPage() {
                       name="tenant"
                       value={formData.tenant}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Tenant --</option>
                       {tenants.map(t => (
@@ -991,7 +991,7 @@ export default function DevicesPage() {
                       value={formData.owner_group}
                       onChange={handleInputChange}
                       placeholder="e.g. NDS Team"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
 
@@ -1003,7 +1003,7 @@ export default function DevicesPage() {
                       value={formData.owner}
                       onChange={handleInputChange}
                       placeholder="e.g. Rachata"
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     />
                   </div>
                 </div>
@@ -1018,7 +1018,7 @@ export default function DevicesPage() {
                       name="cluster"
                       value={formData.cluster}
                       onChange={handleInputChange}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs text-ink-100 focus:border-cds focus:outline-none"
                     >
                       <option value="">-- เลือก Cluster --</option>
                       {clusters.map(c => (
@@ -1036,7 +1036,7 @@ export default function DevicesPage() {
                       value={formData.local_context_data}
                       onChange={handleInputChange}
                       rows={6}
-                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs font-mono text-ink-100 focus:border-nds focus:outline-none"
+                      className="mt-1.5 w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs font-mono text-ink-100 focus:border-cds focus:outline-none"
                       placeholder={`{\n  "syslog_server": "10.0.0.1",\n  "ntp_server": "10.0.0.2"\n}`}
                     />
                   </div>
@@ -1056,7 +1056,7 @@ export default function DevicesPage() {
               <button
                 type="button"
                 onClick={handleSave}
-                className="rounded-lg bg-nds px-4 py-2 text-xs font-semibold text-base-950 hover:bg-nds-hover disabled:opacity-50 transition-colors"
+                className="rounded-lg bg-cds px-4 py-2 text-xs font-semibold text-base-950 hover:bg-cds/95 disabled:opacity-50 transition-colors"
                 disabled={saving}
               >
                 {saving ? 'กำลังบันทึก...' : modalMode === 'create' ? 'สร้าง Device' : 'บันทึกไปยัง NetBox'}
@@ -1111,11 +1111,11 @@ export default function DevicesPage() {
           <div className="w-full max-w-4xl rounded-xl border border-base-600 bg-base-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-left flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center border-b border-base-600/30 pb-3">
               <div>
-                <span className="rounded-full border border-nds/30 bg-nds/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-nds mr-2 uppercase">
+                <span className="rounded-full border border-cds/30 bg-cds/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-cds mr-2 uppercase">
                   {viewingDevice?.role}
                 </span>
                 <h3 className="inline-block font-display text-lg font-semibold text-ink-100">
-                  Interfaces of <span className="text-nds font-bold">{viewingDevice?.name}</span> {viewingDevice?.nodeid && `(${viewingDevice.nodeid})`}
+                  Interfaces of <span className="text-cds font-bold">{viewingDevice?.name}</span> {viewingDevice?.nodeid && `(${viewingDevice.nodeid})`}
                 </h3>
               </div>
               <button 

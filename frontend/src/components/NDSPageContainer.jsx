@@ -7,7 +7,8 @@ export default function NDSPageContainer({
   placeholder = "ค้นหาด่วน (เช่น ชื่อ, IP, รุ่น, ไซต์)...",
   refreshTrigger = 0,
   extraFilter = null,
-  onDataLoaded = null
+  onDataLoaded = null,
+  accent = "nds"
 }) {
   const [data, setData] = useState([]);
   const [lookups, setLookups] = useState({});
@@ -145,7 +146,9 @@ export default function NDSPageContainer({
                 onClick={() => setCurrentPage(pageNum)}
                 className={`px-3 py-1.5 text-xs rounded border transition-all ${
                   currentPage === pageNum
-                    ? 'border-nds bg-nds/20 text-nds font-semibold'
+                    ? accent === 'cds'
+                      ? 'border-cds bg-cds/20 text-cds font-semibold'
+                      : 'border-nds bg-nds/20 text-nds font-semibold'
                     : 'border-base-600 bg-base-900 text-ink-400 hover:bg-base-800'
                 }`}
               >
@@ -184,7 +187,9 @@ export default function NDSPageContainer({
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full rounded-lg border border-base-600 bg-base-950 px-3.5 py-2 pl-9 text-xs text-ink-100 placeholder-ink-500 focus:border-nds focus:outline-none focus:ring-1 focus:ring-nds"
+              className={`w-full rounded-lg border border-base-600 bg-base-950 px-3.5 py-2 pl-9 text-xs text-ink-100 placeholder-ink-500 focus:outline-none focus:ring-1 ${
+                accent === 'cds' ? 'focus:border-cds focus:ring-cds' : 'focus:border-nds focus:ring-nds'
+              }`}
             />
             <svg 
               className="absolute left-3 top-2.5 h-4 w-4 text-ink-500 opacity-60" 
@@ -201,7 +206,7 @@ export default function NDSPageContainer({
             </svg>
           </div>
           <div className="text-xs text-ink-400 font-mono">
-            ข้อมูลทั้งหมด: <span className="text-nds font-bold text-sm mx-1">{data.length}</span> รายการ
+            ข้อมูลทั้งหมด: <span className={`font-bold text-sm mx-1 ${accent === 'cds' ? 'text-cds' : 'text-nds'}`}>{data.length}</span> รายการ
             {searchQuery && (
               <>
                 {' '}| ค้นพบ: <span className="text-green-400 font-bold text-sm mx-1">{filteredList.length}</span> รายการ

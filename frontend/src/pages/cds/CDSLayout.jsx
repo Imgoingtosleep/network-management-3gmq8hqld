@@ -9,6 +9,7 @@ const menuItems = [
   { label: 'Domain & IP', value: 'domain-ip', path: '/cds/domain-ip' },
   { label: 'Domain Demo', value: 'domain-demo', path: '/cds/domain-demo' },
   { label: 'VLANs', value: 'vlans', path: '/cds/vlans' },
+  { label: 'Devices', value: 'devices', path: '/cds/devices' },
   { label: 'Models', value: 'models', path: '/cds/models' },
   { label: 'Site Code', value: 'site-code', path: '/cds/site-code' },
 ];

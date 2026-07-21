@@ -30,6 +30,11 @@ async function listDevices(req, res, next) {
     const data = await netboxService.getDevices();
     return ok(res, data, 'ดึงรายการอุปกรณ์จาก Netbox สำเร็จ');
   } catch (err) { return next(err); }
+}async function listDeviceInterfaces(req, res, next) {
+  try {
+    const data = await netboxService.getDeviceInterfaces(req.params.id);
+    return ok(res, data, 'ดึงรายการอินเตอร์เฟสอุปกรณ์สำเร็จ');
+  } catch (err) { return next(err); }
 }
 
 // CRUD Generator Helper to reduce repetitive code
@@ -271,6 +276,7 @@ module.exports = {
   getProject,
   createProject,
   listDevices,
+  listDeviceInterfaces,
   listRegions,
   netboxRedirect,
 
