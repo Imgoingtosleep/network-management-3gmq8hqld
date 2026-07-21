@@ -315,6 +315,10 @@ export default function CDSSearchReservePage() {
     fetchModelTypes();
   }, []);
 
+  const ipNetworkRef = useRef(null);
+  const [ipNetworkSearch, setIpNetworkSearch] = useState('');
+  const [showIpNetworkDropdown, setShowIpNetworkDropdown] = useState(false);
+
   // ปิด dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -323,6 +327,9 @@ export default function CDSSearchReservePage() {
       }
       if (nodeRef.current && !nodeRef.current.contains(e.target)) {
         setShowNodeDropdown(false);
+      }
+      if (ipNetworkRef.current && !ipNetworkRef.current.contains(e.target)) {
+        setShowIpNetworkDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -898,17 +905,81 @@ export default function CDSSearchReservePage() {
               <DisplayField label="Node Name" value={selectedNode?.nodeName} placeholder="—" />
             </div>
 
-            {/* Row 4: Domain (VRF), Aggregation, IP Network */}
+            {/* Row 4: Domain (VRF), Aggregation, Searchable IP Network */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DisplayField label="Domain (VRF)" value={selectedNode?.domain} placeholder="—" />
               <DisplayField label="Aggregation" value={selectedNode?.aggregation} placeholder="—" />
-              <SelectField
-                label="IP Network"
-                value={reserveData.ipNetwork}
-                onChange={(e) => handleIpNetworkSelect(e.target.value)}
-                options={selectedNode?.ipNetworks || []}
-                placeholder="------------"
-              />
+              
+              {/* Searchable IP Network Component */}
+              <div className="flex-1 min-w-0 relative" ref={ipNetworkRef}>
+                <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+                  IP Network
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={
+                      (selectedNode?.ipNetworks || []).length > 0
+                        ? `ค้นหา IP Network (${(selectedNode?.ipNetworks || []).length} Prefixes)...`
+                        : "------------"
+                    }
+                    value={ipNetworkSearch}
+                    onFocus={() => setShowIpNetworkDropdown(true)}
+                    onChange={(e) => {
+                      setIpNetworkSearch(e.target.value);
+                      setShowIpNetworkDropdown(true);
+                    }}
+                    className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200 font-mono"
+                  />
+                  {ipNetworkSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIpNetworkSearch('');
+                        handleIpNetworkSelect('');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-100 transition-colors"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {showIpNetworkDropdown && (
+                  <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-base-700 bg-base-900 shadow-xl py-1">
+                    {(() => {
+                      const allNets = selectedNode?.ipNetworks || [];
+                      const filtered = allNets.filter((net) =>
+                        net.toLowerCase().includes(ipNetworkSearch.toLowerCase())
+                      );
+                      if (filtered.length > 0) {
+                        return filtered.map((net, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setIpNetworkSearch(net);
+                              handleIpNetworkSelect(net);
+                              setShowIpNetworkDropdown(false);
+                            }}
+                            className={`px-4 py-2 text-xs font-mono cursor-pointer hover:bg-cds/15 hover:text-cds transition-colors ${
+                              reserveData.ipNetwork === net ? 'bg-cds/20 text-cds font-bold' : 'text-ink-200'
+                            }`}
+                          >
+                            {net}
+                          </div>
+                        ));
+                      }
+                      return (
+                        <div className="px-4 py-3 text-xs text-ink-600 font-mono text-center">
+                          ไม่พบ IP Network ที่ตรงกับคำค้นหา
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Row 5: IP Address (Vacant IP Dropdown) & IP Gateway (Auto-filled) */}
