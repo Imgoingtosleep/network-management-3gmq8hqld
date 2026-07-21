@@ -772,6 +772,35 @@ async function getDeviceDetails(deviceId) {
       console.warn('Error fetching NetBox VRF prefixes:', pErr);
     }
 
+    // Resolve Aggregation device for the site
+    let aggDeviceName = null;
+    if (conns && conns.length > 0) {
+      const aggConn = conns.find(
+        (c) =>
+          (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
+          (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
+      );
+      if (aggConn) {
+        aggDeviceName = aggConn.remote_device;
+      }
+    }
+
+    if (!aggDeviceName) {
+      // Find Aggregation device in the same site from NetBox devices list
+      const siteAgg = allDevs.find(
+        (d) =>
+          (d.site === devFull.site || d.site_name === devFull.site_name) &&
+          ((d.role_name && d.role_name.toLowerCase().includes('agg')) ||
+            (d.role && d.role.toLowerCase().includes('agg')) ||
+            (d.name && d.name.toUpperCase().includes('AGG')))
+      );
+      if (siteAgg) {
+        aggDeviceName = siteAgg.name;
+      } else if (devFull.site && devFull.site !== 'N/A') {
+        aggDeviceName = `AGG-${devFull.site.toUpperCase()}-01`;
+      }
+    }
+
     const details = {
       id: devFull.id,
       name: devFull.name,
@@ -790,6 +819,7 @@ async function getDeviceDetails(deviceId) {
       primary_ip: devFull.ip !== 'N/A' ? devFull.ip.split('/')[0] : '-',
       connections: conns,
       gateway: gwInfo,
+      aggregation: aggDeviceName,
       ip_networks: ipNetworks,
     };
 

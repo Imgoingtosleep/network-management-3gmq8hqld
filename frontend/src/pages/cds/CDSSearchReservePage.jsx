@@ -368,7 +368,7 @@ export default function CDSSearchReservePage() {
           const resolvedPeFull = dev.gateway?.name || dev.pe_name || net.peName || '90134_BCH-MX480-PE';
 
           // 2. Resolve connected AGG จาก Active Connections ที่มีบทบาทเป็น Aggregation
-          let resolvedAgg = net.aggregation;
+          let resolvedAgg = dev.aggregation || net.aggregation;
           if (dev.connections && dev.connections.length > 0) {
             const aggConn = dev.connections.find(
               (c) =>
@@ -452,8 +452,8 @@ export default function CDSSearchReservePage() {
     }
   };
 
-  // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
-  const handleNodeSelect = (node) => {
+  // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object และดึงข้อมูล PE, AGG, IP Networks
+  const handleNodeSelect = async (node) => {
     setFormData({
       nodeId: node.nodeId,
       idNetwork: node.idNetwork,
@@ -468,6 +468,42 @@ export default function CDSSearchReservePage() {
     setSelectedNode(node);
     setNodeSearch(node.nodeId);
     setShowNodeDropdown(false);
+
+    if (node) {
+      try {
+        const targetId = node.id || node.nodeId;
+        const detailRes = await cdsApi.getDeviceDetails(targetId);
+        if (detailRes.data?.data?.success) {
+          const dev = detailRes.data.data.device;
+          const resolvedPeFull = dev.gateway?.name || dev.pe_name || node.peName || '90134_BCH-MX480-PE';
+
+          let resolvedAgg = dev.aggregation || node.aggregation;
+          if (dev.connections && dev.connections.length > 0) {
+            const aggConn = dev.connections.find(
+              (c) =>
+                (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
+                (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
+            );
+            if (aggConn) {
+              resolvedAgg = aggConn.remote_device;
+            }
+          }
+
+          const calculatedIpNetworks = dev.ip_networks && dev.ip_networks.length > 0 ? dev.ip_networks : (node.ipNetworks || []);
+
+          setSelectedNode((prev) => ({
+            ...prev,
+            ...node,
+            peName: resolvedPeFull,
+            domain: resolvedPeFull,
+            aggregation: resolvedAgg,
+            ipNetworks: calculatedIpNetworks,
+          }));
+        }
+      } catch (err) {
+        console.error('Error resolving PE, AGG and IP networks for selected node:', err);
+      }
+    }
   };
 
   // ล้างข้อมูลทั้งหมด
