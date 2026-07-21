@@ -14,6 +14,7 @@ router.get('/prefixes', cdsController.listPrefixes);
 router.get('/sites', cdsController.listSites);
 router.get('/ip-addresses', cdsController.listIpAddresses);
 router.get('/dashboard', cdsController.getDashboardData);
+router.post('/dashboard', cdsController.addDashboardData);
 router.get('/vlans', cdsController.listVlans);
 
 module.exports = router;

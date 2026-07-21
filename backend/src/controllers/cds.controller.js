@@ -75,4 +75,13 @@ async function listVlans(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans };
+async function addDashboardData(req, res, next) {
+  try {
+    const data = await cdsService.addDashboardData(req.body);
+    return created(res, data, 'เพิ่มข้อมูลแดชบอร์ด CDS สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData };

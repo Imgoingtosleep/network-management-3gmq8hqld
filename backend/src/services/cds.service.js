@@ -25,4 +25,8 @@ async function getDashboardData() {
   return cdsModel.getDashboardData();
 }
 
-module.exports = { getAllProjects, getProjectById, createProject, getDashboardData };
+async function addDashboardData(item) {
+  return cdsModel.addDashboardItem(item);
+}
+
+module.exports = { getAllProjects, getProjectById, createProject, getDashboardData, addDashboardData };

@@ -9,5 +9,6 @@ export const cdsApi = {
   getSites: () => axiosClient.get('/cds/sites'),
   getIpAddresses: () => axiosClient.get('/cds/ip-addresses'),
   getDashboard: () => axiosClient.get('/cds/dashboard'),
+  addDashboard: (payload) => axiosClient.post('/cds/dashboard', payload),
   getVlans: () => axiosClient.get('/cds/vlans'),
 };

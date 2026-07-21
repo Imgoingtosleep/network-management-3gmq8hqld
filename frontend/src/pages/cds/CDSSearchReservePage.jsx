@@ -1,12 +1,58 @@
 import { useState, useRef, useEffect } from 'react';
+import { cdsApi } from '../../api/cds.api.js';
 
 const steps = [
   { number: 1, label: 'Select Network' },
   { number: 2, label: 'Reserve Port' },
 ];
 
-// ตัวอย่างข้อมูล Node ID พร้อมรายละเอียด Network (จะเปลี่ยนเป็นดึงจาก API ได้ภายหลัง)
-const mockNodeData = [];
+const mockNodeData = [
+  {
+    nodeId: "BKK-SW-01",
+    idNetwork: "NET-BKK-001",
+    areaGroup: "Metropolitan",
+    area: "Bangkok",
+    ipAddress: "10.100.1.10",
+    siteCode: "BKK01",
+    siteName: "Bangkok Head Office",
+    status: "Active",
+    nodeType: "Core Switch",
+    nodeName: "Bangkok-Core-01",
+    domain: "VRF-BKK-PRODUCTION",
+    aggregation: "AGG-BKK-01",
+    ipNetworks: ["10.100.1.0/24", "10.100.2.0/24", "10.100.3.0/24"]
+  },
+  {
+    nodeId: "CNX-SW-02",
+    idNetwork: "NET-CNX-002",
+    areaGroup: "Northern",
+    area: "Chiang Mai",
+    ipAddress: "10.200.1.10",
+    siteCode: "CNX02",
+    siteName: "Chiang Mai Branch",
+    status: "Active",
+    nodeType: "Distribution Switch",
+    nodeName: "ChiangMai-Dist-02",
+    domain: "VRF-CNX-OFFICE",
+    aggregation: "AGG-CNX-02",
+    ipNetworks: ["10.200.1.0/24", "10.200.2.0/24"]
+  },
+  {
+    nodeId: "HKT-SW-03",
+    idNetwork: "NET-HKT-003",
+    areaGroup: "Southern",
+    area: "Phuket",
+    ipAddress: "10.150.1.10",
+    siteCode: "HKT03",
+    siteName: "Phuket DC",
+    status: "Planned",
+    nodeType: "Access Switch",
+    nodeName: "Phuket-Access-03",
+    domain: "VRF-HKT-DC",
+    aggregation: "AGG-HKT-03",
+    ipNetworks: ["10.150.1.0/24", "10.150.2.0/24", "10.150.3.0/24", "10.150.4.0/24"]
+  }
+];
 
 // ตัวอย่าง Model LSW จาก Netbox (จะเปลี่ยนเป็นดึงจาก API ได้ภายหลัง)
 const mockModelLSW = [
@@ -19,6 +65,65 @@ const mockModelLSW = [
   'Juniper EX2300-24T',
   'Juniper EX2300-48T',
 ];
+
+const DisplayField = ({ label, value, placeholder }) => (
+  <div className="flex-1 min-w-0">
+    <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+      {label}
+    </label>
+    <div
+      className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-all duration-300
+        ${value
+          ? 'border-cds/20 bg-cds/5 text-ink-100'
+          : 'border-base-600/40 bg-base-950/50 text-ink-600 italic'
+        }`}
+    >
+      {value || placeholder || 'รอเลือก Node ID'}
+    </div>
+  </div>
+);
+
+const InputField = ({ label, value, onChange, placeholder }) => (
+  <div className="flex-1 min-w-0">
+    <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+      {label}
+    </label>
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 
+                 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200"
+    />
+  </div>
+);
+
+const SelectField = ({ label, value, onChange, options, placeholder }) => (
+  <div className="flex-1 min-w-0">
+    <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+      {label}
+    </label>
+    <select
+      value={value}
+      onChange={onChange}
+      className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100
+                 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200
+                 appearance-none cursor-pointer"
+      style={{
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B6D74'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 12px center',
+        backgroundSize: '16px',
+      }}
+    >
+      <option value="" className="bg-base-950 text-ink-600">{placeholder || 'เลือก...'}</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt} className="bg-base-950 text-ink-100">{opt}</option>
+      ))}
+    </select>
+  </div>
+);
 
 export default function CDSSearchReservePage() {
   const [activeStep, setActiveStep] = useState(1);
@@ -117,67 +222,49 @@ export default function CDSSearchReservePage() {
     setReserveData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Reusable read-only display field component
-  const DisplayField = ({ label, value, placeholder }) => (
-    <div className="flex-1 min-w-0">
-      <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
-        {label}
-      </label>
-      <div
-        className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-all duration-300
-          ${value
-            ? 'border-cds/20 bg-cds/5 text-ink-100'
-            : 'border-base-600/40 bg-base-950/50 text-ink-600 italic'
-          }`}
-      >
-        {value || placeholder || 'รอเลือก Node ID'}
-      </div>
-    </div>
-  );
+  const handleReserveSubmit = async () => {
+    if (!selectedNode) {
+      alert('กรุณาเลือก Node ID ก่อน');
+      return;
+    }
+    if (!reserveData.modelLSW || !reserveData.ipNetwork) {
+      alert('กรุณากรอกข้อมูลและเลือก Model LSW / IP Network');
+      return;
+    }
+    try {
+      const newDashboardItem = {
+        pe_name: 'PE-' + selectedNode.nodeId.split('-')[0] + '-01',
+        ip_loopback: '10.0.0.' + (Math.floor(Math.random() * 250) + 10),
+        model: 'Cisco ASR9001',
+        type: 'Provider Edge',
+        pe_port_list: 'GigabitEthernet0/0/1',
+        pe_vlan_customer: String(Math.floor(Math.random() * 900) + 100),
+        agg_id: selectedNode.aggregation,
+        agg_ip_network: reserveData.ipNetwork,
+        agg_vlan: '100',
+        nw_lsw_id: 'NW-LSW-' + selectedNode.nodeId.split('-')[0] + '-01',
+        nw_lsw_ip: selectedNode.ipAddress,
+        nw_lsw_use_for: 'Office Network',
+        nw_lsw_port: reserveData.portUplinkMain || 'GigabitEthernet0/1',
+        access_lsw_id: selectedNode.nodeId,
+        access_lsw_model: reserveData.modelLSW,
+        access_lsw_port_uplink: reserveData.portUplinkMain || 'GigabitEthernet0/1',
+        access_lsw_port_customer: reserveData.portDownlinkMain || 'GigabitEthernet0/2-24',
+        access_lsw_ip: reserveData.ipAddress || selectedNode.ipAddress,
+        access_lsw_vlan_management: '99',
+      };
+      await cdsApi.addDashboard(newDashboardItem);
+      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ และเพิ่มข้อมูลลงใน Dashboard แล้ว!\nNode: ${selectedNode.nodeId}\nModel LSW: ${reserveData.modelLSW}\nIP Address: ${reserveData.ipAddress || 'Auto IP'}`);
+      handleClearReserve();
+      handleClearNode();
+      setActiveStep(1);
+    } catch (err) {
+      console.error(err);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลดีไวซ์: ' + err.message);
+    }
+  };
 
-  // Reusable input field component สำหรับ Step 2
-  const InputField = ({ label, field, placeholder }) => (
-    <div className="flex-1 min-w-0">
-      <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
-        {label}
-      </label>
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={reserveData[field]}
-        onChange={(e) => handleReserveChange(field, e.target.value)}
-        className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 
-                   focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200"
-      />
-    </div>
-  );
 
-  // Reusable select field component
-  const SelectField = ({ label, field, options, placeholder }) => (
-    <div className="flex-1 min-w-0">
-      <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
-        {label}
-      </label>
-      <select
-        value={reserveData[field]}
-        onChange={(e) => handleReserveChange(field, e.target.value)}
-        className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100
-                   focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200
-                   appearance-none cursor-pointer"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B6D74'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'right 12px center',
-          backgroundSize: '16px',
-        }}
-      >
-        <option value="" className="bg-base-950 text-ink-600">{placeholder || 'เลือก...'}</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt} className="bg-base-950 text-ink-100">{opt}</option>
-        ))}
-      </select>
-    </div>
-  );
 
   // Status badge color
   const getStatusColor = (status) => {
@@ -386,7 +473,7 @@ export default function CDSSearchReservePage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <InputField label="Job Ref." field="jobRef" placeholder="เช่น JOB-2025-001" />
+                <InputField label="Job Ref." value={reserveData.jobRef} onChange={(e) => handleReserveChange('jobRef', e.target.value)} placeholder="เช่น JOB-2025-001" />
                 <div className="flex-1 min-w-0">
                   <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">Status</label>
                   <div className="w-full rounded-lg border border-base-600/40 bg-base-950/50 px-4 py-2.5 text-sm flex items-center gap-2 h-[42px]">
@@ -421,18 +508,18 @@ export default function CDSSearchReservePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DisplayField label="Domain (VRF)" value={selectedNode?.domain} placeholder="—" />
               <DisplayField label="Aggregation" value={selectedNode?.aggregation} placeholder="—" />
-              <SelectField label="IP Network" field="ipNetwork" options={selectedNode?.ipNetworks || []} placeholder="------------" />
+              <SelectField label="IP Network" value={reserveData.ipNetwork} onChange={(e) => handleReserveChange('ipNetwork', e.target.value)} options={selectedNode?.ipNetworks || []} placeholder="------------" />
             </div>
 
             {/* Row 5: IP Address, IP Gateway */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputField label="IP Address" field="ipAddress" placeholder="เช่น 10.0.1.10" />
-              <InputField label="IP Gateway" field="ipGateway" placeholder="เช่น 10.0.1.1" />
+              <InputField label="IP Address" value={reserveData.ipAddress} onChange={(e) => handleReserveChange('ipAddress', e.target.value)} placeholder="เช่น 10.0.1.10" />
+              <InputField label="IP Gateway" value={reserveData.ipGateway} onChange={(e) => handleReserveChange('ipGateway', e.target.value)} placeholder="เช่น 10.0.1.1" />
             </div>
 
             {/* Row 6: Select Model LSW */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SelectField label="Select Model LSW" field="modelLSW" options={mockModelLSW} placeholder="------------" />
+              <SelectField label="Select Model LSW" value={reserveData.modelLSW} onChange={(e) => handleReserveChange('modelLSW', e.target.value)} options={mockModelLSW} placeholder="------------" />
             </div>
 
             {/* Row 7: Port Uplink Main (แดง) & Backup (ส้ม) */}
@@ -610,6 +697,7 @@ export default function CDSSearchReservePage() {
                 </button>
               </div>
               <button
+                onClick={handleReserveSubmit}
                 className="inline-flex items-center gap-2 rounded-lg border border-cds/30 bg-cds px-6 py-2.5 text-sm font-semibold text-base-950 
                            hover:bg-cds/90 active:scale-[0.97] transition-all duration-200 shadow-[0_0_20px_rgba(255,154,61,0.2)]"
               >
