@@ -706,6 +706,70 @@ async function getSiteTopology(siteCode = '') {
   }
 }
 
+// ==================== NETOPS DEVICE DETAILS ====================
+
+async function getDeviceDetails(deviceId) {
+  try {
+    const allDevs = await netboxService.getDevices();
+    const devFull = allDevs.find((d) => String(d.id) === String(deviceId));
+    if (!devFull) {
+      return { success: false, message: `Device ID ${deviceId} not found` };
+    }
+
+    const conns = await getActiveConnections(devFull.id);
+    let gwInfo = null;
+
+    if (devFull.ip && devFull.ip !== 'N/A') {
+      const cleanIp = devFull.ip.split('/')[0];
+      const prefixResp = await netboxService.get(`/ipam/prefixes/?contains=${encodeURIComponent(cleanIp)}&limit=1`);
+      const prefixResults = prefixResp || [];
+      const subnet = prefixResults.length > 0 ? prefixResults[0].prefix : '-';
+
+      if (subnet !== '-') {
+        const ipsInSubnetResp = await netboxService.get(`/ipam/ip-addresses/?parent=${encodeURIComponent(subnet)}&limit=50`);
+        const gatewayIps = ipsInSubnetResp || [];
+        const gwObj = await findGatewayIp(gatewayIps);
+
+        if (gwObj && gwObj.assigned_object?.device?.id) {
+          const peDeviceId = gwObj.assigned_object.device.id;
+          const peDevice = allDevs.find((d) => String(d.id) === String(peDeviceId));
+          gwInfo = {
+            name: peDevice?.name || gwObj.assigned_object.device.name,
+            ip: gwObj.address ? gwObj.address.split('/')[0] : '-',
+            interface: gwObj.assigned_object.name,
+            site: peDevice?.site_name || peDevice?.site || '-',
+          };
+        }
+      }
+    }
+
+    const details = {
+      id: devFull.id,
+      name: devFull.name,
+      role: devFull.role_name || devFull.role || 'Unknown',
+      status: devFull.status || 'Active',
+      site: devFull.site_name || devFull.site || '-',
+      model: devFull.type || '-',
+      manufacturer: devFull.manufacturer || '-',
+      platform: devFull.platform || '-',
+      serial: devFull.serial || '-',
+      asset_tag: devFull.asset_tag || '-',
+      rack: devFull.rack || '-',
+      position: devFull.position || '-',
+      tenant: devFull.tenant || '-',
+      description: devFull.description || '-',
+      primary_ip: devFull.ip !== 'N/A' ? devFull.ip.split('/')[0] : '-',
+      connections: conns,
+      gateway: gwInfo,
+    };
+
+    return { success: true, device: details };
+  } catch (err) {
+    console.error(`Error fetching device details for ${deviceId}:`, err);
+    return { success: false, message: err.message };
+  }
+}
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -714,4 +778,5 @@ module.exports = {
   addDashboardData,
   getSiteTopology,
   getPathTrace,
+  getDeviceDetails,
 };

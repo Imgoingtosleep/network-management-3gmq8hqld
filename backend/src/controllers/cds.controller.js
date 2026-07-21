@@ -104,4 +104,13 @@ async function getPathTrace(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace };
+async function getDeviceDetails(req, res, next) {
+  try {
+    const data = await cdsService.getDeviceDetails(req.params.id);
+    return ok(res, data, 'ดึงรายละเอียดอุปกรณ์สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace, getDeviceDetails };

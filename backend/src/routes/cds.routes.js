@@ -19,5 +19,6 @@ router.get('/vlans', cdsController.listVlans);
 router.get('/topology', cdsController.getSiteTopology);
 router.get('/topology/:site_code', cdsController.getSiteTopology);
 router.get('/path-trace', cdsController.getPathTrace);
+router.get('/device-details/:id', cdsController.getDeviceDetails);
 
 module.exports = router;

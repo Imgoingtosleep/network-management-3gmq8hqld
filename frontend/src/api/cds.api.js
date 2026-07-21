@@ -13,4 +13,5 @@ export const cdsApi = {
   getVlans: () => axiosClient.get('/cds/vlans'),
   getSiteTopology: (siteCode = '') => axiosClient.get(`/cds/topology${siteCode ? `/${encodeURIComponent(siteCode)}` : ''}`),
   getPathTrace: (query = '') => axiosClient.get(`/cds/path-trace?query=${encodeURIComponent(query)}`),
+  getDeviceDetails: (id) => axiosClient.get(`/cds/device-details/${id}`),
 };
