@@ -1202,7 +1202,7 @@ export default function CDSDevicesPage() {
                                   onChange={(e) => handleStatusChange(iface.id, e.target.value)}
                                   className={`rounded px-2 py-0.5 text-[10px] font-semibold font-mono uppercase focus:outline-none focus:ring-1 focus:ring-cds focus:border-cds cursor-pointer transition-all border ${selectColor}`}
                                 >
-                                  <option className="bg-base-900 text-ink-500" value="">No Status</option>
+                                  <option className="bg-base-900 text-ink-500" value="">port ว่าง</option>
                                   <option className="bg-base-900 text-green-400 font-semibold" value="Use">Use</option>
                                   <option className="bg-base-900 text-red-400 font-semibold" value="Disable">Disable</option>
                                   <option className="bg-base-900 text-yellow-400 font-semibold" value="Reserve">Reserve</option>
