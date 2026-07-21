@@ -743,6 +743,35 @@ async function getDeviceDetails(deviceId) {
       }
     }
 
+    // Fetch REAL IP Networks (Prefixes) from NetBox for this VRF/site
+    let ipNetworks = [];
+    const peNameFull = gwInfo?.name || devFull.pe_name || '';
+    const vrfCode = peNameFull ? (peNameFull.includes('_') ? peNameFull.split('_')[0] : peNameFull) : '';
+
+    try {
+      const vrfsResp = vrfCode ? await netboxService.get(`/ipam/vrfs/?q=${encodeURIComponent(vrfCode)}&limit=10`) : [];
+      let targetVrfId = null;
+      if (Array.isArray(vrfsResp) && vrfsResp.length > 0) {
+        targetVrfId = vrfsResp[0].id;
+      }
+
+      const queryUrl = targetVrfId
+        ? `/ipam/prefixes/?vrf_id=${targetVrfId}&limit=1000`
+        : devFull.site
+        ? `/ipam/prefixes/?site=${encodeURIComponent(devFull.site)}&limit=1000`
+        : `/ipam/prefixes/?limit=1000`;
+
+      const sitePrefixesResp = await netboxService.get(queryUrl);
+      if (Array.isArray(sitePrefixesResp) && sitePrefixesResp.length > 0) {
+        ipNetworks = sitePrefixesResp.map((p) => {
+          const vid = p.vlan ? (typeof p.vlan === 'object' ? (p.vlan.vid || p.vlan.name || p.vlan.display || '') : p.vlan) : '';
+          return `${p.prefix}${vid ? ` (VLAN ${vid})` : ''}`;
+        });
+      }
+    } catch (pErr) {
+      console.warn('Error fetching NetBox VRF prefixes:', pErr);
+    }
+
     const details = {
       id: devFull.id,
       name: devFull.name,
@@ -761,6 +790,7 @@ async function getDeviceDetails(deviceId) {
       primary_ip: devFull.ip !== 'N/A' ? devFull.ip.split('/')[0] : '-',
       connections: conns,
       gateway: gwInfo,
+      ip_networks: ipNetworks,
     };
 
     return { success: true, device: details };

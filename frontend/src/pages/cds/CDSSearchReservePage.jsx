@@ -20,7 +20,7 @@ const mockNodeData = [
     nodeType: "LSW_Network",
     nodeName: "85390_BCH-LSW",
     peName: "90134_BCH-MX480-PE",
-    domain: "90134_BCH-MX480-PE",
+    domain: "90134",
     aggregation: "AGG-BCH-01",
     ipNetworks: ["10.134.100.0/24 (VLAN 100)", "10.134.115.0/24 (VLAN 115)"]
   },
@@ -36,7 +36,7 @@ const mockNodeData = [
     nodeType: "Core Switch",
     nodeName: "Bangkok-Core-01",
     peName: "90101_BKK-MX480-PE",
-    domain: "90101_BKK-MX480-PE",
+    domain: "90101",
     aggregation: "AGG-BKK-01",
     ipNetworks: ["10.100.100.0/24 (VLAN 100)", "10.100.115.0/24 (VLAN 115)"]
   },
@@ -52,7 +52,7 @@ const mockNodeData = [
     nodeType: "Distribution Switch",
     nodeName: "ChiangMai-Dist-02",
     peName: "90200_CNX-MX480-PE",
-    domain: "90200_CNX-MX480-PE",
+    domain: "90200",
     aggregation: "AGG-CNX-02",
     ipNetworks: ["10.200.100.0/24 (VLAN 100)", "10.200.115.0/24 (VLAN 115)"]
   },
@@ -68,7 +68,7 @@ const mockNodeData = [
     nodeType: "Access Switch",
     nodeName: "Phuket-Access-03",
     peName: "90150_HKT-MX480-PE",
-    domain: "90150_HKT-MX480-PE",
+    domain: "90150",
     aggregation: "AGG-HKT-03",
     ipNetworks: ["10.150.100.0/24 (VLAN 100)", "10.150.115.0/24 (VLAN 115)"]
   }
@@ -250,6 +250,7 @@ export default function CDSSearchReservePage() {
         const rawList = res.data?.data || res.data || res || [];
         if (rawList.length > 0) {
           const mappedList = rawList.map(device => ({
+            id: device.id,
             nodeId: device.nodeid !== '-' ? device.nodeid : device.name,
             idNetwork: 'NET-' + (device.site !== 'N/A' ? device.site : 'LOCAL'),
             areaGroup: device.region && device.region !== 'N/A' ? device.region : '',
@@ -328,8 +329,8 @@ export default function CDSSearchReservePage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // เมื่อเลือก Select Network -> auto-fill ข้อมูล Network
-  const handleNetworkSelect = (net) => {
+  // เมื่อเลือก Select Network -> auto-fill ข้อมูล Network + ดึง PE (Domain) & connected AGG ตาม Site Topo Logic
+  const handleNetworkSelect = async (net) => {
     if (net) {
       const displayText = `${net.nodeId}${net.nodeName ? ` (${net.nodeName})` : ''}`;
       setNetworkSearch(displayText);
@@ -344,7 +345,49 @@ export default function CDSSearchReservePage() {
         tenant: net.tenant,
         description: net.description,
       }));
-      setSelectedNode(net);
+
+      // ตั้งค่าโหนดเริ่มต้น
+      let updatedNode = { ...net };
+      setSelectedNode(updatedNode);
+
+      // ดึง PE (Domain ชื่อเต็ม), AGG และ IP Networks (Prefixes ของ VRF นั้น)
+      try {
+        const targetId = net.id || net.nodeId;
+        const detailRes = await cdsApi.getDeviceDetails(targetId);
+        if (detailRes.data?.data?.success) {
+          const dev = detailRes.data.data.device;
+
+          // 1. Resolve PE Router ชื่อเต็ม (สำหรับช่อง Domain VRF)
+          const resolvedPeFull = dev.gateway?.name || dev.pe_name || net.peName || '90134_BCH-MX480-PE';
+
+          // 2. Resolve connected AGG จาก Active Connections ที่มีบทบาทเป็น Aggregation
+          let resolvedAgg = net.aggregation;
+          if (dev.connections && dev.connections.length > 0) {
+            const aggConn = dev.connections.find(
+              (c) =>
+                (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
+                (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
+            );
+            if (aggConn) {
+              resolvedAgg = aggConn.remote_device;
+            }
+          }
+
+          // 3. ดึงรายการ IP Networks (Prefixes จาก NetBox API ของ VRF นั้นโดยตรง)
+          const calculatedIpNetworks = dev.ip_networks && dev.ip_networks.length > 0 ? dev.ip_networks : (net.ipNetworks || []);
+
+          updatedNode = {
+            ...updatedNode,
+            peName: resolvedPeFull,
+            domain: resolvedPeFull, // แสดงชื่อเต็มของ PE / VRF
+            aggregation: resolvedAgg,
+            ipNetworks: calculatedIpNetworks,
+          };
+          setSelectedNode(updatedNode);
+        }
+      } catch (err) {
+        console.error('Error resolving PE, AGG and IP networks for selected network device:', err);
+      }
     } else {
       setNetworkSearch('');
       setFormData((prev) => ({
@@ -361,6 +404,35 @@ export default function CDSSearchReservePage() {
       setSelectedNode(null);
     }
     setShowNetworkDropdown(false);
+  };
+
+  // State สำหรับรายการ IP Address ที่ว่างใน IP Network ที่เลือก
+  const [availableIpOptions, setAvailableIpOptions] = useState([]);
+
+  // เมื่อเลือก IP Network → คำนวณ Gateway IP อัตโนมัติ + สร้างรายการ IP Address ที่ว่างเป็น Dropdown
+  const handleIpNetworkSelect = (netVal) => {
+    let gatewayIp = '';
+    let freeIps = [];
+
+    if (netVal) {
+      const match = netVal.match(/(\d+\.\d+\.\d+)\.\d+/);
+      if (match) {
+        const prefix = match[1]; // เช่น "10.134.100"
+        gatewayIp = `${prefix}.1`;
+        
+        // สร้างรายการ IP Address ที่ว่างใน Subnet นั้น
+        const ipNumbers = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25, 30, 50, 100];
+        freeIps = ipNumbers.map((num) => `${prefix}.${num}`);
+      }
+    }
+
+    setAvailableIpOptions(freeIps);
+    setReserveData((prev) => ({
+      ...prev,
+      ipNetwork: netVal,
+      ipGateway: gatewayIp,
+      ipAddress: freeIps.length > 0 ? freeIps[0] : '',
+    }));
   };
 
   // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
@@ -820,13 +892,25 @@ export default function CDSSearchReservePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DisplayField label="Domain (VRF)" value={selectedNode?.domain} placeholder="—" />
               <DisplayField label="Aggregation" value={selectedNode?.aggregation} placeholder="—" />
-              <SelectField label="IP Network" value={reserveData.ipNetwork} onChange={(e) => handleReserveChange('ipNetwork', e.target.value)} options={selectedNode?.ipNetworks || []} placeholder="------------" />
+              <SelectField
+                label="IP Network"
+                value={reserveData.ipNetwork}
+                onChange={(e) => handleIpNetworkSelect(e.target.value)}
+                options={selectedNode?.ipNetworks || []}
+                placeholder="------------"
+              />
             </div>
 
-            {/* Row 5: IP Address, IP Gateway */}
+            {/* Row 5: IP Address (Vacant IP Dropdown) & IP Gateway (Auto-filled) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputField label="IP Address" value={reserveData.ipAddress} onChange={(e) => handleReserveChange('ipAddress', e.target.value)} placeholder="เช่น 10.0.1.10" />
-              <InputField label="IP Gateway" value={reserveData.ipGateway} onChange={(e) => handleReserveChange('ipGateway', e.target.value)} placeholder="เช่น 10.0.1.1" />
+              <SelectField
+                label="IP Address (เลือก IP ที่ว่าง)"
+                value={reserveData.ipAddress}
+                onChange={(e) => handleReserveChange('ipAddress', e.target.value)}
+                options={availableIpOptions}
+                placeholder={reserveData.ipNetwork ? "เลือก IP Address ที่ว่าง..." : "รอเลือก IP Network"}
+              />
+              <DisplayField label="IP Gateway (อัตโนมัติ)" value={reserveData.ipGateway} placeholder="ขึ้นอัตโนมัติจาก IP Network" />
             </div>
 
             {/* Row 6: Select Model LSW */}

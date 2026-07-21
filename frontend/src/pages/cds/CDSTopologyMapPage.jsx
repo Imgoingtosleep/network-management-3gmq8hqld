@@ -447,7 +447,14 @@ export default function CDSTopologyMapPage() {
                           </div>
                           <div>
                             <span className="text-[10px] text-ink-500 uppercase block font-semibold">VLAN</span>
-                            <span className="text-sm font-bold text-purple-400">{pathTraceData.input?.vlan || '-'}</span>
+                            <span className="text-sm font-bold text-purple-400">
+                              {(() => {
+                                const v = pathTraceData.input?.vlan;
+                                if (!v) return '-';
+                                if (typeof v === 'object') return v.vid || v.name || v.display || '-';
+                                return String(v);
+                              })()}
+                            </span>
                           </div>
                         </div>
                       </div>
