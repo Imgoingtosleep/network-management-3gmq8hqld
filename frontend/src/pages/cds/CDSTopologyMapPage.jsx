@@ -372,221 +372,397 @@ export default function CDSTopologyMapPage() {
             </div>
           ) : pathTraceData ? (
             <div className="space-y-6 font-mono text-left">
-              {/* Hop 1: Subnet Details */}
-              <div className="relative rounded-xl border border-blue-500/40 border-l-4 border-l-blue-500 bg-base-900 p-6 shadow-glow">
-                <div className="flex items-start gap-4">
-                  <div className="h-11 w-11 rounded-full bg-blue-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
-                    NW
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
-                      <h3 className="text-lg font-bold text-ink-100">Target Subnet Details</h3>
-                      <span className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-cds text-base-950 uppercase">
-                        TARGET: {pathTraceData.source_device?.role.toUpperCase()}
-                      </span>
-                    </div>
+              {/* Hop 1: Subnet Details (NW) */}
+              {(() => {
+                const subnetParts = (pathTraceData.input?.subnet || '10.0.0.0/24').split('/');
+                const networkAddr = subnetParts[0];
+                const netmask = '/' + (subnetParts[1] || '24');
+                const gatewayIp = pathTraceData.pe?.gateway || '-';
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">วง IP (Network)</span>
-                        <span className="text-sm font-bold text-cds">{pathTraceData.input?.ip || '10.134.100.0'}</span>
+                return (
+                  <div className="relative rounded-xl border border-blue-500/40 border-l-4 border-l-blue-500 bg-base-900 p-6 shadow-glow">
+                    <div className="flex items-start gap-4">
+                      <div className="h-11 w-11 rounded-full bg-blue-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
+                        NW
                       </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">วง Subnet (Mask)</span>
-                        <span className="text-sm font-semibold text-ink-200">/24</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Gateway IP (PE)</span>
-                        <span className="text-sm font-bold text-blue-400">{pathTraceData.pe?.gateway}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">VLAN</span>
-                        <span className="text-sm font-bold text-purple-400">VLAN 100, 115</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
+                          <h3 className="text-lg font-bold text-ink-100">Target Subnet Details</h3>
+                          {pathTraceData.source_device && (
+                            <span className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-cds text-base-950 uppercase">
+                              TARGET: {pathTraceData.source_device.role?.toUpperCase() || 'NETWORK'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
+                            <span className="text-[10px] text-ink-500 uppercase block font-semibold">วง IP (Network)</span>
+                            <span className="text-sm font-bold text-cds">{networkAddr}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-ink-500 uppercase block font-semibold">วง Subnet (Mask)</span>
+                            <span className="text-sm font-semibold text-ink-200">{netmask}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-ink-500 uppercase block font-semibold">Gateway IP (PE)</span>
+                            <span className="text-sm font-bold text-blue-400">{gatewayIp}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-ink-500 uppercase block font-semibold">VLAN</span>
+                            <span className="text-sm font-bold text-purple-400">{pathTraceData.input?.vlan || '-'}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Hop 2: PE Card */}
-              <div className="relative rounded-xl border border-red-500/40 border-l-4 border-l-red-500 bg-base-900 p-6 shadow-glow">
-                <div className="flex items-start gap-4">
-                  <div className="h-11 w-11 rounded-full bg-red-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
-                    PE
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
-                      <div>
-                        <h3 className="text-lg font-bold text-ink-100">{pathTraceData.pe?.pe_name}</h3>
-                        <p className="text-xs text-ink-400">Site: {pathTraceData.source_device?.site} | Juniper MX480</p>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/30 uppercase">
-                        Provider Edge Router
-                      </span>
+              {pathTraceData.pe && (
+                <div className="relative rounded-xl border border-red-500/40 border-l-4 border-l-red-500 bg-base-900 p-6 shadow-glow space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="h-11 w-11 rounded-full bg-red-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
+                      PE
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
+                        <div>
+                          <h3 className="text-lg font-bold text-ink-100">{pathTraceData.pe.name}</h3>
+                          <p className="text-xs text-ink-400">
+                            Site: {pathTraceData.pe.site || '-'} | {pathTraceData.pe.manufacturer || '-'} {pathTraceData.pe.model || '-'} | S/N: {pathTraceData.pe.serial || '-'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/30 uppercase block">
+                            {pathTraceData.pe.role || 'Provider Edge Router'}
+                          </span>
+                          <span className="inline-block mt-1 text-[11px] font-bold text-emerald-400">
+                            ● {pathTraceData.pe.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Gateway IP (NW)</span>
-                        <span className="text-sm font-bold text-ink-100">{pathTraceData.pe?.gateway}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">PE Primary IP</span>
-                        <span className="text-sm font-semibold text-blue-400">{pathTraceData.pe?.pe_ip}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Logical Interface</span>
-                        <span className="text-sm font-semibold text-purple-400">{pathTraceData.pe?.logical_vlan}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Physical Interface</span>
-                        <span className="text-sm font-bold text-cds">➔ {pathTraceData.pe?.physical_port}</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Gateway IP (NW)</span>
+                          <span className="text-sm font-bold text-ink-100">{pathTraceData.pe.gateway || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">PE Primary IP</span>
+                          <span className="text-sm font-semibold text-blue-400">{pathTraceData.pe.primary_ip || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Logical Interface</span>
+                          <span className="text-sm font-semibold text-purple-400">{pathTraceData.pe.logical_interface || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Physical Interface</span>
+                          <span className="text-sm font-bold text-cds">➔ {pathTraceData.pe.physical_interface || '-'}</span>
+                          {pathTraceData.pe.physical_interface_description && pathTraceData.pe.physical_interface_description !== '-' && (
+                            <span className="text-[10px] text-ink-500 block truncate">Desc: {pathTraceData.pe.physical_interface_description}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* PE Active Connections Table */}
+                  {pathTraceData.pe.connections && pathTraceData.pe.connections.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-base-800 space-y-2">
+                      <span className="text-[10px] font-bold text-cds uppercase tracking-wider block">🔌 PE ACTIVE CONNECTIONS</span>
+                      <div className="max-h-48 overflow-y-auto border border-base-800 rounded-lg bg-base-950">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-base-900 text-ink-400 font-mono text-[10px] uppercase">
+                            <tr>
+                              <th className="px-3 py-2">Local Port</th>
+                              <th className="px-3 py-2">Neighbor Device</th>
+                              <th className="px-3 py-2">Neighbor Role</th>
+                              <th className="px-3 py-2">Neighbor Port</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-800/60 font-mono text-[11px]">
+                            {pathTraceData.pe.connections.map((c, idx) => {
+                              const isHighlighted = c.local_port === pathTraceData.pe.physical_interface;
+                              return (
+                                <tr key={idx} className={isHighlighted ? 'bg-cds/10 font-bold' : 'hover:bg-base-900/50'}>
+                                  <td className="px-3 py-1.5 text-ink-100">
+                                    {c.local_port}
+                                    {c.local_description && <span className="text-[9px] text-ink-500 block font-normal">Desc: {c.local_description}</span>}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-cds">{c.remote_device}</td>
+                                  <td className="px-3 py-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-base-800 text-ink-300 text-[9px]">{c.remote_role}</span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-ink-200">{c.remote_port}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* Hop 3: AGG Card */}
-              <div className="relative rounded-xl border border-blue-500/40 border-l-4 border-l-blue-500 bg-base-900 p-6 shadow-glow">
-                <div className="flex items-start gap-4">
-                  <div className="h-11 w-11 rounded-full bg-blue-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
-                    AGG
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
-                      <div>
-                        <h3 className="text-lg font-bold text-ink-100">{pathTraceData.agg?.name}</h3>
-                        <p className="text-xs text-ink-400">Aggregation Switch | Cisco C9500</p>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30 uppercase">
-                        {pathTraceData.agg?.role}
-                      </span>
+              {pathTraceData.agg && (
+                <div className="relative rounded-xl border border-purple-500/40 border-l-4 border-l-purple-500 bg-base-900 p-6 shadow-glow space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="h-11 w-11 rounded-full bg-purple-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
+                      AGG
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
+                        <div>
+                          <h3 className="text-lg font-bold text-ink-100">{pathTraceData.agg.name}</h3>
+                          <p className="text-xs text-ink-400">
+                            Site: {pathTraceData.agg.site || '-'} | {pathTraceData.agg.manufacturer || '-'} {pathTraceData.agg.model || '-'} | S/N: {pathTraceData.agg.serial || '-'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-400 border border-purple-500/30 uppercase block">
+                            Aggregation Switch
+                          </span>
+                          <span className="inline-block mt-1 text-[11px] font-bold text-emerald-400">
+                            ● {pathTraceData.agg.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">AGG IP</span>
-                        <span className="text-sm font-bold text-ink-100">{pathTraceData.agg?.ip}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Inbound Port (PE)</span>
-                        <span className="text-sm font-bold text-cds">{pathTraceData.agg?.port_out}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Outbound Port (LSW)</span>
-                        <span className="text-sm font-bold text-purple-300">{pathTraceData.agg?.port_in}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">VLAN Trunk</span>
-                        <span className="text-sm font-semibold text-ink-300">VLAN 100, 115</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Manufacturer | Model</span>
+                          <span className="text-ink-200 font-semibold">{pathTraceData.agg.manufacturer} {pathTraceData.agg.model}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">AGG Interface IP</span>
+                          <span className="text-purple-400 font-bold">{pathTraceData.agg.port_ip || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Connected Port</span>
+                          <span className="text-cds font-bold">➔ {pathTraceData.agg.port || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">AGG Primary IP</span>
+                          <span className="text-ink-300">{pathTraceData.agg.primary_ip || '-'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* AGG Subnet Members Table */}
+                  {pathTraceData.agg.subnet_members && pathTraceData.agg.subnet_members.length > 0 && (
+                    <div className="pt-2 space-y-2">
+                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
+                        📋 INTERFACES ON THIS AGG IN SUBNET {pathTraceData.input?.subnet}
+                      </span>
+                      <div className="max-h-36 overflow-y-auto border border-base-800 rounded-lg bg-base-950">
+                        <table className="w-full text-xs text-left font-mono">
+                          <thead className="bg-base-900 text-ink-400 text-[10px] uppercase">
+                            <tr>
+                              <th className="px-3 py-1.5">Interface</th>
+                              <th className="px-3 py-1.5">IP Address</th>
+                              <th className="px-3 py-1.5">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-800/60 text-[11px]">
+                            {pathTraceData.agg.subnet_members.map((m, idx) => (
+                              <tr key={idx} className="hover:bg-base-900/50">
+                                <td className="px-3 py-1 text-cds font-bold">{m.interface}</td>
+                                <td className="px-3 py-1 text-ink-200">{m.ip}</td>
+                                <td className="px-3 py-1 text-ink-400 italic">{m.description}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AGG Active Connections Table */}
+                  {pathTraceData.agg.connections && pathTraceData.agg.connections.length > 0 && (
+                    <div className="pt-2 space-y-2">
+                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">🔌 AGG ACTIVE CONNECTIONS</span>
+                      <div className="max-h-48 overflow-y-auto border border-base-800 rounded-lg bg-base-950">
+                        <table className="w-full text-xs text-left font-mono">
+                          <thead className="bg-base-900 text-ink-400 text-[10px] uppercase">
+                            <tr>
+                              <th className="px-3 py-2">Local Port</th>
+                              <th className="px-3 py-2">Neighbor Device</th>
+                              <th className="px-3 py-2">Neighbor Role</th>
+                              <th className="px-3 py-2">Neighbor Port</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-800/60 text-[11px]">
+                            {pathTraceData.agg.connections.map((c, idx) => {
+                              const isHighlighted = c.local_port === pathTraceData.agg.port;
+                              return (
+                                <tr key={idx} className={isHighlighted ? 'bg-purple-500/10 font-bold' : 'hover:bg-base-900/50'}>
+                                  <td className="px-3 py-1.5 text-ink-100">
+                                    {c.local_port}
+                                    {c.local_description && <span className="text-[9px] text-ink-500 block font-normal">Desc: {c.local_description}</span>}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-purple-400">{c.remote_device}</td>
+                                  <td className="px-3 py-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-base-800 text-ink-300 text-[9px]">{c.remote_role}</span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-ink-200">{c.remote_port}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
-              {/* Hop 4: Target Switch (Access) */}
-              <div className="relative rounded-xl border border-emerald-500/40 border-l-4 border-l-emerald-500 bg-base-900 p-6 shadow-glow">
-                <div className="flex items-start gap-4">
-                  <div className="h-11 w-11 rounded-full bg-emerald-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
-                    SW
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
-                      <div>
-                        <h3 className="text-lg font-bold text-ink-100">{pathTraceData.source_device?.name}</h3>
-                        <p className="text-xs text-ink-400">
-                          Node ID: {pathTraceData.source_device?.nodeid} | Model: {pathTraceData.source_device?.model}
-                        </p>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase">
-                        Target Access Switch
-                      </span>
+              {/* Hop 4: Target Switch (Access / SRC) */}
+              {pathTraceData.source_device && (
+                <div className="relative rounded-xl border border-emerald-500/40 border-l-4 border-l-emerald-500 bg-base-900 p-6 shadow-glow space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="h-11 w-11 rounded-full bg-emerald-500 text-base-950 flex items-center justify-center font-bold text-lg shadow-lg flex-shrink-0">
+                      SRC
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between border-b border-base-700/60 pb-2 mb-3">
+                        <div>
+                          <h3 className="text-lg font-bold text-ink-100">{pathTraceData.source_device.name} (Source)</h3>
+                          <p className="text-xs text-ink-400">
+                            Site: {pathTraceData.source_device.site || '-'} | Model: {pathTraceData.source_device.model || '-'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase block">
+                            {pathTraceData.source_device.role || 'Target Access Switch'}
+                          </span>
+                          <span className="inline-block mt-1 text-[11px] font-bold text-emerald-400">
+                            ● {pathTraceData.source_device.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Switch IP</span>
-                        <span className="text-sm font-bold text-emerald-400">{pathTraceData.source_device?.primary_ip}</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Manufacturer | Model</span>
+                          <span className="text-ink-200 font-semibold">{pathTraceData.source_device.manufacturer} {pathTraceData.source_device.model}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Primary IP</span>
+                          <span className="text-emerald-400 font-bold">{pathTraceData.source_device.primary_ip || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Logical Interface</span>
+                          <span className="text-purple-400 font-bold">{pathTraceData.source_device.logical_interface || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-ink-500 uppercase block font-semibold">Physical Interface</span>
+                          <span className="text-emerald-400 font-bold">➔ {pathTraceData.source_device.physical_interface || '-'}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Status</span>
-                        <span className="text-sm font-bold text-emerald-400">● {pathTraceData.source_device?.status}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Site</span>
-                        <span className="text-sm font-semibold text-ink-200">{pathTraceData.source_device?.site}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-ink-500 uppercase block font-semibold">Tenant</span>
-                        <span className="text-sm font-semibold text-ink-200">{pathTraceData.source_device?.tenant}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Port Status Analysis Table */}
-              {pathTraceData.port_status && (
-                <div className="rounded-xl border border-base-600 bg-base-900 p-6 shadow-glow space-y-4">
-                  <div className="flex items-center justify-between border-b border-base-700/60 pb-3">
-                    <h3 className="text-sm font-bold text-ink-100 uppercase tracking-wider">
-                      📊 PORT STATUS ANALYSIS: {pathTraceData.source_device?.name}
-                    </h3>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
-                        Vacant: {pathTraceData.port_status.summary?.vacant_count}
-                      </span>
-                      <span className="px-2.5 py-1 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-bold">
-                        Occupied: {pathTraceData.port_status.summary?.occupied_count}
-                      </span>
-                      <span className="px-2.5 py-1 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-bold">
-                        Broken: {pathTraceData.port_status.summary?.broken_count}
-                      </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    {/* Vacant */}
-                    <div className="space-y-2">
-                      <span className="text-emerald-400 font-bold block border-b border-emerald-500/30 pb-1">VACANT PORTS</span>
-                      <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
-                        {pathTraceData.port_status.vacant.map((p, i) => (
-                          <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
-                            <span className="text-ink-200 font-semibold">{p.name}</span>
-                            <span className="text-ink-500 italic">{p.description}</span>
+                  {/* Source Connections Table */}
+                  {pathTraceData.source_device.connections && pathTraceData.source_device.connections.length > 0 && (
+                    <div className="pt-2 space-y-2">
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">🔌 SOURCE CONNECTIONS</span>
+                      <div className="max-h-48 overflow-y-auto border border-base-800 rounded-lg bg-base-950">
+                        <table className="w-full text-xs text-left font-mono">
+                          <thead className="bg-base-900 text-ink-400 text-[10px] uppercase">
+                            <tr>
+                              <th className="px-3 py-2">Local Port</th>
+                              <th className="px-3 py-2">Neighbor Device</th>
+                              <th className="px-3 py-2">Neighbor Role</th>
+                              <th className="px-3 py-2">Neighbor Port</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-800/60 text-[11px]">
+                            {pathTraceData.source_device.connections.map((c, idx) => (
+                              <tr key={idx} className="hover:bg-base-900/50">
+                                <td className="px-3 py-1.5 text-ink-100">
+                                  {c.local_port}
+                                  {c.local_description && <span className="text-[9px] text-ink-500 block font-normal">Desc: {c.local_description}</span>}
+                                </td>
+                                <td className="px-3 py-1.5 text-emerald-400">{c.remote_device}</td>
+                                <td className="px-3 py-1.5">
+                                  <span className="px-1.5 py-0.5 rounded bg-base-800 text-ink-300 text-[9px]">{c.remote_role}</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-ink-200">{c.remote_port}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Port Status Analysis Table */}
+                  {pathTraceData.port_status && (
+                    <div className="pt-4 border-t border-base-800 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-ink-100 uppercase tracking-wider block">
+                          📊 PORT STATUS ANALYSIS: {pathTraceData.source_device.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                            Vacant: {pathTraceData.port_status.summary?.vacant_count}
+                          </span>
+                          <span className="px-2.5 py-1 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-bold">
+                            Occupied: {pathTraceData.port_status.summary?.occupied_count}
+                          </span>
+                          <span className="px-2.5 py-1 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-bold">
+                            Broken: {pathTraceData.port_status.summary?.broken_count}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        {/* Vacant */}
+                        <div className="space-y-2">
+                          <span className="text-emerald-400 font-bold block border-b border-emerald-500/30 pb-1">VACANT PORTS</span>
+                          <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
+                            {pathTraceData.port_status.vacant.map((p, i) => (
+                              <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
+                                <span className="text-ink-200 font-semibold">{p.name}</span>
+                                <span className="text-ink-500 italic">{p.description}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
 
-                    {/* Occupied */}
-                    <div className="space-y-2">
-                      <span className="text-blue-400 font-bold block border-b border-blue-500/30 pb-1">OCCUPIED PORTS</span>
-                      <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
-                        {pathTraceData.port_status.occupied.map((p, i) => (
-                          <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
-                            <span className="text-ink-200 font-semibold">{p.name}</span>
-                            <span className="text-ink-400 italic truncate max-w-[110px]">{p.description}</span>
+                        {/* Occupied */}
+                        <div className="space-y-2">
+                          <span className="text-blue-400 font-bold block border-b border-blue-500/30 pb-1">OCCUPIED PORTS</span>
+                          <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
+                            {pathTraceData.port_status.occupied.map((p, i) => (
+                              <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
+                                <span className="text-ink-200 font-semibold">{p.name}</span>
+                                <span className="text-ink-400 italic truncate max-w-[110px]">{p.description}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
 
-                    {/* Broken */}
-                    <div className="space-y-2">
-                      <span className="text-red-400 font-bold block border-b border-red-500/30 pb-1">BROKEN PORTS (FAIL)</span>
-                      <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
-                        {pathTraceData.port_status.broken.map((p, i) => (
-                          <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
-                            <span className="text-ink-200 font-semibold">{p.name}</span>
-                            <span className="text-red-400 italic">{p.description}</span>
+                        {/* Broken */}
+                        <div className="space-y-2">
+                          <span className="text-red-400 font-bold block border-b border-red-500/30 pb-1">BROKEN PORTS (FAIL)</span>
+                          <div className="max-h-44 overflow-y-auto bg-base-950 rounded-lg p-2 space-y-1">
+                            {pathTraceData.port_status.broken.map((p, i) => (
+                              <div key={i} className="flex justify-between border-b border-base-800/60 pb-1 text-[11px]">
+                                <span className="text-ink-200 font-semibold">{p.name}</span>
+                                <span className="text-red-400 italic">{p.description}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
