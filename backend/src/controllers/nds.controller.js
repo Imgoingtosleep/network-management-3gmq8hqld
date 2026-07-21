@@ -30,10 +30,18 @@ async function listDevices(req, res, next) {
     const data = await netboxService.getDevices();
     return ok(res, data, 'ดึงรายการอุปกรณ์จาก Netbox สำเร็จ');
   } catch (err) { return next(err); }
-}async function listDeviceInterfaces(req, res, next) {
+}
+async function listDeviceInterfaces(req, res, next) {
   try {
     const data = await netboxService.getDeviceInterfaces(req.params.id);
     return ok(res, data, 'ดึงรายการอินเตอร์เฟสอุปกรณ์สำเร็จ');
+  } catch (err) { return next(err); }
+}
+
+async function updateDeviceInterface(req, res, next) {
+  try {
+    const data = await netboxService.updateInterface(req.params.interfaceId, req.body);
+    return ok(res, data, 'แก้ไขข้อมูลอินเตอร์เฟสสำเร็จ');
   } catch (err) { return next(err); }
 }
 
@@ -277,6 +285,7 @@ module.exports = {
   createProject,
   listDevices,
   listDeviceInterfaces,
+  updateDeviceInterface,
   listRegions,
   netboxRedirect,
 

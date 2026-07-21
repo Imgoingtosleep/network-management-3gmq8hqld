@@ -11,6 +11,7 @@ router.post('/projects', ndsController.createProject);
 // NetBox Devices (API connection)
 router.get('/devices', ndsController.listDevices);
 router.get('/devices/:id/interfaces', ndsController.listDeviceInterfaces);
+router.patch('/interfaces/:interfaceId', ndsController.updateDeviceInterface);
 router.post('/devices', ndsController.createDevice);
 router.put('/devices/:id', ndsController.updateDevice);
 router.delete('/devices/:id', ndsController.deleteDevice);

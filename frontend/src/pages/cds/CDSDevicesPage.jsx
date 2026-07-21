@@ -317,6 +317,32 @@ export default function CDSDevicesPage() {
     } finally {
       setLoadingInterfaces(false);
     }
+  };  const handleStatusChange = async (ifaceId, newStatus) => {
+    try {
+      const payload = {
+        custom_fields: {
+          port_status: newStatus || null
+        }
+      };
+      if (newStatus === 'Disable') {
+        payload.enabled = false;
+      } else {
+        payload.enabled = true;
+      }
+      await ndsApi.updateDeviceInterface(ifaceId, payload);
+      setDeviceInterfaces(prev => prev.map(iface => 
+        iface.id === ifaceId 
+          ? { 
+              ...iface, 
+              enabled: payload.enabled, 
+              custom_fields: { ...iface.custom_fields, port_status: newStatus } 
+            } 
+          : iface
+      ));
+    } catch (err) {
+      console.error(err);
+      alert('ไม่สามารถอัปเดตสถานะพอร์ตได้: ' + err.message);
+    }
   };
 
   const handleDeleteConfirm = async () => {
@@ -1147,7 +1173,6 @@ export default function CDSDevicesPage() {
                         <th className="px-5 py-3">Name</th>
                         <th className="px-5 py-3">Type</th>
                         <th className="px-5 py-3">Status</th>
-                        <th className="px-5 py-3">MAC Address</th>
                         <th className="px-5 py-3">MTU</th>
                         <th className="px-5 py-3">Description</th>
                       </tr>
@@ -1159,33 +1184,33 @@ export default function CDSDevicesPage() {
                           <td className="px-5 py-3.5 font-mono text-xs text-ink-400">{iface.type?.label || iface.type || '-'}</td>
                           <td className="px-5 py-3.5">
                             {(() => {
-                              const portStatus = iface.custom_fields?.port_status;
-                              if (!portStatus) {
-                                return (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold font-mono bg-base-700 text-ink-400 border border-base-600/50 uppercase">
-                                    no status
-                                  </span>
-                                );
-                              }
+                              const portStatus = iface.custom_fields?.port_status || '';
                               const statusStr = String(portStatus).toLowerCase();
-                              let badgeColor = 'bg-base-700 text-ink-400 border border-base-600/50';
+                              let selectColor = 'bg-base-950 text-ink-400 border-base-600';
                               if (statusStr.includes('active') || statusStr.includes('up') || statusStr === 'use') {
-                                badgeColor = 'bg-green-500/10 text-green-400 border border-green-500/20';
+                                selectColor = 'bg-green-500/10 text-green-400 border-green-500/30';
                               } else if (statusStr.includes('down') || statusStr.includes('shutdown') || statusStr.includes('disable')) {
-                                badgeColor = 'bg-red-500/10 text-red-400 border border-red-500/20';
+                                selectColor = 'bg-red-500/10 text-red-400 border-red-500/30';
                               } else if (statusStr.includes('reserve') || statusStr.includes('hold')) {
-                                badgeColor = 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20';
+                                selectColor = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
                               } else if (statusStr.includes('spare') || statusStr.includes('free') || statusStr.includes('available')) {
-                                badgeColor = 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20';
+                                selectColor = 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
                               }
                               return (
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold font-mono uppercase ${badgeColor}`}>
-                                  {portStatus}
-                                </span>
+                                <select
+                                  value={portStatus}
+                                  onChange={(e) => handleStatusChange(iface.id, e.target.value)}
+                                  className={`rounded px-2 py-0.5 text-[10px] font-semibold font-mono uppercase focus:outline-none focus:ring-1 focus:ring-cds focus:border-cds cursor-pointer transition-all border ${selectColor}`}
+                                >
+                                  <option className="bg-base-900 text-ink-500" value="">No Status</option>
+                                  <option className="bg-base-900 text-green-400 font-semibold" value="Use">Use</option>
+                                  <option className="bg-base-900 text-red-400 font-semibold" value="Disable">Disable</option>
+                                  <option className="bg-base-900 text-yellow-400 font-semibold" value="Reserve">Reserve</option>
+                                  <option className="bg-base-900 text-cyan-400 font-semibold" value="Spare">Spare</option>
+                                </select>
                               );
                             })()}
                           </td>
-                          <td className="px-5 py-3.5 font-mono text-xs text-ink-400">{iface.mac_address || '-'}</td>
                           <td className="px-5 py-3.5 font-mono text-xs text-ink-450">{iface.mtu || '-'}</td>
                           <td className="px-5 py-3.5 text-xs text-ink-400 truncate max-w-xs">{iface.description || '-'}</td>
                         </tr>

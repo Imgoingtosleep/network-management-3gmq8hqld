@@ -14,6 +14,7 @@ export const ndsApi = {
   createProject: (payload) => axiosClient.post('/nds/projects', payload),
   getDevices: () => axiosClient.get('/nds/devices'),
   getDeviceInterfaces: (id) => axiosClient.get(`/nds/devices/${id}/interfaces`),
+  updateDeviceInterface: (id, payload) => axiosClient.patch(`/nds/interfaces/${id}`, payload),
   createDevice: (payload) => axiosClient.post('/nds/devices', payload),
   updateDevice: (id, payload) => axiosClient.put(`/nds/devices/${id}`, payload),
   deleteDevice: (id) => axiosClient.delete(`/nds/devices/${id}`),

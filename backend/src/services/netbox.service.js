@@ -1250,6 +1250,33 @@ async function getDeviceInterfaces(deviceId) {
   return results;
 }
 
+async function updateInterface(interfaceId, payload) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/interfaces/${interfaceId}/`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`NetBox API PATCH request failed with status ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  return data;
+}
+
 async function getInterfaceTypeChoices() {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -1308,5 +1335,6 @@ module.exports = {
   deletePrefix,
   getVlans,
   getInterfaceTypeChoices,
-  getDeviceInterfaces
+  getDeviceInterfaces,
+  updateInterface
 };
