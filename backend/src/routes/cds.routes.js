@@ -16,5 +16,8 @@ router.get('/ip-addresses', cdsController.listIpAddresses);
 router.get('/dashboard', cdsController.getDashboardData);
 router.post('/dashboard', cdsController.addDashboardData);
 router.get('/vlans', cdsController.listVlans);
+router.get('/topology', cdsController.getSiteTopology);
+router.get('/topology/:site_code', cdsController.getSiteTopology);
+router.get('/path-trace', cdsController.getPathTrace);
 
 module.exports = router;

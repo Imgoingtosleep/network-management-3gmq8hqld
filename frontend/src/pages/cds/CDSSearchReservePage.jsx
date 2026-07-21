@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { cdsApi } from '../../api/cds.api.js';
+import { ndsApi } from '../../api/nds.api.js';
 
 const steps = [
   { number: 1, label: 'Select Network' },
@@ -8,19 +9,36 @@ const steps = [
 
 const mockNodeData = [
   {
+    nodeId: "85390",
+    idNetwork: "NET-BCH-85390",
+    areaGroup: "Metropolitan",
+    area: "Bangkok",
+    ipAddress: "10.134.100.10",
+    siteName: "BCH Bangkok Center",
+    nameThai: "ศูนย์บางกอก BCH",
+    status: "Active",
+    nodeType: "LSW_Network",
+    nodeName: "85390_BCH-LSW",
+    peName: "90134_BCH-MX480-PE",
+    domain: "90134_BCH-MX480-PE",
+    aggregation: "AGG-BCH-01",
+    ipNetworks: ["10.134.100.0/24 (VLAN 100)", "10.134.115.0/24 (VLAN 115)"]
+  },
+  {
     nodeId: "BKK-SW-01",
     idNetwork: "NET-BKK-001",
     areaGroup: "Metropolitan",
     area: "Bangkok",
     ipAddress: "10.100.1.10",
-    siteCode: "BKK01",
     siteName: "Bangkok Head Office",
+    nameThai: "สำนักงานใหญ่ กรุงเทพฯ",
     status: "Active",
     nodeType: "Core Switch",
     nodeName: "Bangkok-Core-01",
-    domain: "VRF-BKK-PRODUCTION",
+    peName: "90101_BKK-MX480-PE",
+    domain: "90101_BKK-MX480-PE",
     aggregation: "AGG-BKK-01",
-    ipNetworks: ["10.100.1.0/24", "10.100.2.0/24", "10.100.3.0/24"]
+    ipNetworks: ["10.100.100.0/24 (VLAN 100)", "10.100.115.0/24 (VLAN 115)"]
   },
   {
     nodeId: "CNX-SW-02",
@@ -28,14 +46,15 @@ const mockNodeData = [
     areaGroup: "Northern",
     area: "Chiang Mai",
     ipAddress: "10.200.1.10",
-    siteCode: "CNX02",
     siteName: "Chiang Mai Branch",
+    nameThai: "สาขาเชียงใหม่",
     status: "Active",
     nodeType: "Distribution Switch",
     nodeName: "ChiangMai-Dist-02",
-    domain: "VRF-CNX-OFFICE",
+    peName: "90200_CNX-MX480-PE",
+    domain: "90200_CNX-MX480-PE",
     aggregation: "AGG-CNX-02",
-    ipNetworks: ["10.200.1.0/24", "10.200.2.0/24"]
+    ipNetworks: ["10.200.100.0/24 (VLAN 100)", "10.200.115.0/24 (VLAN 115)"]
   },
   {
     nodeId: "HKT-SW-03",
@@ -43,14 +62,15 @@ const mockNodeData = [
     areaGroup: "Southern",
     area: "Phuket",
     ipAddress: "10.150.1.10",
-    siteCode: "HKT03",
     siteName: "Phuket DC",
+    nameThai: "ศูนย์ข้อมูลภูเก็ต",
     status: "Planned",
     nodeType: "Access Switch",
     nodeName: "Phuket-Access-03",
-    domain: "VRF-HKT-DC",
+    peName: "90150_HKT-MX480-PE",
+    domain: "90150_HKT-MX480-PE",
     aggregation: "AGG-HKT-03",
-    ipNetworks: ["10.150.1.0/24", "10.150.2.0/24", "10.150.3.0/24", "10.150.4.0/24"]
+    ipNetworks: ["10.150.100.0/24 (VLAN 100)", "10.150.115.0/24 (VLAN 115)"]
   }
 ];
 
@@ -128,14 +148,15 @@ const SelectField = ({ label, value, onChange, options, placeholder }) => (
 export default function CDSSearchReservePage() {
   const [activeStep, setActiveStep] = useState(1);
 
-  // Form state สำหรับ Step 1
   const [formData, setFormData] = useState({
     idNetwork: '',
     areaGroup: '',
     area: '',
-    ipAddress: '',
-    siteCode: '',
     siteName: '',
+    nameThai: '',
+    status: '',
+    tenant: '',
+    description: '',
     nodeId: '',
   });
 
@@ -156,19 +177,149 @@ export default function CDSSearchReservePage() {
     portDownlinkBackup: '',
   });
 
+  // Search state สำหรับ Select Network (LSW_Network)
+  const [networkSearch, setNetworkSearch] = useState('');
+  const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
+  const networkRef = useRef(null);
+
   // Search state สำหรับ Node ID
   const [nodeSearch, setNodeSearch] = useState('');
   const [showNodeDropdown, setShowNodeDropdown] = useState(false);
   const nodeRef = useRef(null);
 
+  const [devicesList, setDevicesList] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+
+  const [modelOptions, setModelOptions] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  // กรองอุปกรณ์เฉพาะ Device Role LSW_Network (หรือ LSW / Network)
+  const lswNetworkDevices = devicesList.filter((d) => {
+    const r = String(d.roleName || d.nodeType || d.role || '').toLowerCase();
+    return r.includes('lsw_network') || r.includes('lsw network') || r.includes('lsw') || r.includes('network');
+  });
+  const networkOptions = lswNetworkDevices.length > 0 ? lswNetworkDevices : devicesList;
+
+  // กรอง options ของ Select Network ตามคำค้นหา
+  const filteredNetworkOptions = networkOptions.filter((net) => {
+    if (!networkSearch.trim()) return true;
+    const q = networkSearch.toLowerCase();
+    return (
+      (net.nodeId || '').toLowerCase().includes(q) ||
+      (net.nodeName || '').toLowerCase().includes(q) ||
+      (net.siteName || '').toLowerCase().includes(q)
+    );
+  });
+
+  // 3 Node ID ล่าสุดในระบบ NetBox
+  const recent3NodeIds = devicesList
+    .map((d) => d.nodeId)
+    .filter((id) => id && id !== '-')
+    .slice(-3)
+    .reverse();
+
+  // คำนวณ Node ID ถัดไปสำหรับสร้างใหม่
+  const getNextNodeId = (id) => {
+    const match = String(id).match(/^(.*?)(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const numStr = match[2];
+      const nextNum = parseInt(numStr, 10) + 1;
+      const paddedNum = String(nextNum).padStart(numStr.length, '0');
+      return `${prefix}${paddedNum}`;
+    }
+    return `${id}-01`;
+  };
+
+  // ตรวจสอบว่า Node ID ที่พิมพ์มีซ้ำใน NetBox หรือไม่
+  const isNodeIdAlreadyExists = devicesList.some(
+    (d) => d.nodeId && d.nodeId.toLowerCase() === nodeSearch.trim().toLowerCase()
+  );
+
   // กรอง options ตาม search text
-  const filteredNodeIdOptions = mockNodeData.filter((node) =>
+  const filteredNodeIdOptions = devicesList.filter((node) =>
     node.nodeId.toLowerCase().includes(nodeSearch.toLowerCase())
   );
+
+  // ดึงข้อมูลดีไวซ์และ Model LSW จาก NetBox เมื่อโหลดหน้าจอ
+  useEffect(() => {
+    const fetchDevices = async () => {
+      setLoadingDevices(true);
+      try {
+        const res = await ndsApi.getDevices();
+        const rawList = res.data?.data || res.data || res || [];
+        if (rawList.length > 0) {
+          const mappedList = rawList.map(device => ({
+            nodeId: device.nodeid !== '-' ? device.nodeid : device.name,
+            idNetwork: 'NET-' + (device.site !== 'N/A' ? device.site : 'LOCAL'),
+            areaGroup: device.region && device.region !== 'N/A' ? device.region : '',
+            area: device.location && device.location !== 'N/A' ? device.location : '',
+            siteName: device.site_name && device.site_name !== 'N/A' ? device.site_name : (device.site !== 'N/A' ? device.site : 'Main Site'),
+            nameThai: device.name_thai !== 'N/A' ? device.name_thai : 'N/A',
+            status: device.status || 'Active',
+            tenant: device.tenant !== 'N/A' ? device.tenant : 'N/A',
+            description: device.description !== 'N/A' ? device.description : '-',
+            nodeType: device.type !== 'N/A' ? device.type : 'LSW',
+            roleName: device.role_name || device.role || '',
+            nodeName: device.name,
+            peName: device.pe_name || (device.site !== 'N/A' ? `90134_${device.site.toUpperCase()}-MX480-PE` : '90134_BCH-MX480-PE'),
+            domain: device.pe_name || (device.site !== 'N/A' ? `90134_${device.site.toUpperCase()}-MX480-PE` : '90134_BCH-MX480-PE'),
+            aggregation: 'AGG-' + (device.site !== 'N/A' ? device.site : 'BKK'),
+            ipNetworks: (() => {
+              const primaryIp = device.ip !== 'N/A' ? device.ip.split('/')[0] : '10.134.100.1';
+              const parts = primaryIp.split('.');
+              if (parts.length === 4) {
+                const basePrefix = `${parts[0]}.${parts[1]}`;
+                return [
+                  `${basePrefix}.100.0/24 (VLAN 100)`,
+                  `${basePrefix}.115.0/24 (VLAN 115)`
+                ];
+              }
+              return ['10.134.100.0/24 (VLAN 100)', '10.134.115.0/24 (VLAN 115)'];
+            })()
+          }));
+          setDevicesList(mappedList);
+        } else {
+          setDevicesList(mockNodeData);
+        }
+      } catch (err) {
+        console.error('Failed to load NetBox devices for search & reserve:', err);
+        setDevicesList(mockNodeData);
+      } finally {
+        setLoadingDevices(false);
+      }
+    };
+
+    const fetchModelTypes = async () => {
+      setLoadingModels(true);
+      try {
+        const res = await ndsApi.getDeviceTypes();
+        const rawList = res.data?.data || res.data || res || [];
+        if (rawList.length > 0) {
+          const mappedModels = rawList.map(dt => dt.display || dt.model || dt.name).filter(Boolean);
+          const uniqueModels = [...new Set(mappedModels)];
+          setModelOptions(uniqueModels);
+        } else {
+          setModelOptions(mockModelLSW);
+        }
+      } catch (err) {
+        console.error('Failed to load NetBox device types / models:', err);
+        setModelOptions(mockModelLSW);
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+
+    fetchDevices();
+    fetchModelTypes();
+  }, []);
 
   // ปิด dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
     const handleClickOutside = (e) => {
+      if (networkRef.current && !networkRef.current.contains(e.target)) {
+        setShowNetworkDropdown(false);
+      }
       if (nodeRef.current && !nodeRef.current.contains(e.target)) {
         setShowNodeDropdown(false);
       }
@@ -177,6 +328,41 @@ export default function CDSSearchReservePage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // เมื่อเลือก Select Network -> auto-fill ข้อมูล Network
+  const handleNetworkSelect = (net) => {
+    if (net) {
+      const displayText = `${net.nodeId}${net.nodeName ? ` (${net.nodeName})` : ''}`;
+      setNetworkSearch(displayText);
+      setFormData((prev) => ({
+        ...prev,
+        networkDevice: net.nodeId,
+        areaGroup: net.areaGroup,
+        area: net.area,
+        siteName: net.siteName,
+        nameThai: net.nameThai,
+        status: net.status,
+        tenant: net.tenant,
+        description: net.description,
+      }));
+      setSelectedNode(net);
+    } else {
+      setNetworkSearch('');
+      setFormData((prev) => ({
+        ...prev,
+        networkDevice: '',
+        areaGroup: '',
+        area: '',
+        siteName: '',
+        nameThai: '',
+        status: '',
+        tenant: '',
+        description: '',
+      }));
+      setSelectedNode(null);
+    }
+    setShowNetworkDropdown(false);
+  };
+
   // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
   const handleNodeSelect = (node) => {
     setFormData({
@@ -184,9 +370,11 @@ export default function CDSSearchReservePage() {
       idNetwork: node.idNetwork,
       areaGroup: node.areaGroup,
       area: node.area,
-      ipAddress: node.ipAddress,
-      siteCode: node.siteCode,
       siteName: node.siteName,
+      nameThai: node.nameThai,
+      status: node.status,
+      tenant: node.tenant,
+      description: node.description,
     });
     setSelectedNode(node);
     setNodeSearch(node.nodeId);
@@ -195,7 +383,7 @@ export default function CDSSearchReservePage() {
 
   // ล้างข้อมูลทั้งหมด
   const handleClearNode = () => {
-    setFormData({ idNetwork: '', areaGroup: '', area: '', ipAddress: '', siteCode: '', siteName: '', nodeId: '' });
+    setFormData({ idNetwork: '', areaGroup: '', area: '', ipAddress: '', siteName: '', nameThai: '', nodeId: '' });
     setSelectedNode(null);
     setNodeSearch('');
     setShowNodeDropdown(false);
@@ -253,14 +441,25 @@ export default function CDSSearchReservePage() {
         access_lsw_ip: reserveData.ipAddress || selectedNode.ipAddress,
         access_lsw_vlan_management: '99',
       };
-      await cdsApi.addDashboard(newDashboardItem);
-      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ และเพิ่มข้อมูลลงใน Dashboard แล้ว!\nNode: ${selectedNode.nodeId}\nModel LSW: ${reserveData.modelLSW}\nIP Address: ${reserveData.ipAddress || 'Auto IP'}`);
+      // 1. บันทึกลง LocalStorage (Local Browser Storage)
+      const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+      localReserves.unshift(newDashboardItem);
+      localStorage.setItem('cds_local_reserves', JSON.stringify(localReserves));
+
+      // 2. ส่งไปเก็บที่ In-memory Mock ใน Backend (ไม่ไปแตะ NetBox)
+      try {
+        await cdsApi.addDashboard(newDashboardItem);
+      } catch (e) {
+        console.warn('Cannot reach backend dashboard API, saved to LocalStorage only', e);
+      }
+
+      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ!\nข้อมูลถูกบันทึกไว้ในระบบ Local เรียบร้อยแล้ว (ไม่ถูกส่งไปสร้างใน NetBox)\nNode: ${selectedNode.nodeId}\nModel LSW: ${reserveData.modelLSW}`);
       handleClearReserve();
       handleClearNode();
       setActiveStep(1);
     } catch (err) {
       console.error(err);
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลดีไวซ์: ' + err.message);
+      alert('เกิดข้อผิดพลาด: ' + err.message);
     }
   };
 
@@ -354,31 +553,11 @@ export default function CDSSearchReservePage() {
               Select Network
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <DisplayField label="ID Network" value={formData.idNetwork} />
-              <DisplayField label="Area Group" value={formData.areaGroup} />
-              <DisplayField label="Area" value={formData.area} />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <DisplayField label="IP Address" value={formData.ipAddress} />
-              <DisplayField label="Site Code" value={formData.siteCode} />
-              <DisplayField label="Site Name" value={formData.siteName} />
-            </div>
-
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-base-600/60" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-base-900 px-4 text-xs font-mono text-ink-600 uppercase tracking-widest">Node</span>
-              </div>
-            </div>
-
-            {/* Node ID Search */}
-            <div className="max-w-md" ref={nodeRef}>
-              <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">Node ID</label>
+            {/* Select Network Field (Searchable Input Dropdown, Device Role: LSW_Network) */}
+            <div className="max-w-md" ref={networkRef}>
+              <label className="block text-xs font-semibold text-cds uppercase tracking-wider mb-2">
+                Select Network (LSW_Network)
+              </label>
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-600 pointer-events-none">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -387,11 +566,133 @@ export default function CDSSearchReservePage() {
                 </span>
                 <input
                   type="text"
-                  placeholder="ค้นหา Node ID..."
+                  placeholder="พิมพ์ค้นหา Network (LSW_Network)..."
+                  value={networkSearch}
+                  onChange={(e) => {
+                    setNetworkSearch(e.target.value);
+                    setShowNetworkDropdown(true);
+                    if (!e.target.value) {
+                      handleNetworkSelect(null);
+                    }
+                  }}
+                  onFocus={() => setShowNetworkDropdown(true)}
+                  className="w-full rounded-lg border border-base-600 bg-base-950 pl-10 pr-10 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200 font-mono"
+                />
+                {networkSearch && (
+                  <button
+                    onClick={() => handleNetworkSelect(null)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-100 transition-colors"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+
+                {showNetworkDropdown && (
+                  <div className="absolute z-30 mt-1.5 w-full rounded-lg border border-base-600 bg-base-800 shadow-glow overflow-hidden">
+                    {loadingDevices ? (
+                      <div className="px-4 py-6 text-center text-sm text-ink-500 font-mono animate-pulse">กำลังโหลดอุปกรณ์ LSW_Network จาก NetBox...</div>
+                    ) : filteredNetworkOptions.length > 0 ? (
+                      <ul className="max-h-56 overflow-y-auto py-1">
+                        {filteredNetworkOptions.map((net) => (
+                          <li
+                            key={net.nodeId}
+                            onClick={() => handleNetworkSelect(net)}
+                            className={`flex flex-col gap-0.5 cursor-pointer px-4 py-2.5 text-sm transition-colors duration-150 border-b border-base-700/50 last:border-0 ${formData.networkDevice === net.nodeId ? 'bg-cds/15 text-cds' : 'text-ink-100 hover:bg-base-700'}`}
+                          >
+                            <div className="flex items-center justify-between font-mono font-semibold">
+                              <span>{net.nodeId} {net.nodeName ? `(${net.nodeName})` : ''}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-base-950 text-ink-400 border border-base-600/30">{net.status}</span>
+                            </div>
+                            <div className="text-xs text-ink-500 flex items-center gap-3">
+                              <span>Site: {net.siteName}</span>
+                              {net.areaGroup && <span>Region: {net.areaGroup}</span>}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="px-4 py-6 text-center text-sm text-ink-600">ไม่พบ Network ที่ตรงกับคำค้นหา</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-ink-600">พิมพ์ค้นหาอุปกรณ์ LSW_Network จาก NetBox ตามชื่อ ID, Node Name หรือ Site</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <DisplayField label="Area Group" value={formData.areaGroup} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+              <DisplayField label="Area" value={formData.area} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+              <DisplayField label="Status" value={formData.status} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <DisplayField label="Site Name" value={formData.siteName} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+              <DisplayField label="Name Thai" value={formData.nameThai} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+              <DisplayField label="Tenant" value={formData.tenant} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+            </div>
+
+            <div className="w-full">
+              <DisplayField label="Description" value={formData.description} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
+            </div>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-base-600/60" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-base-900 px-4 text-xs font-mono text-ink-600 uppercase tracking-widest">Node ID (เตรียมสร้างใหม่)</span>
+              </div>
+            </div>
+
+            {/* Node ID (เตรียมสร้างใหม่) */}
+            <div className="max-w-md" ref={nodeRef}>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider">Node ID (ใหม่)</label>
+              </div>
+
+              {/* 3 Node ID ล่าสุดในระบบ NetBox */}
+              {recent3NodeIds.length > 0 && (
+                <div className="mb-3 space-y-1.5">
+                  <span className="text-[11px] font-mono text-ink-500 block">3 Node ID ล่าสุดในระบบ NetBox:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {recent3NodeIds.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          const nextSuggestedId = getNextNodeId(id);
+                          setNodeSearch(nextSuggestedId);
+                          setFormData((prev) => ({ ...prev, nodeId: nextSuggestedId }));
+                        }}
+                        className="px-2.5 py-1 rounded-md text-xs font-mono bg-cds/10 border border-cds/30 text-cds hover:bg-cds/20 active:scale-95 transition-all flex items-center gap-1.5"
+                        title={`คลิกเพื่อสร้าง Node ID ใหม่ถัดไป (${getNextNodeId(id)})`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-cds" />
+                        {id} → <span className="underline font-bold">{getNextNodeId(id)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-600 pointer-events-none">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  placeholder="ระบุ Node ID ใหม่ที่ต้องการสร้าง..."
                   value={nodeSearch}
-                  onChange={(e) => { setNodeSearch(e.target.value); setShowNodeDropdown(true); }}
-                  onFocus={() => setShowNodeDropdown(true)}
-                  className="w-full rounded-lg border border-base-600 bg-base-950 pl-10 pr-10 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200"
+                  onChange={(e) => {
+                    setNodeSearch(e.target.value);
+                    setFormData((prev) => ({ ...prev, nodeId: e.target.value }));
+                  }}
+                  className="w-full rounded-lg border border-base-600 bg-base-950 pl-10 pr-10 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200 font-mono"
                 />
                 {nodeSearch && (
                   <button onClick={handleClearNode} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-100 transition-colors">
@@ -400,28 +701,21 @@ export default function CDSSearchReservePage() {
                     </svg>
                   </button>
                 )}
-                {showNodeDropdown && (
-                  <div className="absolute z-20 mt-1.5 w-full rounded-lg border border-base-600 bg-base-800 shadow-glow overflow-hidden">
-                    {filteredNodeIdOptions.length > 0 ? (
-                      <ul className="max-h-48 overflow-y-auto py-1">
-                        {filteredNodeIdOptions.map((node) => (
-                          <li
-                            key={node.nodeId}
-                            onClick={() => handleNodeSelect(node)}
-                            className={`flex items-center gap-3 cursor-pointer px-4 py-2.5 text-sm transition-colors duration-150 ${formData.nodeId === node.nodeId ? 'bg-cds/10 text-cds' : 'text-ink-100 hover:bg-base-700'}`}
-                          >
-                            <span className={`flex-shrink-0 h-2 w-2 rounded-full ${formData.nodeId === node.nodeId ? 'bg-cds' : 'bg-ink-600'}`} />
-                            <span className="font-mono">{node.nodeId}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="px-4 py-6 text-center text-sm text-ink-600">ไม่พบ Node ID ที่ค้นหา</div>
-                    )}
-                  </div>
-                )}
               </div>
-              <p className="mt-1.5 text-xs text-ink-600">เลือก Node ID เพื่อแสดงข้อมูล Network ด้านบนอัตโนมัติ</p>
+
+              {nodeSearch.trim() ? (
+                isNodeIdAlreadyExists ? (
+                  <p className="mt-1.5 text-xs text-amber-400 font-mono flex items-center gap-1.5">
+                    <span>⚠️</span> Node ID "{nodeSearch}" มีอยู่ในระบบ NetBox แล้ว (ไม่ใช่ Node ใหม่)
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-emerald-400 font-mono flex items-center gap-1.5">
+                    <span>✓</span> Node ID "{nodeSearch}" เป็น Node ใหม่ (ยังไม่มีใน NetBox - พร้อมสำหรับเตรียมสร้าง)
+                  </p>
+                )
+              ) : (
+                <p className="mt-1.5 text-xs text-ink-600">ระบุชื่อ Node ID ใหม่ที่ยังไม่มีใน NetBox สำหรับเตรียมสร้างอุปกรณ์สวิตช์ขึ้นระบบ</p>
+              )}
             </div>
 
             <div className="flex justify-end pt-2">
@@ -455,6 +749,24 @@ export default function CDSSearchReservePage() {
               <span className="text-xs font-mono font-bold text-cds uppercase tracking-widest">LSW Access</span>
               <div className="h-px flex-1 bg-gradient-to-l from-cds/40 to-transparent" />
             </div>
+
+            {/* Network Trace Flow (LSW -> AGG -> PE -> VRF) */}
+            {selectedNode && (
+              <div className="rounded-lg border border-cds/20 bg-cds/5 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-ink-400 font-bold">Trace Chain:</span>
+                  <span className="px-2 py-0.5 rounded bg-base-950 text-cds border border-cds/30">LSW: {selectedNode.nodeId}</span>
+                  <span className="text-ink-600">➔</span>
+                  <span className="px-2 py-0.5 rounded bg-base-950 text-ink-200 border border-base-600/30">AGG: {selectedNode.aggregation}</span>
+                  <span className="text-ink-600">➔</span>
+                  <span className="px-2 py-0.5 rounded bg-base-950 text-emerald-400 border border-emerald-500/30 font-bold">PE: {selectedNode.peName}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/30">
+                  <span>VRF:</span>
+                  <span className="font-bold">{selectedNode.domain}</span>
+                </div>
+              </div>
+            )}
 
             {/* Row 1: Remark, Job Ref., Status */}
             <div className="space-y-4">
@@ -519,7 +831,7 @@ export default function CDSSearchReservePage() {
 
             {/* Row 6: Select Model LSW */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SelectField label="Select Model LSW" value={reserveData.modelLSW} onChange={(e) => handleReserveChange('modelLSW', e.target.value)} options={mockModelLSW} placeholder="------------" />
+              <SelectField label="Select Model LSW" value={reserveData.modelLSW} onChange={(e) => handleReserveChange('modelLSW', e.target.value)} options={modelOptions} placeholder={loadingModels ? "กำลังโหลด Model จาก NetBox..." : "------------"} />
             </div>
 
             {/* Row 7: Port Uplink Main (แดง) & Backup (ส้ม) */}

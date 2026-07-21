@@ -6,15 +6,21 @@ export default function CDSDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ฟังก์ชันดึงข้อมูลจาก API จริง
+  // ฟังก์ชันดึงข้อมูลจาก API จริง + ข้อมูลใน LocalStorage
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
       const res = await cdsApi.getDashboard();
       const resultList = res.data?.data || res.data || res || [];
-      setData(resultList);
+      const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+      
+      // รวมข้อมูล local reserves ไว้ด้านบนตาราง
+      const combined = [...localReserves, ...resultList];
+      setData(combined);
     } catch (err) {
       console.error('Failed to fetch CDS dashboard data:', err);
+      const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+      setData(localReserves);
     } finally {
       setLoading(false);
     }

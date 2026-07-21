@@ -84,4 +84,24 @@ async function addDashboardData(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData };
+async function getSiteTopology(req, res, next) {
+  try {
+    const siteCode = req.query.site || req.params.site_code || '';
+    const topologyData = await cdsService.getSiteTopology(siteCode);
+    return ok(res, topologyData, 'ดึงข้อมูล Site Topology สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function getPathTrace(req, res, next) {
+  try {
+    const query = req.query.ip || req.query.query || req.params.query || '';
+    const traceData = await cdsService.getPathTrace(query);
+    return ok(res, traceData, 'ดึงข้อมูล Path Trace สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace };

@@ -37,6 +37,28 @@ async function getAvailableCustomFields() {
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
 
 // ฟังก์ชันดึงข้อมูลแบบวนลูปทีละหน้าจนกว่าจะหมด เพื่อ bypass ขีดจำกัด MAX_PAGE_SIZE (1000) ของ NetBox
+async function getSingle(endpointPath) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}${endpointPath}`, {
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`NetBox API GET single request failed with status ${res.status}: ${errText}`);
+  }
+
+  return await res.json();
+}
+
 async function fetchAllPages(endpointPath) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -79,10 +101,17 @@ async function getDevices() {
   }
 
   const rawDevices = await fetchAllPages('/dcim/devices/');
+  const sitesList = await getSites();
+  const sitesMap = new Map(sitesList.map(s => [s.id, s]));
   
-  const mapped = rawDevices.map(device => ({
-    id: device.id,
-    nodeid: device.custom_fields?.nodeid || device.custom_fields?.node_id || '-',
+  const mapped = rawDevices.map(device => {
+    const siteObj = device.site?.id ? sitesMap.get(device.site.id) : null;
+    return {
+      id: device.id,
+      nodeid: device.custom_fields?.nodeid || device.custom_fields?.node_id || '-',
+      site_name: siteObj?.site_name && siteObj.site_name !== 'N/A' ? siteObj.site_name : (device.site?.name || 'N/A'),
+      name_thai: siteObj?.name_thai || 'N/A',
+      region: siteObj?.region || 'N/A',
     name: device.name || 'Unnamed Device',
     status: device.status?.label || device.status?.value || 'Active',
     status_value: device.status?.value || 'active',
@@ -102,6 +131,7 @@ async function getDevices() {
       if (r === 'LSW') return 'Network';
       return r; // Returns 'Provider Edge', 'Provider' as is
     })(),
+    role_name: device.role?.name || device.device_role?.name || 'N/A',
     role_id: device.role?.id || device.device_role?.id || null,
     manufacturer: device.device_type?.manufacturer?.name || 'N/A',
     type: device.device_type?.model || device.device_type?.name || 'N/A',
@@ -132,8 +162,8 @@ async function getDevices() {
     owner: device.custom_fields?.owner || 'N/A',
     tags: device.tags ? device.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
     local_context_data: device.local_context_data ? JSON.stringify(device.local_context_data, null, 2) : '',
-    last_updated: device.last_updated ? new Date(device.last_updated).toLocaleString('th-TH') : 'N/A'
-  }));
+    };
+  });
 
   memoryCache.devices.data = mapped;
   memoryCache.devices.timestamp = now;
@@ -1336,5 +1366,7 @@ module.exports = {
   getVlans,
   getInterfaceTypeChoices,
   getDeviceInterfaces,
-  updateInterface
+  updateInterface,
+  get: fetchAllPages,
+  getSingle
 };
