@@ -5,7 +5,7 @@ export default function CDSTopologyMapPage() {
   const [activeTab, setActiveTab] = useState('path-trace'); // 'path-trace' | 'site-topology'
 
   // ==================== TAB 1: Path Trace States ====================
-  const [pathQuery, setPathQuery] = useState('85390');
+  const [pathQuery, setPathQuery] = useState('');
   const [pathTraceData, setPathTraceData] = useState(null);
   const [loadingPathTrace, setLoadingPathTrace] = useState(false);
   const [pathTraceError, setPathTraceError] = useState(null);
@@ -138,7 +138,7 @@ export default function CDSTopologyMapPage() {
 
   useEffect(() => {
     if (activeTab === 'path-trace' && !pathTraceData) {
-      handleRunPathTrace('85390');
+      handleRunPathTrace('');
     } else if (activeTab === 'site-topology' && selectedSiteCode) {
       loadTopology(selectedSiteCode);
     }
