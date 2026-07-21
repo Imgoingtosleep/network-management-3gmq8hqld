@@ -25,6 +25,36 @@ export default function CDSTopologyMapPage() {
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [activeGroupIndex, setActiveGroupIndex] = useState(-1); // -1 = All Groups
 
+  // Canvas Drag & Zoom States
+  const [zoomScale, setZoomScale] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
+  const svgContainerRef = useRef(null);
+
+  const handleMouseDown = (e) => {
+    if (!svgContainerRef.current) return;
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: svgContainerRef.current.scrollLeft,
+      scrollTop: svgContainerRef.current.scrollTop,
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || !svgContainerRef.current) return;
+    e.preventDefault();
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    svgContainerRef.current.scrollLeft = dragStart.scrollLeft - dx;
+    svgContainerRef.current.scrollTop = dragStart.scrollTop - dy;
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
   // Filter sites for autocomplete dropdown
   const filteredSiteOptions = sitesList.filter((site) => {
     if (!siteSearchInput.trim()) return true;
@@ -243,10 +273,26 @@ export default function CDSTopologyMapPage() {
   const standaloneDevices = filteredDevices.filter((d) => !activeDiagramDeviceIds.has(String(d.id)) && !d.is_external);
 
   const filteredDiagrams = activeGroupIndex === -1 ? diagrams : [diagrams[activeGroupIndex]];
-  const numDiagrams = Math.max(1, filteredDiagrams.length);
-  const colWidth = 480;
-  const svgWidth = Math.max(960, numDiagrams * colWidth);
-  const svgHeight = 500;
+  
+  let totalSvgWidth = 0;
+  filteredDiagrams.forEach((diag) => {
+    const pes = diag.devices.filter(d => {
+      const r = (d.role||'').toLowerCase(); const n = (d.name||'').toLowerCase();
+      return r.includes('pe')||r.includes('edge')||r.includes('router')||n.includes('pe');
+    }).length;
+    const aggs = diag.devices.filter(d => {
+      const r = (d.role||'').toLowerCase(); const n = (d.name||'').toLowerCase();
+      return r.includes('agg')||n.includes('agg');
+    }).length;
+    const nets = diag.devices.length - pes - aggs;
+    const maxTier = Math.max(pes, aggs, nets, 1);
+    const diagWidth = Math.max(550, maxTier * 180);
+    diag.calculatedWidth = diagWidth;
+    totalSvgWidth += diagWidth;
+  });
+
+  const svgWidth = Math.max(1000, totalSvgWidth);
+  const svgHeight = 520;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-left pb-16 font-sans">
@@ -561,62 +607,31 @@ export default function CDSTopologyMapPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 max-w-xl" ref={siteInputRef}>
+              <div className="relative flex-1 max-w-xl">
                 <input
                   type="text"
-                  placeholder="Enter Site Code (e.g. bkk01, site-a, bch)..."
+                  placeholder="Enter Site Code or dcode (e.g. bkk01, site-a, bch, EMX-UBCH-XX)..."
                   value={siteSearchInput}
-                  onChange={(e) => {
-                    setSiteSearchInput(e.target.value);
-                    setShowSiteDropdown(true);
-                  }}
-                  onFocus={() => setShowSiteDropdown(true)}
+                  onChange={(e) => setSiteSearchInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      setShowSiteDropdown(false);
                       setSelectedSiteCode(siteSearchInput);
                       loadTopology(siteSearchInput);
                     }
                   }}
                   className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 font-mono focus:border-cds focus:outline-none transition-all"
                 />
-
-                {showSiteDropdown && filteredSiteOptions.length > 0 && (
-                  <div className="absolute z-30 mt-1.5 w-full rounded-lg border border-base-600 bg-base-800 shadow-glow overflow-hidden">
-                    <ul className="max-h-52 overflow-y-auto py-1 text-xs font-mono">
-                      {filteredSiteOptions.map((site) => (
-                        <li
-                          key={site.id}
-                          onClick={() => {
-                            const code = site.slug || site.name;
-                            setSiteSearchInput(code);
-                            setSelectedSiteCode(code);
-                            setShowSiteDropdown(false);
-                            loadTopology(code);
-                          }}
-                          className="px-4 py-2.5 hover:bg-base-700 cursor-pointer flex justify-between items-center border-b border-base-700/40 last:border-0"
-                        >
-                          <span className="text-ink-100 font-bold">{site.site_name || site.name}</span>
-                          <span className="text-cds font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-base-950 border border-cds/30">
-                            {site.slug?.toUpperCase() || site.name}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
 
               <button
                 onClick={() => {
-                  setShowSiteDropdown(false);
                   setSelectedSiteCode(siteSearchInput);
                   loadTopology(siteSearchInput);
                 }}
-                disabled={loadingTopology}
-                className="inline-flex items-center gap-2 rounded-lg bg-cds px-6 py-2.5 text-sm font-bold text-base-950 hover:bg-cds/90 active:scale-95 transition-all shadow-glow font-mono whitespace-nowrap"
+                disabled={loadingTopology || !siteSearchInput.trim()}
+                className="px-5 py-2.5 rounded-lg bg-cds text-base-950 font-bold font-mono text-xs hover:bg-cds/90 disabled:opacity-50 transition-all"
               >
-                {loadingTopology ? 'Visualizing...' : 'Visualize Site'}
+                {loadingTopology ? 'Searching...' : 'Visualize Site'}
               </button>
 
               <div className="w-48 relative ml-auto">
@@ -664,7 +679,40 @@ export default function CDSTopologyMapPage() {
           )}
 
           {/* NETOPS SVG CANVAS & UNION-FIND DIAGRAM GROUPS */}
-          <div className="rounded-xl border border-base-600 bg-base-950 p-6 shadow-glow relative overflow-x-auto min-h-[400px] space-y-8">
+          <div className="rounded-xl border border-base-600 bg-base-950 p-6 shadow-glow relative overflow-hidden min-h-[400px] space-y-4">
+            {/* Toolbar for Zoom & Canvas Controls */}
+            {topologyData && !loadingTopology && (
+              <div className="flex items-center justify-between border-b border-base-800 pb-3 font-mono text-xs">
+                <div className="flex items-center gap-2 text-ink-400">
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>💡 Drag to pan canvas / Click node for details</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setZoomScale((z) => Math.max(0.6, z - 0.15))}
+                    className="px-2 py-1 bg-base-900 border border-base-700 hover:bg-base-800 text-ink-200 rounded font-bold"
+                    title="Zoom Out"
+                  >
+                    🔍 -
+                  </button>
+                  <span className="text-ink-400 w-12 text-center">{Math.round(zoomScale * 100)}%</span>
+                  <button
+                    onClick={() => setZoomScale((z) => Math.min(1.8, z + 0.15))}
+                    className="px-2 py-1 bg-base-900 border border-base-700 hover:bg-base-800 text-ink-200 rounded font-bold"
+                    title="Zoom In"
+                  >
+                    🔍 +
+                  </button>
+                  <button
+                    onClick={() => setZoomScale(1)}
+                    className="px-2 py-1 bg-base-900 border border-base-700 hover:bg-base-800 text-ink-400 hover:text-ink-100 rounded"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
+
             {loadingTopology ? (
               <div className="flex flex-col items-center justify-center py-24 text-ink-500 font-mono gap-3">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-cds border-t-transparent" />
@@ -682,159 +730,187 @@ export default function CDSTopologyMapPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {/* SVG Topology Graph Canvas */}
-                <div className="relative w-full overflow-x-auto">
-                  <svg
-                    width={svgWidth}
-                    height={svgHeight}
-                    className="w-full min-w-[960px] block font-mono text-xs rounded-xl bg-base-950"
-                    style={{
-                      backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)',
-                      backgroundSize: '24px 24px',
-                    }}
-                  >
-                    {/* Render each diagram group calculated by Union-Find */}
-                    {filteredDiagrams.map((diag, dIdx) => {
-                      const groupWidth = svgWidth / numDiagrams;
-                      const startX = dIdx * groupWidth;
+                {/* SVG Topology Graph Canvas with Drag-to-Pan */}
+                <div
+                  ref={svgContainerRef}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                  className={`relative w-full overflow-auto max-h-[580px] rounded-xl bg-base-950 select-none ${
+                    isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                  }`}
+                  style={{ touchAction: 'none' }}
+                >
+                  <div style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top left', transition: isDragging ? 'none' : 'transform 0.15s ease-out' }}>
+                    <svg
+                      width={svgWidth}
+                      height={svgHeight}
+                      className="block font-mono text-xs bg-base-950"
+                      style={{
+                        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)',
+                        backgroundSize: '24px 24px',
+                      }}
+                    >
+                      {/* Render each diagram group calculated by Union-Find */}
+                      {(() => {
+                        let currentGroupStartX = 0;
 
-                      // Classify devices in group
-                      const pes = [];
-                      const aggs = [];
-                      const networks = [];
+                        return filteredDiagrams.map((diag, dIdx) => {
+                          const groupWidth = diag.calculatedWidth || 600;
+                          const startX = currentGroupStartX;
+                          currentGroupStartX += groupWidth;
 
-                      diag.devices.forEach((d) => {
-                        const role = (d.role || '').toLowerCase();
-                        const name = (d.name || '').toLowerCase();
-                        if (role.includes('edge') || role.includes('pe') || role.includes('router') || name.includes('pe')) {
-                          pes.push(d);
-                        } else if (role.includes('agg') || name.includes('agg')) {
-                          aggs.push(d);
-                        } else {
-                          networks.push(d);
-                        }
-                      });
+                          // Classify devices in group
+                          const pes = [];
+                          const aggs = [];
+                          const networks = [];
 
-                      const coords = {};
-                      const assignCoords = (list, y) => {
-                        const n = list.length;
-                        list.forEach((d, index) => {
-                          const localX = n === 1 ? groupWidth / 2 : 70 + index * ((groupWidth - 140) / (n - 1));
-                          coords[d.id] = { x: startX + localX, y: y, device: d };
-                        });
-                      };
-
-                      assignCoords(pes, 80);
-                      assignCoords(aggs, 250);
-                      assignCoords(networks, 420);
-
-                      return (
-                        <g key={dIdx}>
-                          {/* Group Title Header */}
-                          <text x={startX + 30} y={35} fill="#00d4aa" fontSize={11} fontWeight="bold">
-                            🌐 {diag.name.toUpperCase()}
-                          </text>
-
-                          {/* Link Lines with Hover Highlight */}
-                          {diag.links.map((l, lIdx) => {
-                            const src = coords[l.source];
-                            const tgt = coords[l.target];
-                            if (src && tgt) {
-                              const isConnectedToHovered =
-                                hoveredNodeId && (String(l.source) === String(hoveredNodeId) || String(l.target) === String(hoveredNodeId));
-                              const lineOpacity = hoveredNodeId ? (isConnectedToHovered ? 1 : 0.15) : 0.75;
-                              const strokeColor = isConnectedToHovered ? '#00d4aa' : '#334155';
-                              const strokeWidth = isConnectedToHovered ? 3.5 : 2;
-
-                              return (
-                                <line
-                                  key={lIdx}
-                                  x1={src.x}
-                                  y1={src.y}
-                                  x2={tgt.x}
-                                  y2={tgt.y}
-                                  stroke={strokeColor}
-                                  strokeWidth={strokeWidth}
-                                  strokeDasharray={isConnectedToHovered ? 'none' : '4, 4'}
-                                  opacity={lineOpacity}
-                                  className="transition-all duration-200"
-                                />
-                              );
+                          diag.devices.forEach((d) => {
+                            const role = (d.role || '').toLowerCase();
+                            const name = (d.name || '').toLowerCase();
+                            if (role.includes('edge') || role.includes('pe') || role.includes('router') || name.includes('pe')) {
+                              pes.push(d);
+                            } else if (role.includes('agg') || name.includes('agg')) {
+                              aggs.push(d);
+                            } else {
+                              networks.push(d);
                             }
-                            return null;
-                          })}
+                          });
 
-                          {/* Nodes */}
-                          {diag.devices.map((d) => {
-                            const c = coords[d.id];
-                            if (!c) return null;
+                          const coords = {};
+                          const assignCoords = (list, y) => {
+                            const n = list.length;
+                            list.forEach((d, index) => {
+                              const localX = n === 1 ? groupWidth / 2 : 80 + index * ((groupWidth - 160) / (n - 1));
+                              coords[d.id] = { x: startX + localX, y: y, device: d, indexInTier: index };
+                            });
+                          };
 
-                            let color = '#3fb950'; // Green for SW/Access
-                            let displayRole = 'NET';
-                            const roleLower = (d.role || '').toLowerCase();
-                            if (roleLower.includes('pe') || roleLower.includes('edge') || roleLower.includes('router')) {
-                              color = '#f85149'; // Red for PE
-                              displayRole = 'PE';
-                            } else if (roleLower.includes('agg')) {
-                              color = '#0096ff'; // Blue for AGG
-                              displayRole = 'AGG';
-                            }
+                          assignCoords(pes, 80);
+                          assignCoords(aggs, 250);
+                          assignCoords(networks, 420);
 
-                            const isSelected = selectedNode?.id === d.id;
-                            const isHovered = hoveredNodeId === d.id;
-
-                            return (
-                              <g
-                                key={d.id}
-                                transform={`translate(${c.x}, ${c.y})`}
-                                onMouseEnter={() => setHoveredNodeId(d.id)}
-                                onMouseLeave={() => setHoveredNodeId(null)}
-                                onClick={() => setSelectedNode(d)}
-                                className="cursor-pointer group"
-                              >
-                                <circle r={isHovered ? 32 : 26} fill={color} opacity={isHovered ? 0.3 : 0.15} className="transition-all duration-200" />
-                                <circle
-                                  r={18}
-                                  fill="#0b1120"
-                                  stroke={color}
-                                  strokeWidth={isSelected || isHovered ? 3.5 : 2.5}
-                                  strokeDasharray={d.is_external ? '5,5' : 'none'}
-                                  className="transition-all duration-200"
-                                />
-                                <text dy={4} textAnchor="middle" fill="#ffffff" fontSize={9} fontWeight="800" fontFamily="monospace">
-                                  {displayRole}
-                                </text>
-                                <text y={36} textAnchor="middle" fill="#f8fafc" fontSize={11} fontWeight="bold">
-                                  {d.is_external ? `${d.name} (@ ${d.site})` : d.name}
-                                </text>
-                                <text y={48} textAnchor="middle" fill="#94a3b8" fontSize={9} fontFamily="monospace">
-                                  {d.primary_ip}
-                                </text>
-                              </g>
-                            );
-                          })}
-
-                          {/* Division Line between Uplink Groups */}
-                          {dIdx < numDiagrams - 1 && (
-                            <g>
-                              <line
-                                x1={startX + groupWidth}
-                                y1={20}
-                                x2={startX + groupWidth}
-                                y2={svgHeight - 20}
-                                stroke="rgba(255, 255, 255, 0.1)"
-                                strokeWidth={1.5}
-                                strokeDasharray="6, 6"
-                              />
-                              <text x={startX + groupWidth} y={15} fill="#64748b" fontSize={9} fontWeight="700" textAnchor="middle" letterSpacing="0.05em">
-                                UPLINK GROUP DIVISION
+                          return (
+                            <g key={dIdx}>
+                              {/* Group Title Header */}
+                              <text x={startX + 30} y={35} fill="#00d4aa" fontSize={11} fontWeight="bold">
+                                🌐 {diag.name.toUpperCase()}
                               </text>
+
+                              {/* Link Lines with Hover Highlight */}
+                              {diag.links.map((l, lIdx) => {
+                                const src = coords[l.source];
+                                const tgt = coords[l.target];
+                                if (src && tgt) {
+                                  const isConnectedToHovered =
+                                    hoveredNodeId && (String(l.source) === String(hoveredNodeId) || String(l.target) === String(hoveredNodeId));
+                                  const lineOpacity = hoveredNodeId ? (isConnectedToHovered ? 1 : 0.15) : 0.75;
+                                  const strokeColor = isConnectedToHovered ? '#00d4aa' : '#334155';
+                                  const strokeWidth = isConnectedToHovered ? 3.5 : 2;
+
+                                  return (
+                                    <line
+                                      key={lIdx}
+                                      x1={src.x}
+                                      y1={src.y}
+                                      x2={tgt.x}
+                                      y2={tgt.y}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeWidth}
+                                      strokeDasharray={isConnectedToHovered ? 'none' : '4, 4'}
+                                      opacity={lineOpacity}
+                                      className="transition-all duration-200"
+                                    />
+                                  );
+                                }
+                                return null;
+                              })}
+
+                              {/* Nodes */}
+                              {diag.devices.map((d) => {
+                                const c = coords[d.id];
+                                if (!c) return null;
+
+                                let color = '#3fb950'; // Green for SW/Access
+                                let displayRole = 'NET';
+                                const roleLower = (d.role || '').toLowerCase();
+
+                                if (roleLower.includes('pe') || roleLower.includes('edge') || roleLower.includes('router')) {
+                                  color = '#f85149'; // Red for PE
+                                  displayRole = 'PE';
+                                } else if (roleLower.includes('agg')) {
+                                  color = '#0096ff'; // Blue for AGG
+                                  displayRole = 'AGG';
+                                }
+
+                                const isSelected = selectedNode?.id === d.id;
+                                const isHovered = hoveredNodeId === d.id;
+
+                                // Stagger text labels vertically for odd/even indices to prevent text overlaps
+                                const isStaggered = c.indexInTier % 2 === 1;
+                                const nameY = isStaggered ? 52 : 36;
+                                const ipY = isStaggered ? 64 : 48;
+
+                                // Truncate long display names nicely
+                                const fullName = d.is_external ? `${d.name} (@ ${d.site})` : d.name;
+                                const displayName = fullName.length > 22 ? `${fullName.substring(0, 20)}...` : fullName;
+
+                                return (
+                                  <g
+                                    key={d.id}
+                                    transform={`translate(${c.x}, ${c.y})`}
+                                    onMouseEnter={() => setHoveredNodeId(d.id)}
+                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                    onClick={() => setSelectedNode(d)}
+                                    className="cursor-pointer group"
+                                  >
+                                    <title>{fullName}</title>
+                                    <circle r={isHovered ? 32 : 26} fill={color} opacity={isHovered ? 0.3 : 0.15} className="transition-all duration-200" />
+                                    <circle
+                                      r={18}
+                                      fill="#0b1120"
+                                      stroke={color}
+                                      strokeWidth={isSelected || isHovered ? 3.5 : 2.5}
+                                      strokeDasharray={d.is_external ? '5,5' : 'none'}
+                                      className="transition-all duration-200"
+                                    />
+                                    <text dy={4} textAnchor="middle" fill="#ffffff" fontSize={9} fontWeight="800" fontFamily="monospace">
+                                      {displayRole}
+                                    </text>
+                                    <text y={nameY} textAnchor="middle" fill="#f8fafc" fontSize={10} fontWeight="bold">
+                                      {displayName}
+                                    </text>
+                                    <text y={ipY} textAnchor="middle" fill="#94a3b8" fontSize={9} fontFamily="monospace">
+                                      {d.primary_ip}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* Division Line between Uplink Groups */}
+                              {dIdx < filteredDiagrams.length - 1 && (
+                                <g>
+                                  <line
+                                    x1={startX + groupWidth}
+                                    y1={20}
+                                    x2={startX + groupWidth}
+                                    y2={svgHeight - 20}
+                                    stroke="#334155"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="6,6"
+                                  />
+                                  <text x={startX + groupWidth} y={15} fill="#64748b" fontSize={9} fontWeight="700" textAnchor="middle">
+                                    UPLINK GROUP DIVISION
+                                  </text>
+                                </g>
+                              )}
                             </g>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </svg>
+                          );
+                        });
+                      })()}
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Standalone Devices Section (NetOps Style) */}
