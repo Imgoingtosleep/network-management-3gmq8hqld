@@ -818,6 +818,28 @@ async function getDeviceDetails(deviceId) {
       }
     }
 
+    let matchedSubnet = '';
+    let matchedRingName = '';
+
+    if (aggDeviceName) {
+      const aggDevFull = allDevs.find((d) => d.name === aggDeviceName);
+      if (aggDevFull && aggDevFull.ip && aggDevFull.ip !== 'N/A') {
+        const aggCleanIp = aggDevFull.ip.split('/')[0];
+        try {
+          const prefixResp = await netboxService.get(`/ipam/prefixes/?contains=${encodeURIComponent(aggCleanIp)}&limit=1`);
+          const prefixResults = prefixResp || [];
+          if (prefixResults.length > 0) {
+            const p = prefixResults[0];
+            const vid = p.vlan ? (typeof p.vlan === 'object' ? (p.vlan.vid || p.vlan.name || p.vlan.display || '') : p.vlan) : '';
+            matchedSubnet = `${p.prefix}${vid ? ` (VLAN ${vid})` : ''}`;
+            matchedRingName = p.custom_fields?.ringname || p.ringname || '';
+          }
+        } catch (pErr) {
+          console.warn('Error fetching NetBox prefix containing AGG IP:', pErr);
+        }
+      }
+    }
+
     const details = {
       id: devFull.id,
       name: devFull.name,
@@ -838,6 +860,8 @@ async function getDeviceDetails(deviceId) {
       gateway: gwInfo,
       aggregation: aggDeviceName,
       ip_networks: ipNetworks,
+      matched_subnet: matchedSubnet,
+      matched_ring_name: matchedRingName,
     };
 
     return { success: true, device: details };

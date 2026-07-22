@@ -52,6 +52,7 @@ export default function CDSDashboardPage() {
     { key: 'access_lsw_port_customer', label: 'Access LSW Port Customer' },
     { key: 'access_lsw_ip', label: 'Access LSW IP' },
     { key: 'access_lsw_vlan_management', label: 'Access LSW Vlan Management' },
+    { key: 'ring_name', label: 'Ring Name' },
     { key: 'timestamp', label: 'Timestamp' },
   ];
 

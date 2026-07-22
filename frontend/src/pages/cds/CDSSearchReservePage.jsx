@@ -209,6 +209,7 @@ export default function CDSSearchReservePage() {
   const [prefixesList, setPrefixesList] = useState([]);
   const [pePorts, setPePorts] = useState([]);
   const [loadingPePorts, setLoadingPePorts] = useState(false);
+  const [loadingStep2Data, setLoadingStep2Data] = useState(false);
 
   // กรองอุปกรณ์เฉพาะ Device Role LSW_Network (หรือ LSW / Network)
   const lswNetworkDevices = devicesList.filter((d) => {
@@ -454,10 +455,12 @@ export default function CDSSearchReservePage() {
 
   // หา ringName จาก prefix ที่เลือก
   const getSelectedPrefixRingName = () => {
-    if (!reserveData.ipNetwork) return '—';
-    const match = reserveData.ipNetwork.split(' ')[0];
-    const found = prefixesList.find(p => p.prefix === match);
-    return found?.ringname || '—';
+    if (reserveData.ipNetwork) {
+      const match = reserveData.ipNetwork.split(' ')[0];
+      const found = prefixesList.find(p => p.prefix === match);
+      if (found?.ringname) return found.ringname;
+    }
+    return reserveData.ring_name || '—';
   };
 
   // ดึงค่า VLAN จาก prefix ที่เลือก
@@ -793,7 +796,7 @@ export default function CDSSearchReservePage() {
     }
   };
 
-  // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object และดึงข้อมูล PE, AGG, IP Networks
+  // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
   const handleNodeSelect = async (node) => {
     setFormData({
       nodeId: node.nodeId,
@@ -810,41 +813,63 @@ export default function CDSSearchReservePage() {
     setSelectedNode(node);
     setNodeSearch(node.nodeId);
     setShowNodeDropdown(false);
+  };
 
-    if (node) {
-      try {
-        const targetId = node.id || node.nodeId;
-        const detailRes = await cdsApi.getDeviceDetails(targetId);
-        if (detailRes.data?.data?.success) {
-          const dev = detailRes.data.data.device;
-          const resolvedPeFull = dev.gateway?.name || dev.pe_name || node.peName || '90134_BCH-MX480-PE';
+  const handleNextStep = async () => {
+    if (!selectedNode) {
+      alert('กรุณาเลือก LSW Network ก่อน');
+      return;
+    }
+    if (!nodeSearch) {
+      alert('กรุณากรอก Node ID ก่อน');
+      return;
+    }
+    
+    setLoadingStep2Data(true);
+    try {
+      const targetId = selectedNode.id || selectedNode.nodeId;
+      const detailRes = await cdsApi.getDeviceDetails(targetId);
+      if (detailRes.data?.data?.success) {
+        const dev = detailRes.data.data.device;
+        const resolvedPeFull = dev.gateway?.name || dev.pe_name || selectedNode.peName || '90134_BCH-MX480-PE';
 
-          let resolvedAgg = dev.aggregation || node.aggregation;
-          if (dev.connections && dev.connections.length > 0) {
-            const aggConn = dev.connections.find(
-              (c) =>
-                (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
-                (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
-            );
-            if (aggConn) {
-              resolvedAgg = aggConn.remote_device;
-            }
+        let resolvedAgg = dev.aggregation || selectedNode.aggregation;
+        if (dev.connections && dev.connections.length > 0) {
+          const aggConn = dev.connections.find(
+            (c) =>
+              (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
+              (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
+          );
+          if (aggConn) {
+            resolvedAgg = aggConn.remote_device;
           }
-
-          const calculatedIpNetworks = dev.ip_networks && dev.ip_networks.length > 0 ? dev.ip_networks : (node.ipNetworks || []);
-
-          setSelectedNode((prev) => ({
-            ...prev,
-            ...node,
-            peName: resolvedPeFull,
-            domain: resolvedPeFull,
-            aggregation: resolvedAgg,
-            ipNetworks: calculatedIpNetworks,
-          }));
         }
-      } catch (err) {
-        console.error('Error resolving PE, AGG and IP networks for selected node:', err);
+
+        const calculatedIpNetworks = dev.ip_networks && dev.ip_networks.length > 0 ? dev.ip_networks : (selectedNode.ipNetworks || []);
+
+        setSelectedNode((prev) => ({
+          ...prev,
+          peName: resolvedPeFull,
+          domain: resolvedPeFull,
+          aggregation: resolvedAgg,
+          ipNetworks: calculatedIpNetworks,
+        }));
+
+        if (dev.matched_subnet) {
+          setIpNetworkSearch(dev.matched_subnet);
+          await handleIpNetworkSelect(dev.matched_subnet);
+        }
+
+        if (dev.matched_ring_name) {
+          handleReserveChange('ring_name', dev.matched_ring_name);
+        }
       }
+      setActiveStep(2);
+    } catch (err) {
+      console.error('Error resolving PE, AGG and IP networks for selected node:', err);
+      alert('เกิดข้อผิดพลาดในการโหลดข้อมูลดีไวซ์สำหรับขั้นตอนถัดไป');
+    } finally {
+      setLoadingStep2Data(false);
     }
   };
 
@@ -906,7 +931,7 @@ export default function CDSSearchReservePage() {
         nameThai: selectedNode?.nameThai || formData.nameThai || '',
         status: 'Reserve',
         useFor: reserveData.remark || 'Reserved via UI',
-        ringName: getSelectedPrefixRingName(),
+        ring_name: getSelectedPrefixRingName(),
         
         // ข้อมูลจริงขจัดค่าจำลองที่ตรงตาม Dashboard Headers
         pe_name: selectedPePortObj ? selectedPePortObj.peName : '',
@@ -1210,13 +1235,23 @@ export default function CDSSearchReservePage() {
 
             <div className="flex justify-end pt-2">
               <button
-                onClick={() => setActiveStep(2)}
-                className="inline-flex items-center gap-2 rounded-lg border border-cds/30 bg-cds/10 px-5 py-2.5 text-sm font-semibold text-cds hover:bg-cds/20 hover:border-cds/50 active:scale-[0.97] transition-all duration-200"
+                onClick={handleNextStep}
+                disabled={loadingStep2Data}
+                className="inline-flex items-center gap-2 rounded-lg border border-cds/30 bg-cds/10 px-5 py-2.5 text-sm font-semibold text-cds hover:bg-cds/20 hover:border-cds/50 active:scale-[0.97] transition-all duration-200 disabled:opacity-50"
               >
-                Next Step
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
+                {loadingStep2Data ? (
+                  <>
+                    <span className="h-4 w-4 border-2 border-cds border-t-transparent rounded-full animate-spin" />
+                    กำลังเตรียมข้อมูล...
+                  </>
+                ) : (
+                  <>
+                    Next Step
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1324,85 +1359,15 @@ export default function CDSSearchReservePage() {
               />
             </div>
 
-            {/* Row 4: Domain (VRF), Aggregation, Searchable IP Network */}
+            {/* Row 4: Domain (VRF), Aggregation, IP Network */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DisplayField label="Domain (VRF)" value={selectedNode?.domain} placeholder="—" />
               <DisplayField label="Aggregation" value={selectedNode?.aggregation} placeholder="—" />
-              
-              {/* Searchable IP Network Component */}
-              <div className="flex-1 min-w-0 relative" ref={ipNetworkRef}>
-                <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
-                  IP Network
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder={
-                      (selectedNode?.ipNetworks || []).length > 0
-                        ? `ค้นหา IP Network (${(selectedNode?.ipNetworks || []).length} Prefixes)...`
-                        : "------------"
-                    }
-                    value={ipNetworkSearch}
-                    onFocus={() => setShowIpNetworkDropdown(true)}
-                    onChange={(e) => {
-                      setIpNetworkSearch(e.target.value);
-                      setShowIpNetworkDropdown(true);
-                    }}
-                    className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200 font-mono"
-                  />
-                  {ipNetworkSearch && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIpNetworkSearch('');
-                        handleIpNetworkSelect('');
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-100 transition-colors"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-
-                {showIpNetworkDropdown && (
-                  <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-base-700 bg-base-900 shadow-xl py-1">
-                    {(() => {
-                      const allNets = selectedNode?.ipNetworks || [];
-                      const filtered = allNets.filter((net) =>
-                        net.toLowerCase().includes(ipNetworkSearch.toLowerCase())
-                      );
-                      if (filtered.length > 0) {
-                        return filtered.map((net, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => {
-                              setIpNetworkSearch(net);
-                              handleIpNetworkSelect(net);
-                              setShowIpNetworkDropdown(false);
-                            }}
-                            className={`px-4 py-2 text-xs font-mono cursor-pointer hover:bg-cds/15 hover:text-cds transition-colors ${
-                              reserveData.ipNetwork === net ? 'bg-cds/20 text-cds font-bold' : 'text-ink-200'
-                            }`}
-                          >
-                            {net}
-                          </div>
-                        ));
-                      }
-                      return (
-                        <div className="px-4 py-3 text-xs text-ink-600 font-mono text-center">
-                          ไม่พบ IP Network ที่ตรงกับคำค้นหา
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
+              <DisplayField label="IP Network (อัตโนมัติ)" value={reserveData.ipNetwork} placeholder="ขึ้นอัตโนมัติจาก LSW Network/AGG" />
             </div>
 
-            {/* Row 5: IP Address (Vacant IP Dropdown) & IP Gateway (Auto-filled) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Row 5: IP Address (Vacant IP Dropdown), IP Gateway (Auto-filled), Ring Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <SelectField
                 label="IP Address (เลือก IP ที่ว่าง)"
                 value={reserveData.ipAddress}
@@ -1411,6 +1376,7 @@ export default function CDSSearchReservePage() {
                 placeholder={reserveData.ipNetwork ? "เลือก IP Address ที่ว่าง..." : "รอเลือก IP Network"}
               />
               <DisplayField label="IP Gateway (อัตโนมัติ)" value={reserveData.ipGateway} placeholder="ขึ้นอัตโนมัติจาก IP Network" />
+              <DisplayField label="Ring Name" value={getSelectedPrefixRingName()} placeholder="—" />
             </div>
 
 
@@ -1548,10 +1514,9 @@ export default function CDSSearchReservePage() {
               <DisplayField label="Site Name" value={selectedNode?.siteName} placeholder="—" />
             </div>
 
-            {/* LSW NETWORK Row 4: Use For, Ring Name */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* LSW NETWORK Row 4: Use For */}
+            <div className="grid grid-cols-1 gap-4">
               <DisplayField label="Use For" value={selectedNode?.useFor} placeholder="—" />
-              <DisplayField label="Ring Name" value={getSelectedPrefixRingName()} placeholder="—" />
             </div>
 
             {/* Select Port PE Section Header */}
