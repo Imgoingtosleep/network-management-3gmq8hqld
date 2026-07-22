@@ -467,7 +467,7 @@ export default function CDSSearchReservePage() {
     return match ? match[1] : '';
   };
 
-  // ดึงข้อมูล Interface ของ PE จริงจาก NetBox
+  // ดึงข้อมูล Interface ของ PE จริงจาก NetBox และความสัมพันธ์จาก Site Topology
   useEffect(() => {
     const fetchPePorts = async () => {
       if (!selectedNode || activeStep !== 2) return;
@@ -476,7 +476,6 @@ export default function CDSSearchReservePage() {
         const aggName = selectedNode.aggregation || '';
         let siteAbbrev = 'BKK';
         
-        // ค้นหาโค้ดไซต์ (BCH, CNX, HKT, BKK) จาก Aggregation หรือ PE Name
         const siteMatches = aggName.match(/(BCH|BKK|CNX|HKT)/i);
         if (siteMatches) {
           siteAbbrev = siteMatches[0].toUpperCase();
@@ -487,131 +486,135 @@ export default function CDSSearchReservePage() {
           }
         }
 
-        let peDevices = [];
-        
-        // 1. ค้นหา PE ที่ตรงกับชื่อในฟิลด์ Domain (VRF)
-        if (selectedNode.domain) {
-          const domainLower = String(selectedNode.domain).toLowerCase();
-          
-          // ค้นหา PE ตัวหลักที่ชื่อตรงกับ Domain (VRF) หรือมีชื่อคล้ายคลึงกัน
-          const primaryPe = devicesList.find(d => 
-            String(d.nodeName || d.nodeId || '').toLowerCase() === domainLower ||
-            String(d.nodeName || d.nodeId || '').toLowerCase().includes(domainLower) ||
-            domainLower.includes(String(d.nodeName || d.nodeId || '').toLowerCase())
-          );
-          
-          if (primaryPe) {
-            peDevices.push(primaryPe);
-            
-            // ค้นหา PE ตัวที่สองที่อยู่ในไซต์เดียวกันเพิ่ม (เช่น มีรหัส BCH, BKK ฯลฯ เหมือนกัน)
-            const siteMatches = primaryPe.nodeName?.match(/(BCH|BKK|CNX|HKT)/i);
-            if (siteMatches) {
-              const matchedSite = siteMatches[0].toLowerCase();
-              const backupPe = devicesList.find(d => {
-                const role = String(d.roleName || d.nodeType || '').toLowerCase();
-                const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || role.includes('router');
-                const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
-                
-                return isPeRole && 
-                       d.id !== primaryPe.id && 
-                       (dName.includes(matchedSite) || dName.includes(matchedSite + '-pe'));
-              });
-              if (backupPe) {
-                peDevices.push(backupPe);
-              }
-            }
-          }
-        }
-
-        // 2. หากดึงจากชื่อ Domain (VRF) ไม่ได้ ให้ Fallback ไปดึงจาก Site Topology API
-        if (peDevices.length === 0) {
-          try {
-            const siteCode = selectedNode.siteCode || siteAbbrev;
-            const topoRes = await cdsApi.getSiteTopology(siteCode);
-            const topology = topoRes.data?.data || topoRes.data || {};
-            const siteGateways = topology.gateways || [];
-            
-            peDevices = siteGateways.map(g => {
-              const matchDevice = devicesList.find(d => String(d.nodeName || d.nodeId).toLowerCase() === String(g.name).toLowerCase());
-              return {
-                id: g.id || matchDevice?.id || g.name,
-                nodeId: g.name,
-                nodeName: g.name,
-                ipAddress: g.ip ? g.ip.split('/')[0] : '10.254.1.1'
-              };
-            });
-          } catch (topoErr) {
-            console.warn('Failed to load PEs from topology, falling back to local list:', topoErr);
-          }
-        }
-
-        // 2. หากดึงจาก Topo ไม่ได้ ให้ Fallback ไปหาจาก devicesList
-        if (peDevices.length === 0 && devicesList.length > 0) {
-          peDevices = devicesList.filter(d => {
-            const role = String(d.roleName || d.nodeType || '').toLowerCase();
-            const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
-            
-            // ตรวจสอบว่าเป็น PE Router (รวมเคสที่ชื่อมีคำว่า pe หรือ router)
-            const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || 
-                              role.includes('router') || dName.includes('pe-') || dName.includes('-pe');
-            if (!isPeRole) return false;
-
-            if (selectedNode.peName) {
-              const cleanPe = (selectedNode.peName.includes('_') ? selectedNode.peName.split('_')[1] : selectedNode.peName).toLowerCase();
-              if (dName.includes(cleanPe) || cleanPe.includes(dName)) return true;
-            }
-
-            const isSiteMatch = String(d.siteCode || '').toLowerCase() === siteAbbrev.toLowerCase() ||
-                                d.siteName?.toLowerCase().includes(siteAbbrev.toLowerCase()) || 
-                                d.nodeId?.toLowerCase().includes(siteAbbrev.toLowerCase()) ||
-                                d.idNetwork?.toLowerCase().includes(siteAbbrev.toLowerCase());
-            return isSiteMatch;
-          });
-        }
-
+        const siteCode = selectedNode.siteCode || siteAbbrev;
         const allPorts = [];
-        await Promise.all(peDevices.map(async (pe) => {
-          try {
-            const res = await ndsApi.getDeviceInterfaces(pe.id);
-            const interfaces = res.data?.data || res.data || res || [];
-            
-            interfaces.forEach(iface => {
-              if (iface.name && 
-                 (iface.name.toLowerCase().includes('gigabit') || 
-                  iface.name.toLowerCase().includes('eth') || 
-                  iface.name.toLowerCase().includes('xe-') || 
-                  iface.name.toLowerCase().includes('ge-') ||
-                  iface.name.toLowerCase().includes('et-'))) {
-                
-                let formattedMtu = '';
-                if (iface.mtu) {
-                  const mtuStr = String(iface.mtu);
-                  if (mtuStr.startsWith('9')) {
-                    formattedMtu = '9000';
-                  } else if (mtuStr.startsWith('15')) {
-                    formattedMtu = '1500';
-                  } else {
-                    formattedMtu = mtuStr;
-                  }
-                }
 
-                allPorts.push({
-                  peId: `PE-${pe.id}-${iface.id}`,
-                  peName: pe.nodeName,
-                  peIp: pe.ipAddress || '10.254.1.1',
-                  pePort: iface.name,
-                  mtu: formattedMtu,
-                  aggName: aggName,
-                  aggPort: '10G-Port-1/1',
-                  description: iface.description || '',
-                  peModel: pe.nodeType || ''
+        // 1. ดึงข้อมูลพอร์ตเชื่อมต่อจาก Site Topology ลิงก์ตรง (AGG <-> PE)
+        try {
+          const topoRes = await cdsApi.getSiteTopology(siteCode);
+          const topology = topoRes.data?.data || topoRes.data || {};
+          const siteGateways = topology.gateways || [];
+          const topoLinks = topology.links || [];
+          const topoDevices = topology.devices || [];
+
+          topoLinks.forEach(link => {
+            const sourceDev = topoDevices.find(d => d.id === link.source);
+            const targetDev = topoDevices.find(d => d.id === link.target);
+            
+            const sourceRole = String(sourceDev?.role || link.target_role || '').toLowerCase();
+            const targetRole = String(targetDev?.role || link.target_role || '').toLowerCase();
+            
+            const isSourcePe = sourceRole.includes('pe') || sourceRole.includes('edge') || sourceRole.includes('router');
+            const isTargetPe = targetRole.includes('pe') || targetRole.includes('edge') || targetRole.includes('router');
+            
+            const isSourceAgg = sourceRole.includes('agg') || sourceRole.includes('dist');
+            const isTargetAgg = targetRole.includes('agg') || targetRole.includes('dist');
+            
+            if ((isSourcePe && isTargetAgg) || (isTargetPe && isSourceAgg)) {
+              const peDev = isSourcePe ? sourceDev : targetDev;
+              const aggDev = isSourcePe ? targetDev : sourceDev;
+              
+              const pePortName = isSourcePe ? link.source_port : link.target_port;
+              const aggPortName = isSourcePe ? link.target_port : link.source_port;
+              
+              const gwObj = siteGateways.find(g => String(g.id) === String(peDev?.id));
+              const peIpVal = gwObj?.ip ? gwObj.ip.split('/')[0] : (peDev?.primary_ip || '10.254.1.1');
+              
+              allPorts.push({
+                peId: `PE-${peDev?.id || 'pe'}-${link.source}-${link.target}`,
+                peName: peDev?.name || 'PE',
+                peIp: peIpVal,
+                pePort: pePortName || 'Logical',
+                mtu: '9000',
+                aggName: aggDev?.name || 'AGG',
+                aggPort: aggPortName || 'Logical',
+                description: gwObj?.interface ? `Connected via ${gwObj.interface}` : 'Topology Connection',
+                peModel: peDev?.model || 'PE'
+              });
+            }
+          });
+        } catch (topoErr) {
+          console.warn('Failed to load connection ports from topology:', topoErr);
+        }
+
+        // 2. หากไม่พบการเชื่อมต่อใน Topology ให้ Fallback ไปไล่ดึง Interfaces ของ PE แต่ละตัวในระบบ
+        if (allPorts.length === 0) {
+          let peDevices = [];
+          if (selectedNode.domain) {
+            const domainLower = String(selectedNode.domain).toLowerCase();
+            const primaryPe = devicesList.find(d => 
+              String(d.nodeName || d.nodeId || '').toLowerCase() === domainLower ||
+              String(d.nodeName || d.nodeId || '').toLowerCase().includes(domainLower) ||
+              domainLower.includes(String(d.nodeName || d.nodeId || '').toLowerCase())
+            );
+            if (primaryPe) {
+              peDevices.push(primaryPe);
+              const siteMatches = primaryPe.nodeName?.match(/(BCH|BKK|CNX|HKT)/i);
+              if (siteMatches) {
+                const matchedSite = siteMatches[0].toLowerCase();
+                const backupPe = devicesList.find(d => {
+                  const role = String(d.roleName || d.nodeType || '').toLowerCase();
+                  const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || role.includes('router');
+                  const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+                  return isPeRole && d.id !== primaryPe.id && (dName.includes(matchedSite) || dName.includes(matchedSite + '-pe'));
                 });
+                if (backupPe) peDevices.push(backupPe);
               }
-            });
-          } catch (e) {
-            console.error(`Error loading interfaces for PE ${pe.nodeId}:`, e);
+            }
           }
-        }));
+
+          if (peDevices.length === 0 && devicesList.length > 0) {
+            peDevices = devicesList.filter(d => {
+              const role = String(d.roleName || d.nodeType || '').toLowerCase();
+              const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+              const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || role.includes('router') || dName.includes('pe-') || dName.includes('-pe');
+              if (!isPeRole) return false;
+              if (selectedNode.peName) {
+                const cleanPe = (selectedNode.peName.includes('_') ? selectedNode.peName.split('_')[1] : selectedNode.peName).toLowerCase();
+                if (dName.includes(cleanPe) || cleanPe.includes(dName)) return true;
+              }
+              return String(d.siteCode || '').toLowerCase() === siteAbbrev.toLowerCase();
+            });
+          }
+
+          await Promise.all(peDevices.map(async (pe) => {
+            try {
+              const res = await ndsApi.getDeviceInterfaces(pe.id);
+              const interfaces = res.data?.data || res.data || res || [];
+              interfaces.forEach(iface => {
+                if (iface.name && 
+                   (iface.name.toLowerCase().includes('gigabit') || 
+                    iface.name.toLowerCase().includes('eth') || 
+                    iface.name.toLowerCase().includes('xe-') || 
+                    iface.name.toLowerCase().includes('ge-') ||
+                    iface.name.toLowerCase().includes('et-'))) {
+                  
+                  let formattedMtu = '';
+                  if (iface.mtu) {
+                    const mtuStr = String(iface.mtu);
+                    if (mtuStr.startsWith('9')) formattedMtu = '9000';
+                    else if (mtuStr.startsWith('15')) formattedMtu = '1500';
+                    else formattedMtu = mtuStr;
+                  }
+
+                  allPorts.push({
+                    peId: `PE-${pe.id}-${iface.id}`,
+                    peName: pe.nodeName,
+                    peIp: pe.ipAddress || '10.254.1.1',
+                    pePort: iface.name,
+                    mtu: formattedMtu,
+                    aggName: aggName,
+                    aggPort: '10G-Port-1/1',
+                    description: iface.description || '',
+                    peModel: pe.nodeType || ''
+                  });
+                }
+              });
+            } catch (e) {
+              console.error(`Error loading interfaces for PE ${pe.nodeId}:`, e);
+            }
+          }));
+        }
 
         setPePorts(allPorts);
       } catch (err) {
@@ -887,8 +890,8 @@ export default function CDSSearchReservePage() {
     try {
       const activeNodeId = formData.nodeId || selectedNode?.nodeId || '';
       
-      // ดึงข้อมูล PE Port ที่ผู้ใช้เลือกจากตาราง
-      const selectedPePortObj = pePorts.find(p => p.peId === (reserveData.selectedPeRows?.[0] || ''));
+      // ดึงข้อมูล PE Port แรกเพื่อแสดงและส่งค่าไปบันทึก
+      const selectedPePortObj = pePorts[0];
       
       const newDashboardItem = {
         id: 'LSR-' + Date.now(),
@@ -1564,7 +1567,6 @@ export default function CDSSearchReservePage() {
                 <table className="w-full text-left text-xs font-mono border-collapse">
                   <thead>
                     <tr className="border-b border-base-600 bg-base-900/80 text-ink-400 font-semibold uppercase tracking-wider">
-                      <th className="px-4 py-3 text-center w-12">Select</th>
                       <th className="px-4 py-3">PE Name</th>
                       <th className="px-4 py-3">PE Port</th>
                       <th className="px-4 py-3">PE IP</th>
@@ -1576,7 +1578,7 @@ export default function CDSSearchReservePage() {
                   <tbody className="divide-y divide-base-600/30 text-ink-100">
                     {loadingPePorts ? (
                       <tr>
-                        <td colSpan="7" className="px-4 py-8 text-center text-sm text-ink-500 font-mono animate-pulse">
+                        <td colSpan="6" className="px-4 py-8 text-center text-sm text-ink-500 font-mono animate-pulse">
                           กำลังโหลดข้อมูลอินเตอร์เฟสของ PE จาก NetBox...
                         </td>
                       </tr>
@@ -1586,21 +1588,8 @@ export default function CDSSearchReservePage() {
                         return (
                           <tr
                             key={idx}
-                            className={`hover:bg-cds/5 transition-colors duration-150 ${isRowSelected ? 'bg-cds/5' : ''}`}
+                            className="hover:bg-cds/5 transition-colors duration-150"
                           >
-                            <td className="px-4 py-3 text-center">
-                              <input
-                                type="radio"
-                                name="selectedPePort"
-                                checked={isRowSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    handleReserveChange('selectedPeRows', [row.peId]);
-                                  }
-                                }}
-                                className="rounded-full border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
-                              />
-                            </td>
                             <td className="px-4 py-3 whitespace-nowrap font-semibold text-cds">{row.peName}</td>
                             <td className="px-4 py-3 whitespace-nowrap">{row.pePort}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-blue-400">{row.peIp}</td>
@@ -1631,7 +1620,7 @@ export default function CDSSearchReservePage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="7" className="px-4 py-8 text-center text-sm text-ink-600 italic">
+                        <td colSpan="6" className="px-4 py-8 text-center text-sm text-ink-600 italic">
                           ไม่พบข้อมูลอินเตอร์เฟสของ PE สำหรับไซต์นี้ใน NetBox
                         </td>
                       </tr>
