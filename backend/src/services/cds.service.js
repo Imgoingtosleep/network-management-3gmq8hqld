@@ -735,10 +735,12 @@ async function getDeviceDetails(deviceId) {
           const peDeviceId = gwObj.assigned_object.device.id;
           const peDevice = allDevs.find((d) => String(d.id) === String(peDeviceId));
           gwInfo = {
+            id: peDeviceId,
             name: peDevice?.name || gwObj.assigned_object.device.name,
             ip: gwObj.address ? gwObj.address.split('/')[0] : '-',
             interface: gwObj.assigned_object.name,
             site: peDevice?.site_name || peDevice?.site || '-',
+            assigned_gw: gwObj.assigned_object,
           };
         }
       }
@@ -773,32 +775,46 @@ async function getDeviceDetails(deviceId) {
       console.warn('Error fetching NetBox VRF prefixes:', pErr);
     }
 
-    // Resolve Aggregation device for the site
+    // Resolve Aggregation device for the site using physical links as in site topology
     let aggDeviceName = null;
-    if (conns && conns.length > 0) {
-      const aggConn = conns.find(
-        (c) =>
-          (c.remote_role && c.remote_role.toLowerCase().includes('agg')) ||
-          (c.remote_device && c.remote_device.toLowerCase().includes('agg'))
-      );
-      if (aggConn) {
-        aggDeviceName = aggConn.remote_device;
+    
+    if (gwInfo && gwInfo.assigned_gw && gwInfo.id) {
+      try {
+        const vlanId = devFull.name.includes('115') ? 115 : 100;
+        const pePhys = await findPhysicalInterface(gwInfo.id, gwInfo.assigned_gw, vlanId);
+        if (pePhys && pePhys.link_peers) {
+          for (const p of pePhys.link_peers) {
+            if (p.device?.id) {
+              const pDev = allDevs.find((d) => String(d.id) === String(p.device.id));
+              const pRole = (pDev?.role_name || pDev?.role || '').toLowerCase();
+              if (pRole.includes('agg') || pRole.includes('dist') || pDev?.name?.toUpperCase().includes('AGG')) {
+                aggDeviceName = pDev.name;
+                break;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error finding AGG via physical connections:', err.message);
       }
     }
 
     if (!aggDeviceName) {
       // Find Aggregation device in the same site from NetBox devices list
-      const siteAgg = allDevs.find(
+      const siteAggs = allDevs.filter(
         (d) =>
-          (d.site === devFull.site || d.site_name === devFull.site_name) &&
+          ((d.site_id === devFull.site_id && devFull.site_id !== null) ||
+           (d.site && devFull.site && d.site.toLowerCase() === devFull.site.toLowerCase()) ||
+           (d.site_name && devFull.site_name && d.site_name.toLowerCase() === devFull.site_name.toLowerCase())) &&
           ((d.role_name && d.role_name.toLowerCase().includes('agg')) ||
             (d.role && d.role.toLowerCase().includes('agg')) ||
             (d.name && d.name.toUpperCase().includes('AGG')))
       );
-      if (siteAgg) {
-        aggDeviceName = siteAgg.name;
+
+      if (siteAggs.length > 0) {
+        aggDeviceName = siteAggs[0].name;
       } else if (devFull.site && devFull.site !== 'N/A') {
-        aggDeviceName = `AGG-${devFull.site.toUpperCase()}-01`;
+        aggDeviceName = `85002_EMX-${devFull.site.toUpperCase()}-AGG`; // fallback format
       }
     }
 
@@ -836,16 +852,44 @@ async function getAvailableIps(prefixStr) {
     if (!prefixStr) return { success: false, available_ips: [] };
     const cleanPrefix = prefixStr.split(' ')[0].trim();
 
-    // 1. ค้นหา Prefix ID จาก NetBox
+    // ค้นหา Gateway IP ของ Subnet นี้จาก IP Addresses ที่ผูกกับอินเตอร์เฟสของ PE/Router
+    let gatewayIp = '';
+    let assignedIps = [];
+    try {
+      const assignedResp = await netboxService.get(`/ipam/ip-addresses/?parent=${encodeURIComponent(cleanPrefix)}&limit=1000`);
+      assignedIps = assignedResp || [];
+      const gwObj = await findGatewayIp(assignedIps);
+      if (gwObj && gwObj.address) {
+        gatewayIp = gwObj.address.split('/')[0];
+      }
+    } catch (gwErr) {
+      console.warn('Error determining gateway IP for prefix:', gwErr.message);
+    }
+
+    if (!gatewayIp) {
+      // Fallback: หากไม่พบ PE gateway ให้หา IP .1 หรือ .254 หรือค่าแรกของ subnet
+      const parts = cleanPrefix.split('.');
+      if (parts.length >= 3) {
+        const basePart = `${parts[0]}.${parts[1]}.${parts[2]}`;
+        const candidate1 = `${basePart}.1`;
+        const candidate254 = `${basePart}.254`;
+        const foundGw = assignedIps.find(ip => {
+          const ipAddr = ip.address?.split('/')[0];
+          return ipAddr === candidate1 || ipAddr === candidate254;
+        });
+        gatewayIp = foundGw ? foundGw.address.split('/')[0] : candidate1;
+      }
+    }
+
+    // 1. ค้นหา Prefix ID จาก NetBox เพื่อดึง IP ที่ว่าง
     try {
       const prefixObjResp = await netboxService.get(`/ipam/prefixes/?prefix=${encodeURIComponent(cleanPrefix)}&limit=1`);
       if (Array.isArray(prefixObjResp) && prefixObjResp.length > 0 && prefixObjResp[0].id) {
         const prefixId = prefixObjResp[0].id;
-        // เรียก NetBox Native Endpoint /available-ips/
         const availResp = await netboxService.getSingle(`/ipam/prefixes/${prefixId}/available-ips/`);
         if (Array.isArray(availResp) && availResp.length > 0) {
           const ips = availResp.map((item) => (typeof item === 'object' && item.address ? item.address.split('/')[0] : String(item)));
-          return { success: true, prefix: cleanPrefix, available_ips: ips };
+          return { success: true, prefix: cleanPrefix, available_ips: ips, gateway_ip: gatewayIp };
         }
       }
     } catch (apiErr) {
@@ -854,18 +898,11 @@ async function getAvailableIps(prefixStr) {
 
     // 2. Fallback: ดึงรายการ IP Address ที่ถูกใช้งานแล้วใน NetBox (Assigned IPs)
     const assignedIpSet = new Set();
-    try {
-      const assignedResp = await netboxService.get(`/ipam/ip-addresses/?parent=${encodeURIComponent(cleanPrefix)}&limit=1000`);
-      if (Array.isArray(assignedResp)) {
-        assignedResp.forEach((ipObj) => {
-          if (ipObj.address) {
-            assignedIpSet.add(ipObj.address.split('/')[0]);
-          }
-        });
+    assignedIps.forEach((ipObj) => {
+      if (ipObj.address) {
+        assignedIpSet.add(ipObj.address.split('/')[0]);
       }
-    } catch (e) {
-      console.warn('NetBox parent IP query warning:', e.message);
-    }
+    });
 
     // 3. กรองเฉพาะ IP Address ที่ยังไม่เคยถูกสร้าง/แจกจ่ายใน NetBox
     const match = cleanPrefix.match(/(\d+\.\d+\.\d+)\.\d+/);
@@ -879,13 +916,13 @@ async function getAvailableIps(prefixStr) {
           if (freeIps.length >= 50) break;
         }
       }
-      return { success: true, prefix: cleanPrefix, available_ips: freeIps };
+      return { success: true, prefix: cleanPrefix, available_ips: freeIps, gateway_ip: gatewayIp };
     }
 
-    return { success: false, available_ips: [] };
+    return { success: false, available_ips: [], gateway_ip: gatewayIp };
   } catch (err) {
     console.error('Error getting available IPs for prefix:', err);
-    return { success: false, available_ips: [] };
+    return { success: false, available_ips: [], gateway_ip: '' };
   }
 }
 

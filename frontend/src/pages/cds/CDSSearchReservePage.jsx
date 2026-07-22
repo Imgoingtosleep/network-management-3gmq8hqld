@@ -178,6 +178,8 @@ export default function CDSSearchReservePage() {
     portDownlinkBackup: '',
     nodeType: '',
     nodeName: '',
+    peVlanCustomer: '',
+    aggVlan: '',
   });
 
   // Search state สำหรับ Select Network (LSW_Network)
@@ -375,12 +377,21 @@ export default function CDSSearchReservePage() {
     }
   }, [selectedNode]);
 
+
+
   // หา ringName จาก prefix ที่เลือก
   const getSelectedPrefixRingName = () => {
     if (!reserveData.ipNetwork) return '—';
     const match = reserveData.ipNetwork.split(' ')[0];
     const found = prefixesList.find(p => p.prefix === match);
     return found?.ringname || '—';
+  };
+
+  // ดึงค่า VLAN จาก prefix ที่เลือก
+  const getSelectedVlan = () => {
+    if (!reserveData.ipNetwork) return '';
+    const match = reserveData.ipNetwork.match(/VLAN\s+(\d+)/i);
+    return match ? match[1] : '';
   };
 
   // ดึงข้อมูล Interface ของ PE จริงจาก NetBox
@@ -519,7 +530,8 @@ export default function CDSSearchReservePage() {
                   mtu: formattedMtu,
                   aggName: aggName,
                   aggPort: '10G-Port-1/1',
-                  description: iface.description || ''
+                  description: iface.description || '',
+                  peModel: pe.nodeType || ''
                 });
               }
             });
@@ -669,14 +681,32 @@ export default function CDSSearchReservePage() {
 
     if (netVal) {
       try {
+        const networkIp = netVal.split('/')[0].trim();
         const res = await cdsApi.getAvailableIps(netVal);
-        const freeIps = res.data?.data?.available_ips || res.data?.available_ips || [];
+        const resData = res.data?.data || res.data || {};
+        const freeIps = resData.available_ips || [];
+        const gatewayIpFromApi = resData.gateway_ip || gatewayIp;
+        
+        setReserveData((prev) => ({
+          ...prev,
+          ipGateway: gatewayIpFromApi,
+        }));
+
         if (Array.isArray(freeIps) && freeIps.length > 0) {
-          setAvailableIpOptions(freeIps);
-          setReserveData((prev) => ({
-            ...prev,
-            ipAddress: freeIps[0],
-          }));
+          const cleanIps = freeIps
+            .map(ip => String(ip).split('/')[0])
+            .filter(ip => {
+              // 1. กรอง IP ที่ระบุอยู่ในฟิลด์ IP Network ออกโดยตรง (Base Network IP)
+              if (networkIp && ip === networkIp) {
+                return false;
+              }
+              // 2. กรอง IP ที่เป็น Network (.0), Gateway (.1) และ Broadcast (.255)
+              if (ip.endsWith('.0') || ip.endsWith('.255') || ip.endsWith('.1') || ip === gatewayIpFromApi) {
+                return false;
+              }
+              return true;
+            });
+          setAvailableIpOptions(cleanIps);
         }
       } catch (err) {
         console.error('Error fetching available IPs from NetBox:', err);
@@ -780,6 +810,10 @@ export default function CDSSearchReservePage() {
     }
     try {
       const activeNodeId = formData.nodeId || selectedNode?.nodeId || '';
+      
+      // ดึงข้อมูล PE Port ที่ผู้ใช้เลือกจากตาราง
+      const selectedPePortObj = pePorts.find(p => p.peId === (reserveData.selectedPeRows?.[0] || ''));
+      
       const newDashboardItem = {
         id: 'LSR-' + Date.now(),
         nodeId: activeNodeId,
@@ -795,26 +829,26 @@ export default function CDSSearchReservePage() {
         useFor: reserveData.remark || 'Reserved via UI',
         ringName: getSelectedPrefixRingName(),
         
-        // ข้อมูลจำลองเพิ่มเติมสำหรับ detail
-        pe_name: 'PE-' + activeNodeId.split('-')[0] + '-01',
-        ip_loopback: '10.0.0.' + (Math.floor(Math.random() * 250) + 10),
-        model: 'Cisco ASR9001',
-        type: reserveData.nodeType || selectedNode?.nodeType || 'LSW',
-        pe_port_list: 'GigabitEthernet0/0/1',
-        pe_vlan_customer: String(Math.floor(Math.random() * 900) + 100),
+        // ข้อมูลจริงขจัดค่าจำลองที่ตรงตาม Dashboard Headers
+        pe_name: selectedPePortObj ? selectedPePortObj.peName : '',
+        ip_loopback: selectedPePortObj ? selectedPePortObj.peIp : '',
+        model: selectedPePortObj?.peModel || '',
+        type: reserveData.nodeType || selectedNode?.nodeType || '',
+        pe_port_list: selectedPePortObj ? selectedPePortObj.pePort : '',
+        pe_vlan_customer: reserveData.peVlanCustomer,
         agg_id: selectedNode?.aggregation || '',
         agg_ip_network: reserveData.ipNetwork,
-        agg_vlan: '100',
-        nw_lsw_id: 'NW-LSW-' + activeNodeId.split('-')[0] + '-01',
+        agg_vlan: reserveData.aggVlan,
+        nw_lsw_id: formData.networkDevice || '',
         nw_lsw_ip: selectedNode?.ipAddress || '',
-        nw_lsw_use_for: 'Office Network',
-        nw_lsw_port: reserveData.portUplinkMain || 'GigabitEthernet0/1',
+        nw_lsw_use_for: reserveData.remark || '',
+        nw_lsw_port: reserveData.portUplinkMain || '',
         access_lsw_id: activeNodeId,
         access_lsw_model: reserveData.modelLSW,
-        access_lsw_port_uplink: reserveData.portUplinkMain || 'GigabitEthernet0/1',
-        access_lsw_port_customer: reserveData.portDownlinkMain || 'GigabitEthernet0/2-24',
+        access_lsw_port_uplink: reserveData.portUplinkMain || '',
+        access_lsw_port_customer: reserveData.portDownlinkMain || '',
         access_lsw_ip: reserveData.ipAddress || selectedNode?.ipAddress || '',
-        access_lsw_vlan_management: '99',
+        access_lsw_vlan_management: '',
       };
       // 1. บันทึกลง LocalStorage (Local Browser Storage)
       const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
@@ -1296,7 +1330,28 @@ export default function CDSSearchReservePage() {
                 options={availableIpOptions}
                 placeholder={reserveData.ipNetwork ? "เลือก IP Address ที่ว่าง..." : "รอเลือก IP Network"}
               />
-              <DisplayField label="IP Gateway (อัตโนมัติ)" value={reserveData.ipGateway} placeholder="ขึ้นอัตโนมัติจาก IP Network" />
+              <InputField
+                label="IP Gateway"
+                value={reserveData.ipGateway}
+                onChange={(e) => handleReserveChange('ipGateway', e.target.value)}
+                placeholder="ระบุ IP Gateway..."
+              />
+            </div>
+
+            {/* Row 5.5: PE VLAN Customer & AGG VLAN */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="PE VLAN Customer"
+                value={reserveData.peVlanCustomer}
+                onChange={(e) => handleReserveChange('peVlanCustomer', e.target.value)}
+                placeholder="ระบุ PE VLAN Customer..."
+              />
+              <InputField
+                label="AGG VLAN"
+                value={reserveData.aggVlan}
+                onChange={(e) => handleReserveChange('aggVlan', e.target.value)}
+                placeholder="ระบุ AGG VLAN..."
+              />
             </div>
 
             {/* Row 6: Select Model LSW (Searchable Dropdown) */}
@@ -1493,16 +1548,15 @@ export default function CDSSearchReservePage() {
                           >
                             <td className="px-4 py-3 text-center">
                               <input
-                                type="checkbox"
+                                type="radio"
+                                name="selectedPePort"
                                 checked={isRowSelected}
                                 onChange={(e) => {
-                                  const selected = reserveData.selectedPeRows || [];
-                                  const nextSelected = e.target.checked
-                                    ? [...selected, row.peId]
-                                    : selected.filter(id => id !== row.peId);
-                                  handleReserveChange('selectedPeRows', nextSelected);
+                                  if (e.target.checked) {
+                                    handleReserveChange('selectedPeRows', [row.peId]);
+                                  }
                                 }}
-                                className="rounded border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
+                                className="rounded-full border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
                               />
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap font-semibold text-cds">{row.peName}</td>
