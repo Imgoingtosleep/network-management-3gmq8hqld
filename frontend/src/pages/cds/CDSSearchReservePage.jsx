@@ -403,26 +403,62 @@ export default function CDSSearchReservePage() {
           }
         }
 
-        const siteCode = selectedNode.siteCode || siteAbbrev;
-        
-        // 1. ดึง PE จาก Logic Site Topo
         let peDevices = [];
-        try {
-          const topoRes = await cdsApi.getSiteTopology(siteCode);
-          const topology = topoRes.data?.data || topoRes.data || {};
-          const siteGateways = topology.gateways || [];
+        
+        // 1. ค้นหา PE ที่ตรงกับชื่อในฟิลด์ Domain (VRF)
+        if (selectedNode.domain) {
+          const domainLower = String(selectedNode.domain).toLowerCase();
           
-          peDevices = siteGateways.map(g => {
-            const matchDevice = devicesList.find(d => String(d.nodeName || d.nodeId).toLowerCase() === String(g.name).toLowerCase());
-            return {
-              id: g.id || matchDevice?.id || g.name,
-              nodeId: g.name,
-              nodeName: g.name,
-              ipAddress: g.ip ? g.ip.split('/')[0] : '10.254.1.1'
-            };
-          });
-        } catch (topoErr) {
-          console.warn('Failed to load PEs from topology, falling back to local list:', topoErr);
+          // ค้นหา PE ตัวหลักที่ชื่อตรงกับ Domain (VRF) หรือมีชื่อคล้ายคลึงกัน
+          const primaryPe = devicesList.find(d => 
+            String(d.nodeName || d.nodeId || '').toLowerCase() === domainLower ||
+            String(d.nodeName || d.nodeId || '').toLowerCase().includes(domainLower) ||
+            domainLower.includes(String(d.nodeName || d.nodeId || '').toLowerCase())
+          );
+          
+          if (primaryPe) {
+            peDevices.push(primaryPe);
+            
+            // ค้นหา PE ตัวที่สองที่อยู่ในไซต์เดียวกันเพิ่ม (เช่น มีรหัส BCH, BKK ฯลฯ เหมือนกัน)
+            const siteMatches = primaryPe.nodeName?.match(/(BCH|BKK|CNX|HKT)/i);
+            if (siteMatches) {
+              const matchedSite = siteMatches[0].toLowerCase();
+              const backupPe = devicesList.find(d => {
+                const role = String(d.roleName || d.nodeType || '').toLowerCase();
+                const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || role.includes('router');
+                const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+                
+                return isPeRole && 
+                       d.id !== primaryPe.id && 
+                       (dName.includes(matchedSite) || dName.includes(matchedSite + '-pe'));
+              });
+              if (backupPe) {
+                peDevices.push(backupPe);
+              }
+            }
+          }
+        }
+
+        // 2. หากดึงจากชื่อ Domain (VRF) ไม่ได้ ให้ Fallback ไปดึงจาก Site Topology API
+        if (peDevices.length === 0) {
+          try {
+            const siteCode = selectedNode.siteCode || siteAbbrev;
+            const topoRes = await cdsApi.getSiteTopology(siteCode);
+            const topology = topoRes.data?.data || topoRes.data || {};
+            const siteGateways = topology.gateways || [];
+            
+            peDevices = siteGateways.map(g => {
+              const matchDevice = devicesList.find(d => String(d.nodeName || d.nodeId).toLowerCase() === String(g.name).toLowerCase());
+              return {
+                id: g.id || matchDevice?.id || g.name,
+                nodeId: g.name,
+                nodeName: g.name,
+                ipAddress: g.ip ? g.ip.split('/')[0] : '10.254.1.1'
+              };
+            });
+          } catch (topoErr) {
+            console.warn('Failed to load PEs from topology, falling back to local list:', topoErr);
+          }
         }
 
         // 2. หากดึงจาก Topo ไม่ได้ ให้ Fallback ไปหาจาก devicesList
@@ -462,12 +498,25 @@ export default function CDSSearchReservePage() {
                   iface.name.toLowerCase().includes('xe-') || 
                   iface.name.toLowerCase().includes('ge-') ||
                   iface.name.toLowerCase().includes('et-'))) {
+                
+                let formattedMtu = '1500';
+                if (iface.mtu) {
+                  const mtuStr = String(iface.mtu);
+                  if (mtuStr.startsWith('9')) {
+                    formattedMtu = '9000';
+                  } else if (mtuStr.startsWith('15')) {
+                    formattedMtu = '1500';
+                  } else {
+                    formattedMtu = mtuStr;
+                  }
+                }
+
                 allPorts.push({
                   peId: `PE-${pe.id}-${iface.id}`,
                   peName: pe.nodeName,
                   peIp: pe.ipAddress || '10.254.1.1',
                   pePort: iface.name,
-                  mtu: iface.mtu || '1500',
+                  mtu: formattedMtu,
                   aggName: aggName,
                   aggPort: '10G-Port-1/1',
                   description: iface.description || ''
