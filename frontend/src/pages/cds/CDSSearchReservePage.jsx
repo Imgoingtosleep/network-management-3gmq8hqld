@@ -200,6 +200,8 @@ export default function CDSSearchReservePage() {
   const [loadingRoles, setLoadingRoles] = useState(false);
 
   const [prefixesList, setPrefixesList] = useState([]);
+  const [pePorts, setPePorts] = useState([]);
+  const [loadingPePorts, setLoadingPePorts] = useState(false);
 
   // กรองอุปกรณ์เฉพาะ Device Role LSW_Network (หรือ LSW / Network)
   const lswNetworkDevices = devicesList.filter((d) => {
@@ -380,6 +382,113 @@ export default function CDSSearchReservePage() {
     const found = prefixesList.find(p => p.prefix === match);
     return found?.ringname || '—';
   };
+
+  // ดึงข้อมูล Interface ของ PE จริงจาก NetBox
+  useEffect(() => {
+    const fetchPePorts = async () => {
+      if (!selectedNode || activeStep !== 2) return;
+      setLoadingPePorts(true);
+      try {
+        const aggName = selectedNode.aggregation || '';
+        let siteAbbrev = 'BKK';
+        
+        // ค้นหาโค้ดไซต์ (BCH, CNX, HKT, BKK) จาก Aggregation หรือ PE Name
+        const siteMatches = aggName.match(/(BCH|BKK|CNX|HKT)/i);
+        if (siteMatches) {
+          siteAbbrev = siteMatches[0].toUpperCase();
+        } else if (selectedNode.peName) {
+          const peMatches = selectedNode.peName.match(/(BCH|BKK|CNX|HKT)/i);
+          if (peMatches) {
+            siteAbbrev = peMatches[0].toUpperCase();
+          }
+        }
+
+        const siteCode = selectedNode.siteCode || siteAbbrev;
+        
+        // 1. ดึง PE จาก Logic Site Topo
+        let peDevices = [];
+        try {
+          const topoRes = await cdsApi.getSiteTopology(siteCode);
+          const topology = topoRes.data?.data || topoRes.data || {};
+          const siteGateways = topology.gateways || [];
+          
+          peDevices = siteGateways.map(g => {
+            const matchDevice = devicesList.find(d => String(d.nodeName || d.nodeId).toLowerCase() === String(g.name).toLowerCase());
+            return {
+              id: g.id || matchDevice?.id || g.name,
+              nodeId: g.name,
+              nodeName: g.name,
+              ipAddress: g.ip ? g.ip.split('/')[0] : '10.254.1.1'
+            };
+          });
+        } catch (topoErr) {
+          console.warn('Failed to load PEs from topology, falling back to local list:', topoErr);
+        }
+
+        // 2. หากดึงจาก Topo ไม่ได้ ให้ Fallback ไปหาจาก devicesList
+        if (peDevices.length === 0 && devicesList.length > 0) {
+          peDevices = devicesList.filter(d => {
+            const role = String(d.roleName || d.nodeType || '').toLowerCase();
+            const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+            
+            // ตรวจสอบว่าเป็น PE Router (รวมเคสที่ชื่อมีคำว่า pe หรือ router)
+            const isPeRole = role.includes('pe') || role.includes('provider edge') || role.includes('edge') || 
+                              role.includes('router') || dName.includes('pe-') || dName.includes('-pe');
+            if (!isPeRole) return false;
+
+            if (selectedNode.peName) {
+              const cleanPe = (selectedNode.peName.includes('_') ? selectedNode.peName.split('_')[1] : selectedNode.peName).toLowerCase();
+              if (dName.includes(cleanPe) || cleanPe.includes(dName)) return true;
+            }
+
+            const isSiteMatch = String(d.siteCode || '').toLowerCase() === siteAbbrev.toLowerCase() ||
+                                d.siteName?.toLowerCase().includes(siteAbbrev.toLowerCase()) || 
+                                d.nodeId?.toLowerCase().includes(siteAbbrev.toLowerCase()) ||
+                                d.idNetwork?.toLowerCase().includes(siteAbbrev.toLowerCase());
+            return isSiteMatch;
+          });
+        }
+
+        const allPorts = [];
+        await Promise.all(peDevices.map(async (pe) => {
+          try {
+            const res = await ndsApi.getDeviceInterfaces(pe.id);
+            const interfaces = res.data?.data || res.data || res || [];
+            
+            interfaces.forEach(iface => {
+              if (iface.name && 
+                 (iface.name.toLowerCase().includes('gigabit') || 
+                  iface.name.toLowerCase().includes('eth') || 
+                  iface.name.toLowerCase().includes('xe-') || 
+                  iface.name.toLowerCase().includes('ge-') ||
+                  iface.name.toLowerCase().includes('et-'))) {
+                allPorts.push({
+                  peId: `PE-${pe.id}-${iface.id}`,
+                  peName: pe.nodeName,
+                  peIp: pe.ipAddress || '10.254.1.1',
+                  pePort: iface.name,
+                  mtu: iface.mtu || '1500',
+                  aggName: aggName,
+                  aggPort: '10G-Port-1/1',
+                  description: iface.description || ''
+                });
+              }
+            });
+          } catch (e) {
+            console.error(`Error loading interfaces for PE ${pe.nodeId}:`, e);
+          }
+        }));
+
+        setPePorts(allPorts);
+      } catch (err) {
+        console.error('Error fetching PE ports:', err);
+        setPePorts([]);
+      } finally {
+        setLoadingPePorts(false);
+      }
+    };
+    fetchPePorts();
+  }, [selectedNode, activeStep, devicesList]);
 
   const ipNetworkRef = useRef(null);
   const [ipNetworkSearch, setIpNetworkSearch] = useState('');
@@ -1310,75 +1419,64 @@ export default function CDSSearchReservePage() {
                   <thead>
                     <tr className="border-b border-base-600 bg-base-900/80 text-ink-400 font-semibold uppercase tracking-wider">
                       <th className="px-4 py-3 text-center w-12">Select</th>
-                      <th className="px-4 py-3">PE ID</th>
                       <th className="px-4 py-3">PE Name</th>
+                      <th className="px-4 py-3">PE Port</th>
                       <th className="px-4 py-3">PE IP</th>
-                      <th className="px-4 py-3">PE Port (MTU)</th>
+                      <th className="px-4 py-3">Description (MTU)</th>
                       <th className="px-4 py-3">AGG Name</th>
                       <th className="px-4 py-3">AGG Port</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-base-600/30 text-ink-100">
-                    {(() => {
-                      const aggName = selectedNode?.aggregation || 'AGG-BKK-01';
-                      let siteAbbrev = 'BKK';
-                      const aggParts = aggName.split('-');
-                      if (aggParts.length >= 2) {
-                        siteAbbrev = aggParts[1];
-                      }
-                      
-                      let peNames = [`PE-${siteAbbrev}-01`, `PE-${siteAbbrev}-02`];
-                      if (selectedNode?.peName) {
-                        const cleanPeName = selectedNode.peName.includes('_') ? selectedNode.peName.split('_')[1] : selectedNode.peName;
-                        if (cleanPeName.includes('-PE')) {
-                          peNames = [cleanPeName, cleanPeName.replace('-PE', '-PE-02')];
-                          if (peNames[0] === peNames[1] || peNames[1].includes('-PE-02-02')) {
-                            peNames = [`${cleanPeName}-01`, `${cleanPeName}-02`];
-                          }
-                        } else {
-                          peNames = [`${cleanPeName}-01`, `${cleanPeName}-02`];
-                        }
-                      }
-
-                      return [
-                        { peId: 'PE-01', peName: peNames[0], peIp: '10.254.1.1', pePort: 'GigabitEthernet0/0/1', mtu: '1500', aggName: aggName, aggPort: '10G-Port-1/1' },
-                        { peId: 'PE-02', peName: peNames[1], peIp: '10.254.1.2', pePort: 'GigabitEthernet0/0/2', mtu: '9000', aggName: aggName, aggPort: '10G-Port-1/2' },
-                      ];
-                    })().map((row, idx) => {
-                      const isRowSelected = reserveData.selectedPeRows?.includes(row.peId) || false;
-                      return (
-                        <tr
-                          key={idx}
-                          className={`hover:bg-cds/5 transition-colors duration-150 ${isRowSelected ? 'bg-cds/5' : ''}`}
-                        >
-                          <td className="px-4 py-3 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isRowSelected}
-                              onChange={(e) => {
-                                const selected = reserveData.selectedPeRows || [];
-                                const nextSelected = e.target.checked
-                                  ? [...selected, row.peId]
-                                  : selected.filter(id => id !== row.peId);
-                                handleReserveChange('selectedPeRows', nextSelected);
-                              }}
-                              className="rounded border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
-                            />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap font-semibold text-cds">{row.peId}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{row.peName}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-blue-400">{row.peIp}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="flex flex-col">
-                              <span>{row.pePort}</span>
-                              <span className="text-[10px] text-ink-600">MTU: {row.mtu}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">{row.aggName}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{row.aggPort}</td>
-                        </tr>
-                      );
-                    })}
+                    {loadingPePorts ? (
+                      <tr>
+                        <td colSpan="7" className="px-4 py-8 text-center text-sm text-ink-500 font-mono animate-pulse">
+                          กำลังโหลดข้อมูลอินเตอร์เฟสของ PE จาก NetBox...
+                        </td>
+                      </tr>
+                    ) : pePorts.length > 0 ? (
+                      pePorts.map((row, idx) => {
+                        const isRowSelected = reserveData.selectedPeRows?.includes(row.peId) || false;
+                        return (
+                          <tr
+                            key={idx}
+                            className={`hover:bg-cds/5 transition-colors duration-150 ${isRowSelected ? 'bg-cds/5' : ''}`}
+                          >
+                            <td className="px-4 py-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isRowSelected}
+                                onChange={(e) => {
+                                  const selected = reserveData.selectedPeRows || [];
+                                  const nextSelected = e.target.checked
+                                    ? [...selected, row.peId]
+                                    : selected.filter(id => id !== row.peId);
+                                  handleReserveChange('selectedPeRows', nextSelected);
+                                }}
+                                className="rounded border-base-600 bg-base-950 text-cds focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
+                              />
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap font-semibold text-cds">{row.peName}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{row.pePort}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-blue-400">{row.peIp}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span>{row.description || 'ไม่มีคำอธิบาย'}</span>
+                                <span className="text-[10px] text-ink-600">MTU: {row.mtu}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">{row.aggName}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{row.aggPort}</td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="7" className="px-4 py-8 text-center text-sm text-ink-600 italic">
+                          ไม่พบข้อมูลอินเตอร์เฟสของ PE สำหรับไซต์นี้ใน NetBox
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

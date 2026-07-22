@@ -532,6 +532,7 @@ async function getSiteTopology(siteCode = '') {
               const gwSiteId = peDevice.site?.id;
 
               gatewaysDict[peDeviceId] = {
+                id: peDeviceId,
                 name: peDevice.name || peDevice.display,
                 ip: gwIp,
                 interface: assignedGw.name,
