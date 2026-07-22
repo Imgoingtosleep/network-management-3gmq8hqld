@@ -276,6 +276,7 @@ export default function CDSSearchReservePage() {
             nodeType: device.type !== 'N/A' ? device.type : 'LSW',
             roleName: device.role_name || device.role || '',
             nodeName: device.name,
+            ipAddress: device.ip && device.ip !== 'N/A' ? device.ip.split('/')[0] : '',
             peName: device.pe_name || (device.site !== 'N/A' ? `90134_${device.site.toUpperCase()}-MX480-PE` : '90134_BCH-MX480-PE'),
             domain: device.pe_name || (device.site !== 'N/A' ? `90134_${device.site.toUpperCase()}-MX480-PE` : '90134_BCH-MX480-PE'),
             aggregation: 'AGG-' + (device.site !== 'N/A' ? device.site : 'BKK'),
@@ -835,10 +836,10 @@ export default function CDSSearchReservePage() {
         model: selectedPePortObj?.peModel || '',
         type: reserveData.nodeType || selectedNode?.nodeType || '',
         pe_port_list: selectedPePortObj ? selectedPePortObj.pePort : '',
-        pe_vlan_customer: reserveData.peVlanCustomer,
+        pe_vlan_customer: getSelectedVlan(),
         agg_id: selectedNode?.aggregation || '',
         agg_ip_network: reserveData.ipNetwork,
-        agg_vlan: reserveData.aggVlan,
+        agg_vlan: getSelectedVlan(),
         nw_lsw_id: formData.networkDevice || '',
         nw_lsw_ip: selectedNode?.ipAddress || '',
         nw_lsw_use_for: reserveData.remark || '',
@@ -1339,21 +1340,7 @@ export default function CDSSearchReservePage() {
               />
             </div>
 
-            {/* Row 5.5: PE VLAN Customer & AGG VLAN */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputField
-                label="PE VLAN Customer"
-                value={reserveData.peVlanCustomer}
-                onChange={(e) => handleReserveChange('peVlanCustomer', e.target.value)}
-                placeholder="ระบุ PE VLAN Customer..."
-              />
-              <InputField
-                label="AGG VLAN"
-                value={reserveData.aggVlan}
-                onChange={(e) => handleReserveChange('aggVlan', e.target.value)}
-                placeholder="ระบุ AGG VLAN..."
-              />
-            </div>
+
 
             {/* Row 6: Select Model LSW (Searchable Dropdown) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
