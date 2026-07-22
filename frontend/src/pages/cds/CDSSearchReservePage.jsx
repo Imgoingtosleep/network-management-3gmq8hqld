@@ -499,7 +499,7 @@ export default function CDSSearchReservePage() {
                   iface.name.toLowerCase().includes('ge-') ||
                   iface.name.toLowerCase().includes('et-'))) {
                 
-                let formattedMtu = '1500';
+                let formattedMtu = '';
                 if (iface.mtu) {
                   const mtuStr = String(iface.mtu);
                   if (mtuStr.startsWith('9')) {
@@ -1511,7 +1511,21 @@ export default function CDSSearchReservePage() {
                             <td className="px-4 py-3 whitespace-nowrap">
                               <div className="flex flex-col">
                                 <span>{row.description || 'ไม่มีคำอธิบาย'}</span>
-                                <span className="text-[10px] text-ink-600">MTU: {row.mtu}</span>
+                                {row.mtu && (
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] text-ink-600 font-mono">MTU: {row.mtu}</span>
+                                    {row.mtu === '9000' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/10 text-red-400 border border-red-500/30 uppercase font-sans">
+                                        Jumbo
+                                      </span>
+                                    )}
+                                    {row.mtu === '1500' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 uppercase font-sans">
+                                        Standard
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">{row.aggName}</td>
