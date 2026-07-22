@@ -158,6 +158,7 @@ export default function CDSSearchReservePage() {
     tenant: '',
     description: '',
     nodeId: '',
+    siteCode: '',
   });
 
   // เก็บ node object ที่เลือกไว้เพื่อส่งข้อมูลไป Step 2
@@ -175,6 +176,8 @@ export default function CDSSearchReservePage() {
     portUplinkBackup: '',
     portDownlinkMain: '',
     portDownlinkBackup: '',
+    nodeType: '',
+    nodeName: '',
   });
 
   // Search state สำหรับ Select Network (LSW_Network)
@@ -192,6 +195,11 @@ export default function CDSSearchReservePage() {
 
   const [modelOptions, setModelOptions] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+
+  const [deviceRoles, setDeviceRoles] = useState([]);
+  const [loadingRoles, setLoadingRoles] = useState(false);
+
+  const [prefixesList, setPrefixesList] = useState([]);
 
   // กรองอุปกรณ์เฉพาะ Device Role LSW_Network (หรือ LSW / Network)
   const lswNetworkDevices = devicesList.filter((d) => {
@@ -255,7 +263,8 @@ export default function CDSSearchReservePage() {
             idNetwork: 'NET-' + (device.site !== 'N/A' ? device.site : 'LOCAL'),
             areaGroup: device.region && device.region !== 'N/A' ? device.region : '',
             area: device.location && device.location !== 'N/A' ? device.location : '',
-            siteName: device.site_name && device.site_name !== 'N/A' ? device.site_name : (device.site !== 'N/A' ? device.site : 'Main Site'),
+            siteCode: device.site !== 'N/A' ? device.site : 'N/A',
+            siteName: device.name_thai !== 'N/A' ? device.name_thai : 'N/A',
             nameThai: device.name_thai !== 'N/A' ? device.name_thai : 'N/A',
             status: device.status || 'Active',
             tenant: device.tenant !== 'N/A' ? device.tenant : 'N/A',
@@ -311,13 +320,74 @@ export default function CDSSearchReservePage() {
       }
     };
 
+    const fetchDeviceRoles = async () => {
+      setLoadingRoles(true);
+      try {
+        const res = await ndsApi.getDeviceRoles();
+        const rawRoles = res.data?.data || res.data || res || [];
+        setDeviceRoles(rawRoles);
+      } catch (err) {
+        console.error('Failed to load NetBox device roles:', err);
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+
+    const fetchPrefixes = async () => {
+      try {
+        const res = await ndsApi.prefixes.list();
+        const rawPrefixes = res.data?.data || res.data || res || [];
+        setPrefixesList(rawPrefixes);
+      } catch (err) {
+        console.error('Failed to load NetBox prefixes:', err);
+      }
+    };
+
     fetchDevices();
     fetchModelTypes();
+    fetchDeviceRoles();
+    fetchPrefixes();
   }, []);
+
+  // เมื่อ formData.nodeId มีการเปลี่ยนแปลง ให้ตั้งค่า Node Name เริ่มต้นเป็น [nodeId]_
+  useEffect(() => {
+    if (formData.nodeId) {
+      setReserveData(prev => {
+        if (!prev.nodeName || prev.nodeName === '_' || !prev.nodeName.startsWith(formData.nodeId + '_')) {
+          return { ...prev, nodeName: `${formData.nodeId}_` };
+        }
+        return prev;
+      });
+    } else {
+      setReserveData(prev => ({ ...prev, nodeName: '' }));
+    }
+  }, [formData.nodeId]);
+
+  // เมื่อเลือก node หรือ load node type
+  useEffect(() => {
+    if (selectedNode) {
+      setReserveData(prev => ({
+        ...prev,
+        nodeType: selectedNode.roleName || selectedNode.nodeType || prev.nodeType || ''
+      }));
+    }
+  }, [selectedNode]);
+
+  // หา ringName จาก prefix ที่เลือก
+  const getSelectedPrefixRingName = () => {
+    if (!reserveData.ipNetwork) return '—';
+    const match = reserveData.ipNetwork.split(' ')[0];
+    const found = prefixesList.find(p => p.prefix === match);
+    return found?.ringname || '—';
+  };
 
   const ipNetworkRef = useRef(null);
   const [ipNetworkSearch, setIpNetworkSearch] = useState('');
   const [showIpNetworkDropdown, setShowIpNetworkDropdown] = useState(false);
+
+  const modelSelectRef = useRef(null);
+  const [modelSearch, setModelSearch] = useState('');
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   // ปิด dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
@@ -330,6 +400,9 @@ export default function CDSSearchReservePage() {
       }
       if (ipNetworkRef.current && !ipNetworkRef.current.contains(e.target)) {
         setShowIpNetworkDropdown(false);
+      }
+      if (modelSelectRef.current && !modelSelectRef.current.contains(e.target)) {
+        setShowModelDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -346,6 +419,7 @@ export default function CDSSearchReservePage() {
         networkDevice: net.nodeId,
         areaGroup: net.areaGroup,
         area: net.area,
+        siteCode: net.siteCode,
         siteName: net.siteName,
         nameThai: net.nameThai,
         status: net.status,
@@ -459,6 +533,7 @@ export default function CDSSearchReservePage() {
       idNetwork: node.idNetwork,
       areaGroup: node.areaGroup,
       area: node.area,
+      siteCode: node.siteCode || '',
       siteName: node.siteName,
       nameThai: node.nameThai,
       status: node.status,
@@ -508,7 +583,7 @@ export default function CDSSearchReservePage() {
 
   // ล้างข้อมูลทั้งหมด
   const handleClearNode = () => {
-    setFormData({ idNetwork: '', areaGroup: '', area: '', ipAddress: '', siteName: '', nameThai: '', nodeId: '' });
+    setFormData({ idNetwork: '', areaGroup: '', area: '', ipAddress: '', siteCode: '', siteName: '', nameThai: '', nodeId: '' });
     setSelectedNode(null);
     setNodeSearch('');
     setShowNodeDropdown(false);
@@ -529,6 +604,7 @@ export default function CDSSearchReservePage() {
       portDownlinkBackup: '',
       selectedPeRows: [],
     });
+    setModelSearch('');
   };
 
   const handleReserveChange = (field, value) => {
@@ -536,7 +612,7 @@ export default function CDSSearchReservePage() {
   };
 
   const handleReserveSubmit = async () => {
-    if (!selectedNode) {
+    if (!selectedNode && !formData.nodeId) {
       alert('กรุณาเลือก Node ID ก่อน');
       return;
     }
@@ -545,25 +621,41 @@ export default function CDSSearchReservePage() {
       return;
     }
     try {
+      const activeNodeId = formData.nodeId || selectedNode?.nodeId || '';
       const newDashboardItem = {
-        pe_name: 'PE-' + selectedNode.nodeId.split('-')[0] + '-01',
+        id: 'LSR-' + Date.now(),
+        nodeId: activeNodeId,
+        nodeName: reserveData.nodeName || selectedNode?.nodeName || (activeNodeId + '_'),
+        ipAddress: reserveData.ipAddress || selectedNode?.ipAddress || '',
+        idNetwork: selectedNode?.idNetwork || 'NET-LOCAL',
+        areaGroup: selectedNode?.areaGroup || formData.areaGroup || '',
+        area: selectedNode?.area || formData.area || '',
+        siteCode: selectedNode?.siteCode || formData.siteCode || '',
+        siteName: selectedNode?.siteName || formData.siteName || '',
+        nameThai: selectedNode?.nameThai || formData.nameThai || '',
+        status: 'Reserve',
+        useFor: reserveData.remark || 'Reserved via UI',
+        ringName: getSelectedPrefixRingName(),
+        
+        // ข้อมูลจำลองเพิ่มเติมสำหรับ detail
+        pe_name: 'PE-' + activeNodeId.split('-')[0] + '-01',
         ip_loopback: '10.0.0.' + (Math.floor(Math.random() * 250) + 10),
         model: 'Cisco ASR9001',
-        type: 'Provider Edge',
+        type: reserveData.nodeType || selectedNode?.nodeType || 'LSW',
         pe_port_list: 'GigabitEthernet0/0/1',
         pe_vlan_customer: String(Math.floor(Math.random() * 900) + 100),
-        agg_id: selectedNode.aggregation,
+        agg_id: selectedNode?.aggregation || '',
         agg_ip_network: reserveData.ipNetwork,
         agg_vlan: '100',
-        nw_lsw_id: 'NW-LSW-' + selectedNode.nodeId.split('-')[0] + '-01',
-        nw_lsw_ip: selectedNode.ipAddress,
+        nw_lsw_id: 'NW-LSW-' + activeNodeId.split('-')[0] + '-01',
+        nw_lsw_ip: selectedNode?.ipAddress || '',
         nw_lsw_use_for: 'Office Network',
         nw_lsw_port: reserveData.portUplinkMain || 'GigabitEthernet0/1',
-        access_lsw_id: selectedNode.nodeId,
+        access_lsw_id: activeNodeId,
         access_lsw_model: reserveData.modelLSW,
         access_lsw_port_uplink: reserveData.portUplinkMain || 'GigabitEthernet0/1',
         access_lsw_port_customer: reserveData.portDownlinkMain || 'GigabitEthernet0/2-24',
-        access_lsw_ip: reserveData.ipAddress || selectedNode.ipAddress,
+        access_lsw_ip: reserveData.ipAddress || selectedNode?.ipAddress || '',
         access_lsw_vlan_management: '99',
       };
       // 1. บันทึกลง LocalStorage (Local Browser Storage)
@@ -578,7 +670,7 @@ export default function CDSSearchReservePage() {
         console.warn('Cannot reach backend dashboard API, saved to LocalStorage only', e);
       }
 
-      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ!\nข้อมูลถูกบันทึกไว้ในระบบ Local เรียบร้อยแล้ว (ไม่ถูกส่งไปสร้างใน NetBox)\nNode: ${selectedNode.nodeId}\nModel LSW: ${reserveData.modelLSW}`);
+      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ!\nข้อมูลถูกบันทึกไว้ในระบบ Local เรียบร้อยแล้ว (ไม่ถูกส่งไปสร้างใน NetBox)\nNode: ${newDashboardItem.nodeId}\nModel LSW: ${reserveData.modelLSW}`);
       handleClearReserve();
       handleClearNode();
       setActiveStep(1);
@@ -752,7 +844,8 @@ export default function CDSSearchReservePage() {
               <DisplayField label="Status" value={formData.status} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <DisplayField label="Site Code" value={formData.siteCode} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
               <DisplayField label="Site Name" value={formData.siteName} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
               <DisplayField label="Name Thai" value={formData.nameThai} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
               <DisplayField label="Tenant" value={formData.tenant} placeholder={selectedNode ? "-" : "รอเลือก Network"} />
@@ -880,7 +973,7 @@ export default function CDSSearchReservePage() {
               <div className="rounded-lg border border-cds/20 bg-cds/5 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-ink-400 font-bold">Trace Chain:</span>
-                  <span className="px-2 py-0.5 rounded bg-base-950 text-cds border border-cds/30">LSW: {selectedNode.nodeId}</span>
+                  <span className="px-2 py-0.5 rounded bg-base-950 text-cds border border-cds/30">LSW: {formData.nodeId || selectedNode.nodeId}</span>
                   <span className="text-ink-600">➔</span>
                   <span className="px-2 py-0.5 rounded bg-base-950 text-ink-200 border border-base-600/30">AGG: {selectedNode.aggregation}</span>
                   <span className="text-ink-600">➔</span>
@@ -931,14 +1024,32 @@ export default function CDSSearchReservePage() {
 
             {/* Row 2: Node Type, Area Group */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DisplayField label="Node Type" value={selectedNode?.nodeType} placeholder="—" />
-              <DisplayField label="Area Group" value={selectedNode?.areaGroup} placeholder="—" />
+              <SelectField
+                label="Type (Device Role)"
+                value={reserveData.nodeType}
+                onChange={(e) => handleReserveChange('nodeType', e.target.value)}
+                options={deviceRoles
+                  .filter(r => {
+                    const name = String(r.name || r.display || r || '').toLowerCase();
+                    if (name.includes('lsw_network') || name.includes('lsw-network')) return false;
+                    return name === 'aggregation' || name === 'network' || name.includes('aggregation') || name.includes('network') || name.includes('agg');
+                  })
+                  .map(r => r.name || r.display || r)
+                }
+                placeholder={loadingRoles ? "กำลังโหลด Device Roles..." : "เลือก Device Role..."}
+              />
+              <DisplayField label="Area Group" value={selectedNode?.areaGroup || formData.areaGroup} placeholder="—" />
             </div>
 
             {/* Row 3: Node ID, Node Name */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DisplayField label="Node ID" value={selectedNode?.nodeId} placeholder="—" />
-              <DisplayField label="Node Name" value={selectedNode?.nodeName} placeholder="—" />
+              <DisplayField label="Node ID" value={formData.nodeId || selectedNode?.nodeId} placeholder="—" />
+              <InputField
+                label="Node Name"
+                value={reserveData.nodeName}
+                onChange={(e) => handleReserveChange('nodeName', e.target.value)}
+                placeholder="ระบุ Node Name... เช่น 1111_xxx"
+              />
             </div>
 
             {/* Row 4: Domain (VRF), Aggregation, Searchable IP Network */}
@@ -1030,9 +1141,72 @@ export default function CDSSearchReservePage() {
               <DisplayField label="IP Gateway (อัตโนมัติ)" value={reserveData.ipGateway} placeholder="ขึ้นอัตโนมัติจาก IP Network" />
             </div>
 
-            {/* Row 6: Select Model LSW */}
+            {/* Row 6: Select Model LSW (Searchable Dropdown) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SelectField label="Select Model LSW" value={reserveData.modelLSW} onChange={(e) => handleReserveChange('modelLSW', e.target.value)} options={modelOptions} placeholder={loadingModels ? "กำลังโหลด Model จาก NetBox..." : "------------"} />
+              <div className="flex-1 min-w-0 relative" ref={modelSelectRef}>
+                <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+                  Select Model LSW
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={loadingModels ? "กำลังโหลด Model จาก NetBox..." : "พิมพ์ค้นหา Model LSW..."}
+                    value={modelSearch}
+                    onFocus={() => setShowModelDropdown(true)}
+                    onChange={(e) => {
+                      setModelSearch(e.target.value);
+                      setShowModelDropdown(true);
+                    }}
+                    className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200 font-mono"
+                  />
+                  {modelSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelSearch('');
+                        handleReserveChange('modelLSW', '');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-100 transition-colors"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {showModelDropdown && (
+                  <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-base-700 bg-base-900 shadow-xl py-1">
+                    {(() => {
+                      const filtered = modelOptions.filter((opt) =>
+                        String(opt).toLowerCase().includes(modelSearch.toLowerCase())
+                      );
+                      if (filtered.length > 0) {
+                        return filtered.map((opt, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setModelSearch(opt);
+                              handleReserveChange('modelLSW', opt);
+                              setShowModelDropdown(false);
+                            }}
+                            className={`px-4 py-2 text-xs font-mono cursor-pointer hover:bg-cds/15 hover:text-cds transition-colors ${
+                              reserveData.modelLSW === opt ? 'bg-cds/20 text-cds font-bold' : 'text-ink-200'
+                            }`}
+                          >
+                            {opt}
+                          </div>
+                        ));
+                      }
+                      return (
+                        <div className="px-4 py-3 text-xs text-ink-600 font-mono text-center">
+                          ไม่พบ Model LSW ที่ตรงกับคำค้นหา
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Row 7: Port Uplink Main (แดง) & Backup (ส้ม) */}
@@ -1104,9 +1278,9 @@ export default function CDSSearchReservePage() {
 
             {/* LSW NETWORK Row 2: ID LSW Network, Area Group, Area */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <DisplayField label="ID LSW Network" value={selectedNode?.idNetwork} placeholder="—" />
-              <DisplayField label="Area Group" value={selectedNode?.areaGroup} placeholder="—" />
-              <DisplayField label="Area" value={selectedNode?.area} placeholder="—" />
+              <DisplayField label="ID LSW Network" value={formData.networkDevice} placeholder="—" />
+              <DisplayField label="Area Group" value={selectedNode?.areaGroup || formData.areaGroup} placeholder="—" />
+              <DisplayField label="Area" value={selectedNode?.area || formData.area} placeholder="—" />
             </div>
 
             {/* LSW NETWORK Row 3: IP Address, Site Code, Site Name */}
@@ -1119,7 +1293,7 @@ export default function CDSSearchReservePage() {
             {/* LSW NETWORK Row 4: Use For, Ring Name */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <DisplayField label="Use For" value={selectedNode?.useFor} placeholder="—" />
-              <DisplayField label="Ring Name" value={selectedNode?.ringName} placeholder="—" />
+              <DisplayField label="Ring Name" value={getSelectedPrefixRingName()} placeholder="—" />
             </div>
 
             {/* Select Port PE Section Header */}
@@ -1145,10 +1319,32 @@ export default function CDSSearchReservePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-base-600/30 text-ink-100">
-                    {[
-                      { peId: 'PE-01', peName: 'PE-BKK-01', peIp: '10.254.1.1', pePort: 'GigabitEthernet0/0/1', mtu: '1500', aggName: selectedNode?.aggregation || 'AGG-BKK-01', aggPort: '10G-Port-1/1' },
-                      { peId: 'PE-02', peName: 'PE-BKK-02', peIp: '10.254.1.2', pePort: 'GigabitEthernet0/0/2', mtu: '9000', aggName: selectedNode?.aggregation || 'AGG-BKK-01', aggPort: '10G-Port-1/2' },
-                    ].map((row, idx) => {
+                    {(() => {
+                      const aggName = selectedNode?.aggregation || 'AGG-BKK-01';
+                      let siteAbbrev = 'BKK';
+                      const aggParts = aggName.split('-');
+                      if (aggParts.length >= 2) {
+                        siteAbbrev = aggParts[1];
+                      }
+                      
+                      let peNames = [`PE-${siteAbbrev}-01`, `PE-${siteAbbrev}-02`];
+                      if (selectedNode?.peName) {
+                        const cleanPeName = selectedNode.peName.includes('_') ? selectedNode.peName.split('_')[1] : selectedNode.peName;
+                        if (cleanPeName.includes('-PE')) {
+                          peNames = [cleanPeName, cleanPeName.replace('-PE', '-PE-02')];
+                          if (peNames[0] === peNames[1] || peNames[1].includes('-PE-02-02')) {
+                            peNames = [`${cleanPeName}-01`, `${cleanPeName}-02`];
+                          }
+                        } else {
+                          peNames = [`${cleanPeName}-01`, `${cleanPeName}-02`];
+                        }
+                      }
+
+                      return [
+                        { peId: 'PE-01', peName: peNames[0], peIp: '10.254.1.1', pePort: 'GigabitEthernet0/0/1', mtu: '1500', aggName: aggName, aggPort: '10G-Port-1/1' },
+                        { peId: 'PE-02', peName: peNames[1], peIp: '10.254.1.2', pePort: 'GigabitEthernet0/0/2', mtu: '9000', aggName: aggName, aggPort: '10G-Port-1/2' },
+                      ];
+                    })().map((row, idx) => {
                       const isRowSelected = reserveData.selectedPeRows?.includes(row.peId) || false;
                       return (
                         <tr

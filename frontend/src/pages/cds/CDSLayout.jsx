@@ -6,7 +6,7 @@ const menuItems = [
   { label: 'Search & Reserve', value: 'search-reserve', path: '/cds/search-reserve' },
   { label: 'Topology Map', value: 'topology-map', path: '/cds/topology-map' },
   { label: 'Bulk Import', value: 'bulk-import', path: '/cds/bulk-import' },
-  { label: 'Domain & IP', value: 'domain-ip', path: '/cds/domain-ip' },
+  // { label: 'Domain & IP', value: 'domain-ip', path: '/cds/domain-ip' },
   { label: 'Domain Demo', value: 'domain-demo', path: '/cds/domain-demo' },
   { label: 'VLANs', value: 'vlans', path: '/cds/vlans' },
   { label: 'Devices', value: 'devices', path: '/cds/devices' },
