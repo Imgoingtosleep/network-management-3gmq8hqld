@@ -849,6 +849,7 @@ export default function CDSSearchReservePage() {
         access_lsw_port_customer: reserveData.portDownlinkMain || '',
         access_lsw_ip: reserveData.ipAddress || selectedNode?.ipAddress || '',
         access_lsw_vlan_management: '',
+        timestamp: new Date().toISOString().split('T')[0],
       };
       // 1. บันทึกลง LocalStorage (Local Browser Storage)
       const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');

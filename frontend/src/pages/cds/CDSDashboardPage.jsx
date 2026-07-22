@@ -30,8 +30,9 @@ export default function CDSDashboardPage() {
     fetchDashboardData();
   }, []);
 
-  // คอลัมน์ทั้งหมดของตารางตามความต้องการ
-  const headers = [
+  const [activeTab, setActiveTab] = useState('node'); // 'node' หรือ 'vlan'
+
+  const originalHeaders = [
     { key: 'pe_name', label: 'PE Name' },
     { key: 'ip_loopback', label: 'IP Loopback' },
     { key: 'model', label: 'Model' },
@@ -51,7 +52,13 @@ export default function CDSDashboardPage() {
     { key: 'access_lsw_port_customer', label: 'Access LSW Port Customer' },
     { key: 'access_lsw_ip', label: 'Access LSW IP' },
     { key: 'access_lsw_vlan_management', label: 'Access LSW Vlan Management' },
+    { key: 'timestamp', label: 'Timestamp' },
   ];
+
+  const nodeHeaders = originalHeaders.filter(h => !h.key.includes('vlan'));
+  const vlanHeaders = originalHeaders;
+
+  const headers = activeTab === 'node' ? nodeHeaders : vlanHeaders;
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -69,10 +76,8 @@ export default function CDSDashboardPage() {
   // ฟังก์ชันดาวน์โหลดข้อมูลเป็น CSV
   const handleExportCSV = () => {
     const csvRows = [];
-    // เขียนหัวตาราง (Headers)
     csvRows.push(headers.map(h => `"${h.label.replace(/"/g, '""')}"`).join(','));
     
-    // เขียนข้อมูลแถวตาราง
     for (const row of filteredData) {
       const values = headers.map(header => {
         const val = row[header.key] || '';
@@ -81,19 +86,18 @@ export default function CDSDashboardPage() {
       csvRows.push(values.join(','));
     }
     
-    const csvContent = "\uFEFF" + csvRows.join('\n'); // ป้องกันภาษาไทยเพี้ยนใน Excel (UTF-8 BOM)
+    const csvContent = "\uFEFF" + csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `cds_dashboard_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `cds_dashboard_${activeTab}_export_${new Date().toISOString().slice(0, 10)}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ฟังก์ชันรีเฟรชข้อมูลจริงจาก API หลังบ้าน
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await fetchDashboardData();
@@ -102,6 +106,30 @@ export default function CDSDashboardPage() {
 
   return (
     <div className="space-y-6 text-left">
+      {/* Sub-tabs: Node / VLAN */}
+      <div className="flex border-b border-base-600/50 gap-2">
+        <button
+          onClick={() => setActiveTab('node')}
+          className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'node'
+              ? 'border-cds text-cds bg-cds/5'
+              : 'border-transparent text-ink-400 hover:text-ink-200'
+          }`}
+        >
+          Node Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab('vlan')}
+          className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'vlan'
+              ? 'border-cds text-cds bg-cds/5'
+              : 'border-transparent text-ink-400 hover:text-ink-200'
+          }`}
+        >
+          VLAN Dashboard
+        </button>
+      </div>
+
       {/* Search Header & Action Buttons */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-base-600 bg-base-900 p-4 shadow-glow">
         <div className="relative flex-1 max-w-md">
