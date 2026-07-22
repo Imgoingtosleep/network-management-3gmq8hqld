@@ -119,17 +119,17 @@ const InputField = ({ label, value, onChange, placeholder }) => (
   </div>
 );
 
-const SelectField = ({ label, value, onChange, options, placeholder }) => (
+const SelectField = ({ label, value, onChange, options, placeholder, className = "", labelClassName = "" }) => (
   <div className="flex-1 min-w-0">
-    <label className="block text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">
+    <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${labelClassName || 'text-ink-400'}`}>
       {label}
     </label>
     <select
       value={value}
       onChange={onChange}
-      className="w-full rounded-lg border border-base-600 bg-base-950 px-4 py-2.5 text-sm text-ink-100
-                 focus:border-cds focus:outline-none focus:ring-1 focus:ring-cds/30 transition-all duration-200
-                 appearance-none cursor-pointer"
+      className={`w-full rounded-lg border bg-base-950 px-4 py-2.5 text-sm focus:outline-none focus:ring-1 transition-all duration-200 appearance-none cursor-pointer ${
+        className || 'border-base-600 text-ink-100 focus:border-cds focus:ring-cds/30'
+      }`}
       style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B6D74'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
         backgroundRepeat: 'no-repeat',
@@ -197,6 +197,11 @@ export default function CDSSearchReservePage() {
 
   const [modelOptions, setModelOptions] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [rawDeviceTypes, setRawDeviceTypes] = useState([]);
+  const [modelInterfaces, setModelInterfaces] = useState([]);
+  const [loadingInterfaces, setLoadingInterfaces] = useState(false);
+  const [networkInterfaces, setNetworkInterfaces] = useState([]);
+  const [loadingNetworkInterfaces, setLoadingNetworkInterfaces] = useState(false);
 
   const [deviceRoles, setDeviceRoles] = useState([]);
   const [loadingRoles, setLoadingRoles] = useState(false);
@@ -310,6 +315,7 @@ export default function CDSSearchReservePage() {
       try {
         const res = await ndsApi.getDeviceTypes();
         const rawList = res.data?.data || res.data || res || [];
+        setRawDeviceTypes(rawList);
         if (rawList.length > 0) {
           const mappedModels = rawList.map(dt => dt.display || dt.model || dt.name).filter(Boolean);
           const uniqueModels = [...new Set(mappedModels)];
@@ -379,6 +385,72 @@ export default function CDSSearchReservePage() {
   }, [selectedNode]);
 
 
+
+  // ดึงรายการ Interface Templates ของ Model LSW ที่เลือก และกรองเอาเฉพาะ fiber
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      if (!reserveData.modelLSW || rawDeviceTypes.length === 0) {
+        setModelInterfaces([]);
+        return;
+      }
+      setLoadingInterfaces(true);
+      try {
+        const foundType = rawDeviceTypes.find(dt => 
+          (dt.display || dt.model || dt.name) === reserveData.modelLSW
+        );
+        if (foundType && foundType.id) {
+          const res = await ndsApi.getInterfaceTemplates(foundType.id);
+          const templates = res.data?.data || res.data || [];
+          
+          // กรองเอาเฉพาะ interface ที่ field label มีค่าเป็น fiber
+          const fiberPorts = templates
+            .filter(t => 
+              String(t.label || '').toLowerCase().includes('fiber')
+            )
+            .map(t => t.name || t.display || '');
+          
+          setModelInterfaces(fiberPorts.filter(Boolean));
+        } else {
+          setModelInterfaces([]);
+        }
+      } catch (err) {
+        console.error('Failed to load interface templates for model:', err);
+        setModelInterfaces([]);
+      } finally {
+        setLoadingInterfaces(false);
+      }
+    };
+    fetchTemplates();
+  }, [reserveData.modelLSW, rawDeviceTypes]);
+
+  // ดึงรายการ Interface ของ LSW Network ที่เลือกจริงจาก NetBox และกรองเอาเฉพาะ fiber
+  useEffect(() => {
+    const fetchNetworkInterfaces = async () => {
+      if (!selectedNode || !selectedNode.id) {
+        setNetworkInterfaces([]);
+        return;
+      }
+      setLoadingNetworkInterfaces(true);
+      try {
+        const res = await ndsApi.getDeviceInterfaces(selectedNode.id);
+        const interfaces = res.data?.data || res.data || res || [];
+        
+        const fiberPorts = interfaces
+          .filter(iface => 
+            String(iface.label || '').toLowerCase().includes('fiber')
+          )
+          .map(iface => iface.name || iface.display || '');
+          
+        setNetworkInterfaces(fiberPorts.filter(Boolean));
+      } catch (err) {
+        console.error('Failed to load network interfaces:', err);
+        setNetworkInterfaces([]);
+      } finally {
+        setLoadingNetworkInterfaces(false);
+      }
+    };
+    fetchNetworkInterfaces();
+  }, [selectedNode]);
 
   // หา ringName จาก prefix ที่เลือก
   const getSelectedPrefixRingName = () => {
@@ -666,9 +738,12 @@ export default function CDSSearchReservePage() {
     let gatewayIp = '';
 
     if (netVal) {
-      const match = netVal.match(/(\d+\.\d+\.\d+)\.\d+/);
-      if (match) {
-        gatewayIp = `${match[1]}.1`;
+      const prefixOnly = netVal.split(' ')[0];
+      const ipPart = prefixOnly.split('/')[0];
+      const parts = ipPart.split('.');
+      if (parts.length === 4) {
+        const lastOctet = parseInt(parts[3], 10);
+        gatewayIp = `${parts[0]}.${parts[1]}.${parts[2]}.${lastOctet + 1}`;
       }
     }
 
@@ -1332,12 +1407,7 @@ export default function CDSSearchReservePage() {
                 options={availableIpOptions}
                 placeholder={reserveData.ipNetwork ? "เลือก IP Address ที่ว่าง..." : "รอเลือก IP Network"}
               />
-              <InputField
-                label="IP Gateway"
-                value={reserveData.ipGateway}
-                onChange={(e) => handleReserveChange('ipGateway', e.target.value)}
-                placeholder="ระบุ IP Gateway..."
-              />
+              <DisplayField label="IP Gateway (อัตโนมัติ)" value={reserveData.ipGateway} placeholder="ขึ้นอัตโนมัติจาก IP Network" />
             </div>
 
 
@@ -1412,32 +1482,24 @@ export default function CDSSearchReservePage() {
 
             {/* Row 7: Port Uplink Main (แดง) & Backup (ส้ม) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex-1 min-w-0">
-                <label className="block text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">
-                  Port Uplink Main
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น GigabitEthernet0/1"
-                  value={reserveData.portUplinkMain}
-                  onChange={(e) => handleReserveChange('portUplinkMain', e.target.value)}
-                  className="w-full rounded-lg border border-red-500/30 bg-base-950 px-4 py-2.5 text-sm text-red-400 placeholder-red-400/40 
-                             focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/30 transition-all duration-200"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="block text-xs font-semibold text-orange-400 uppercase tracking-wider mb-2">
-                  Port Uplink Backup
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น GigabitEthernet0/2"
-                  value={reserveData.portUplinkBackup}
-                  onChange={(e) => handleReserveChange('portUplinkBackup', e.target.value)}
-                  className="w-full rounded-lg border border-orange-500/30 bg-base-950 px-4 py-2.5 text-sm text-orange-400 placeholder-orange-400/40 
-                             focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500/30 transition-all duration-200"
-                />
-              </div>
+              <SelectField
+                label="Port Uplink Main"
+                value={reserveData.portUplinkMain}
+                onChange={(e) => handleReserveChange('portUplinkMain', e.target.value)}
+                options={modelInterfaces.filter(opt => opt !== reserveData.portUplinkBackup && opt !== reserveData.portDownlinkMain && opt !== reserveData.portDownlinkBackup)}
+                placeholder={reserveData.modelLSW ? (loadingInterfaces ? "กำลังโหลดพอร์ต..." : "เลือกพอร์ต Uplink Main...") : "รอเลือก Model LSW"}
+                labelClassName="text-red-400"
+                className="border-red-500/30 text-red-400 focus:border-red-500 focus:ring-red-500/30"
+              />
+              <SelectField
+                label="Port Uplink Backup"
+                value={reserveData.portUplinkBackup}
+                onChange={(e) => handleReserveChange('portUplinkBackup', e.target.value)}
+                options={modelInterfaces.filter(opt => opt !== reserveData.portUplinkMain && opt !== reserveData.portDownlinkMain && opt !== reserveData.portDownlinkBackup)}
+                placeholder={reserveData.modelLSW ? (loadingInterfaces ? "กำลังโหลดพอร์ต..." : "เลือกพอร์ต Uplink Backup...") : "รอเลือก Model LSW"}
+                labelClassName="text-orange-400"
+                className="border-orange-500/30 text-orange-400 focus:border-orange-500 focus:ring-orange-500/30"
+              />
             </div>
 
             {/* LSW NETWORK Section Header */}
@@ -1449,32 +1511,24 @@ export default function CDSSearchReservePage() {
 
             {/* LSW NETWORK Row 1: Port Downlink Main (แดง) & Port Downlink Backup (ส้ม) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex-1 min-w-0">
-                <label className="block text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">
-                  Port Downlink Main
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น GigabitEthernet0/3"
-                  value={reserveData.portDownlinkMain}
-                  onChange={(e) => handleReserveChange('portDownlinkMain', e.target.value)}
-                  className="w-full rounded-lg border border-red-500/30 bg-base-950 px-4 py-2.5 text-sm text-red-400 placeholder-red-400/40 
-                             focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/30 transition-all duration-200"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="block text-xs font-semibold text-orange-400 uppercase tracking-wider mb-2">
-                  Port Downlink Backup
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น GigabitEthernet0/4"
-                  value={reserveData.portDownlinkBackup}
-                  onChange={(e) => handleReserveChange('portDownlinkBackup', e.target.value)}
-                  className="w-full rounded-lg border border-orange-500/30 bg-base-950 px-4 py-2.5 text-sm text-orange-400 placeholder-orange-400/40 
-                             focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500/30 transition-all duration-200"
-                />
-              </div>
+              <SelectField
+                label="Port Downlink Main"
+                value={reserveData.portDownlinkMain}
+                onChange={(e) => handleReserveChange('portDownlinkMain', e.target.value)}
+                options={networkInterfaces.filter(opt => opt !== reserveData.portUplinkMain && opt !== reserveData.portUplinkBackup && opt !== reserveData.portDownlinkBackup)}
+                placeholder={selectedNode ? (loadingNetworkInterfaces ? "กำลังโหลดพอร์ต..." : "เลือกพอร์ต Downlink Main...") : "รอเลือก Network"}
+                labelClassName="text-red-400"
+                className="border-red-500/30 text-red-400 focus:border-red-500 focus:ring-red-500/30"
+              />
+              <SelectField
+                label="Port Downlink Backup"
+                value={reserveData.portDownlinkBackup}
+                onChange={(e) => handleReserveChange('portDownlinkBackup', e.target.value)}
+                options={networkInterfaces.filter(opt => opt !== reserveData.portUplinkMain && opt !== reserveData.portUplinkBackup && opt !== reserveData.portDownlinkMain)}
+                placeholder={selectedNode ? (loadingNetworkInterfaces ? "กำลังโหลดพอร์ต..." : "เลือกพอร์ต Downlink Backup...") : "รอเลือก Network"}
+                labelClassName="text-orange-400"
+                className="border-orange-500/30 text-orange-400 focus:border-orange-500 focus:ring-orange-500/30"
+              />
             </div>
 
             {/* LSW NETWORK Row 2: ID LSW Network, Area Group, Area */}

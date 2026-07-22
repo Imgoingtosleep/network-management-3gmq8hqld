@@ -867,17 +867,14 @@ async function getAvailableIps(prefixStr) {
     }
 
     if (!gatewayIp) {
-      // Fallback: หากไม่พบ PE gateway ให้หา IP .1 หรือ .254 หรือค่าแรกของ subnet
-      const parts = cleanPrefix.split('.');
-      if (parts.length >= 3) {
-        const basePart = `${parts[0]}.${parts[1]}.${parts[2]}`;
-        const candidate1 = `${basePart}.1`;
-        const candidate254 = `${basePart}.254`;
-        const foundGw = assignedIps.find(ip => {
-          const ipAddr = ip.address?.split('/')[0];
-          return ipAddr === candidate1 || ipAddr === candidate254;
-        });
-        gatewayIp = foundGw ? foundGw.address.split('/')[0] : candidate1;
+      // Fallback: คำนวณ Gateway จาก Subnet Base IP + 1 (เช่น 172.30.201.192/26 -> 172.30.201.193)
+      const ipPart = cleanPrefix.split('/')[0];
+      const parts = ipPart.split('.');
+      if (parts.length === 4) {
+        const lastOctet = parseInt(parts[3], 10);
+        gatewayIp = `${parts[0]}.${parts[1]}.${parts[2]}.${lastOctet + 1}`;
+      } else if (parts.length === 3) {
+        gatewayIp = `${parts[0]}.${parts[1]}.${parts[2]}.1`;
       }
     }
 
