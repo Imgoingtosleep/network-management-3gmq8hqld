@@ -192,18 +192,24 @@ async function addDashboardData(item) {
         }
       }
 
-      // 2. Edit access interface Port Uplink Main / Port Uplink Backup (ขาลูกค้า) -> port_status = 'reserve'
+      // 2. Edit access interface Port Uplink and Port Customer (Downlink) -> port_status = 'reserve', label = 'Fiber'
       if (netboxResult.id) {
         try {
-          const targetPorts = [item.access_lsw_port_customer, item.access_lsw_port_customer_backup].filter(Boolean);
+          const targetPorts = [
+            item.access_lsw_port_uplink,
+            item.access_lsw_port_uplink_backup,
+            item.access_lsw_port_customer,
+            item.access_lsw_port_customer_backup
+          ].filter(Boolean);
           for (const portName of targetPorts) {
             const ifaceId = await netboxService.getOrCreateInterface(netboxResult.id, portName, 'other');
             await netboxService.updateInterface(ifaceId, {
+              label: 'Fiber',
               custom_fields: {
                 port_status: 'reserve'
               }
             });
-            console.log(`Updated LSW Access interface ${portName} port_status to 'reserve'`);
+            console.log(`Updated LSW Access interface ${portName} port_status to 'reserve' and label to 'Fiber'`);
           }
         } catch (ifaceErr) {
           console.error('❌ Failed to update LSW Access interfaces status:', ifaceErr.message);
@@ -212,7 +218,7 @@ async function addDashboardData(item) {
 
       let targetNwDevice = null;
 
-      // 3. Edit network interface status -> port_status = 'reserve' (ฝั่ง LSW Network)
+      // 3. Edit network interface status -> port_status = 'reserve', label = 'Fiber' (ฝั่ง LSW Network)
       if (item.nw_lsw_id) {
         try {
           const allDevs = await netboxService.getDevices();
@@ -226,11 +232,12 @@ async function addDashboardData(item) {
             for (const portName of targetNwPorts) {
               const ifaceId = await netboxService.getOrCreateInterface(targetNwDevice.id, portName, 'other');
               await netboxService.updateInterface(ifaceId, {
+                label: 'Fiber',
                 custom_fields: {
                   port_status: 'reserve'
                 }
               });
-              console.log(`Updated LSW Network (${item.nw_lsw_id}) interface ${portName} port_status to 'reserve'`);
+              console.log(`Updated LSW Network (${item.nw_lsw_id}) interface ${portName} port_status to 'reserve' and label to 'Fiber'`);
             }
           } else {
             console.warn(`⚠️ LSW Network device ${item.nw_lsw_id} not found in NetBox`);
@@ -248,16 +255,9 @@ async function addDashboardData(item) {
             vlanDbId = await netboxService.getVlanByVid(item.agg_vlan);
           }
 
-          const accessMainIfaceId = item.access_lsw_port_uplink ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink, 'other', 'fiber') : null;
-          const accessBackupIfaceId = item.access_lsw_port_uplink_backup ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink_backup, 'other', 'fiber') : null;
+          const accessMainIfaceId = item.access_lsw_port_uplink ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink, 'other') : null;
+          const accessBackupIfaceId = item.access_lsw_port_uplink_backup ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink_backup, 'other') : null;
           
-          if (accessMainIfaceId) {
-            await netboxService.updateInterface(accessMainIfaceId, { label: 'fiber' });
-          }
-          if (accessBackupIfaceId) {
-            await netboxService.updateInterface(accessBackupIfaceId, { label: 'fiber' });
-          }
-
           const networkMainIfaceId = item.nw_lsw_port ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port, 'other') : null;
           const networkBackupIfaceId = item.nw_lsw_port_backup ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port_backup, 'other') : null;
 

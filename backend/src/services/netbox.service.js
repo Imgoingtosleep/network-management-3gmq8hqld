@@ -539,6 +539,28 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
     }
   }
   
+  let templateType = type;
+  let templateLabel = label;
+  try {
+    const devRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
+      headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+    });
+    if (devRes.ok) {
+      const devData = await devRes.json();
+      const deviceTypeId = devData.device_type?.id;
+      if (deviceTypeId) {
+        const templates = await getInterfaceTemplates(deviceTypeId);
+        const match = templates.find(t => String(t.name).toLowerCase() === String(name).toLowerCase());
+        if (match) {
+          templateType = match.type?.value || match.type || type;
+          templateLabel = match.label || label;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed to resolve template for interface ${name}:`, err.message);
+  }
+
   const createRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'POST',
     headers: {
@@ -549,8 +571,8 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
     body: JSON.stringify({
       device: deviceId,
       name: name,
-      type: type,
-      ...(label ? { label } : {})
+      type: templateType,
+      ...(templateLabel ? { label: templateLabel } : {})
     })
   });
   if (!createRes.ok) {

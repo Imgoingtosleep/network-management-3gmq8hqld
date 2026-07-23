@@ -400,7 +400,7 @@ export default function CDSSearchReservePage() {
 
 
 
-  // ดึงรายการ Interface Templates ของ Model LSW ที่เลือก และกรองเอาเฉพาะ fiber
+  // ดึงรายการ Interface ของ Model LSW (Access LSW) หรือ Template
   useEffect(() => {
     const fetchTemplates = async () => {
       if (!reserveData.modelLSW || rawDeviceTypes.length === 0) {
@@ -409,35 +409,49 @@ export default function CDSSearchReservePage() {
       }
       setLoadingInterfaces(true);
       try {
-        const foundType = rawDeviceTypes.find(dt => 
-          (dt.display || dt.model || dt.name) === reserveData.modelLSW
+        const existingDevice = devicesList.find(d => 
+          String(d.nodeName || d.name || '').toLowerCase() === String(reserveData.nodeName || '').toLowerCase() ||
+          String(d.nodeId || d.custom_fields?.nodeid || '').toLowerCase() === String(formData.nodeId || '').toLowerCase()
         );
-        if (foundType && foundType.id) {
-          const res = await ndsApi.getInterfaceTemplates(foundType.id);
-          const templates = res.data?.data || res.data || [];
-          
-          // กรองเอาเฉพาะ interface ที่ field label มีค่าเป็น fiber
-          const fiberPorts = templates
-            .filter(t => 
-              String(t.label || '').toLowerCase().includes('fiber')
+
+        if (existingDevice && existingDevice.id) {
+          const res = await ndsApi.getDeviceInterfaces(existingDevice.id);
+          const interfaces = res.data?.data || res.data || [];
+          const fiberPorts = interfaces
+            .filter(iface => 
+              String(iface.label || '').toLowerCase().includes('fiber') &&
+              String(iface.custom_fields?.port_status || '').toLowerCase() !== 'reserve'
             )
-            .map(t => t.name || t.display || '');
-          
+            .map(iface => iface.name || iface.display || '');
           setModelInterfaces(fiberPorts.filter(Boolean));
         } else {
-          setModelInterfaces([]);
+          const foundType = rawDeviceTypes.find(dt => 
+            (dt.display || dt.model || dt.name) === reserveData.modelLSW
+          );
+          if (foundType && foundType.id) {
+            const res = await ndsApi.getInterfaceTemplates(foundType.id);
+            const templates = res.data?.data || res.data || [];
+            const fiberPorts = templates
+              .filter(t => 
+                String(t.label || '').toLowerCase().includes('fiber')
+              )
+              .map(t => t.name || t.display || '');
+            setModelInterfaces(fiberPorts.filter(Boolean));
+          } else {
+            setModelInterfaces([]);
+          }
         }
       } catch (err) {
-        console.error('Failed to load interface templates for model:', err);
+        console.error('Failed to load interfaces for model:', err);
         setModelInterfaces([]);
       } finally {
         setLoadingInterfaces(false);
       }
     };
     fetchTemplates();
-  }, [reserveData.modelLSW, rawDeviceTypes]);
+  }, [reserveData.modelLSW, rawDeviceTypes, reserveData.nodeName, formData.nodeId, devicesList]);
 
-  // ดึงรายการ Interface ของ LSW Network ที่เลือกจริงจาก NetBox และกรองเอาเฉพาะ fiber
+  // ดึงรายการ Interface ของ LSW Network ที่เลือกจริงจาก NetBox และกรองเอาเฉพาะ fiber และยังไม่ถูกจอง (port_status !== 'reserve')
   useEffect(() => {
     const fetchNetworkInterfaces = async () => {
       if (!selectedNode || !selectedNode.id) {
@@ -451,7 +465,8 @@ export default function CDSSearchReservePage() {
         
         const fiberPorts = interfaces
           .filter(iface => 
-            String(iface.label || '').toLowerCase().includes('fiber')
+            String(iface.label || '').toLowerCase().includes('fiber') &&
+            String(iface.custom_fields?.port_status || '').toLowerCase() !== 'reserve'
           )
           .map(iface => iface.name || iface.display || '');
           
@@ -479,8 +494,8 @@ export default function CDSSearchReservePage() {
   // ดึงค่า VLAN จาก prefix ที่เลือก
   const getSelectedVlan = () => {
     if (!reserveData.ipNetwork) return '';
-    const match = reserveData.ipNetwork.match(/VLAN\s+(\d+)/i);
-    return match ? match[1] : '';
+    const match = reserveData.ipNetwork.match(/VLAN\s+([^)]+)/i);
+    return match ? match[1].trim() : '';
   };
 
   // ดึงข้อมูล Interface ของ PE จริงจาก NetBox และความสัมพันธ์จาก Site Topology
@@ -1379,7 +1394,21 @@ export default function CDSSearchReservePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DisplayField label="Domain (VRF)" value={selectedNode?.domain} placeholder="—" />
               <DisplayField label="Aggregation" value={selectedNode?.aggregation} placeholder="—" />
-              <DisplayField label="IP Network (อัตโนมัติ)" value={reserveData.ipNetwork} placeholder="ขึ้นอัตโนมัติจาก LSW Network/AGG" />
+              <SelectField
+                label="IP Network"
+                value={reserveData.ipNetwork}
+                onChange={(e) => handleIpNetworkSelect(e.target.value)}
+                options={prefixesList
+                  .filter(p => {
+                    return reserveData.ring_name && p.ringname && String(p.ringname).toLowerCase() === String(reserveData.ring_name).toLowerCase();
+                  })
+                  .map(p => {
+                    const vlanPart = p.vlan ? ` (VLAN ${p.vlan})` : '';
+                    return `${p.prefix}${vlanPart}`;
+                  })
+                }
+                placeholder={prefixesList.length === 0 ? "กำลังโหลด IP Networks..." : "เลือก IP Network..."}
+              />
             </div>
 
             {/* Row 5: IP Address (Vacant IP Dropdown), IP Gateway (Auto-filled), Ring Name */}
