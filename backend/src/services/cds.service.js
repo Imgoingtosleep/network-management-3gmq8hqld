@@ -192,7 +192,7 @@ async function addDashboardData(item) {
         }
       }
 
-      // 2. Edit access interface Port Uplink -> port_status = 'reserve', label = 'Fiber'
+      // 2. Edit access interface Port Uplink -> port_status = 'reserve', label = 'Fiber', description = 'In Reserve'
       if (netboxResult.id) {
         try {
           const targetPorts = [
@@ -203,11 +203,12 @@ async function addDashboardData(item) {
             const ifaceId = await netboxService.getOrCreateInterface(netboxResult.id, portName, 'other');
             await netboxService.updateInterface(ifaceId, {
               label: 'Fiber',
+              description: 'In Reserve',
               custom_fields: {
                 port_status: 'reserve'
               }
             });
-            console.log(`Updated LSW Access interface ${portName} port_status to 'reserve' and label to 'Fiber'`);
+            console.log(`Updated LSW Access interface ${portName} port_status to 'reserve', label to 'Fiber' and description to 'In Reserve'`);
           }
         } catch (ifaceErr) {
           console.error('❌ Failed to update LSW Access interfaces status:', ifaceErr.message);
@@ -216,7 +217,7 @@ async function addDashboardData(item) {
 
       let targetNwDevice = null;
 
-      // 3. Edit network interface status -> port_status = 'reserve', label = 'Fiber' (ฝั่ง LSW Network)
+      // 3. Edit network interface status -> port_status = 'reserve', label = 'Fiber', description = 'In Reserve' (ฝั่ง LSW Network)
       if (item.nw_lsw_id) {
         try {
           const allDevs = await netboxService.getDevices();
@@ -231,11 +232,12 @@ async function addDashboardData(item) {
               const ifaceId = await netboxService.getOrCreateInterface(targetNwDevice.id, portName, 'other');
               await netboxService.updateInterface(ifaceId, {
                 label: 'Fiber',
+                description: 'In Reserve',
                 custom_fields: {
                   port_status: 'reserve'
                 }
               });
-              console.log(`Updated LSW Network (${item.nw_lsw_id}) interface ${portName} port_status to 'reserve' and label to 'Fiber'`);
+              console.log(`Updated LSW Network (${item.nw_lsw_id}) interface ${portName} port_status to 'reserve', label to 'Fiber' and description to 'In Reserve'`);
             }
           } else {
             console.warn(`⚠️ LSW Network device ${item.nw_lsw_id} not found in NetBox`);
