@@ -16,6 +16,25 @@ export default function CDSDashboardPage() {
       
       // รวมข้อมูล local reserves ไว้ด้านบนตาราง
       const combined = [...localReserves, ...resultList];
+      
+      // เรียงข้อมูลเพื่อให้ข้อมูลใหม่สุดอยู่ด้านบนเสมอ
+      combined.sort((a, b) => {
+        const idA = typeof a.id === 'string' && a.id.startsWith('LSR-') ? parseInt(a.id.split('-')[1], 10) : 0;
+        const idB = typeof b.id === 'string' && b.id.startsWith('LSR-') ? parseInt(b.id.split('-')[1], 10) : 0;
+        
+        if (idA !== idB) {
+          return idB - idA;
+        }
+        
+        const timeA = a.timestamp || '';
+        const timeB = b.timestamp || '';
+        if (timeA !== timeB) {
+          return timeB.localeCompare(timeA);
+        }
+        
+        return 0;
+      });
+
       setData(combined);
     } catch (err) {
       console.error('Failed to fetch CDS dashboard data:', err);

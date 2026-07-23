@@ -1331,6 +1331,57 @@ async function getInterfaceTypeChoices() {
   return data.actions?.POST?.type?.choices || [];
 }
 
+async function createCable(aInterfaceId, bInterfaceId) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/cables/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({
+      a_terminations: [{ object_type: 'dcim.interface', object_id: aInterfaceId }],
+      b_terminations: [{ object_type: 'dcim.interface', object_id: bInterfaceId }],
+      status: 'connected'
+    })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    if (errText.includes('already cabled') || errText.includes('exists') || errText.includes('occupied')) {
+      console.log(`Cable already exists or interface occupied between ${aInterfaceId} and ${bInterfaceId}`);
+      return null;
+    }
+    throw new Error(`NetBox API POST cable failed with status ${res.status}: ${errText}`);
+  }
+
+  return await res.json();
+}
+
+async function getVlanByVid(vid) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+  
+  const res = await fetch(`${baseUrl}/ipam/vlans/?vid=${vid}&limit=1`, {
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+  if (res.ok) {
+    const data = await res.json();
+    return data.results && data.results.length > 0 ? data.results[0].id : null;
+  }
+  return null;
+}
+
 module.exports = {
   getDevices,
   getPrefixes,
@@ -1368,5 +1419,10 @@ module.exports = {
   getDeviceInterfaces,
   updateInterface,
   get: fetchAllPages,
-  getSingle
+  getSingle,
+  createCable,
+  getVlanByVid,
+  getOrCreateInterface,
+  getOrCreateIPAddress,
+  getSanitizedUrl
 };

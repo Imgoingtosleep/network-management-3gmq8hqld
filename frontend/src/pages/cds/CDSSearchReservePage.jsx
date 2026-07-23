@@ -338,6 +338,14 @@ export default function CDSSearchReservePage() {
         const res = await ndsApi.getDeviceRoles();
         const rawRoles = res.data?.data || res.data || res || [];
         setDeviceRoles(rawRoles);
+        const accessRole = rawRoles.find(r => {
+          const name = String(r.name || r.display || r || '').toLowerCase();
+          return name.includes('lsw_access') || name.includes('lsw-access');
+        });
+        if (accessRole) {
+          const roleName = accessRole.name || accessRole.display || accessRole;
+          setReserveData(prev => ({ ...prev, nodeType: roleName }));
+        }
       } catch (err) {
         console.error('Failed to load NetBox device roles:', err);
       } finally {
@@ -378,12 +386,17 @@ export default function CDSSearchReservePage() {
   // เมื่อเลือก node หรือ load node type
   useEffect(() => {
     if (selectedNode) {
+      const accessRole = deviceRoles.find(r => {
+        const name = String(r.name || r.display || r || '').toLowerCase();
+        return name.includes('lsw_access') || name.includes('lsw-access');
+      });
+      const defaultRole = accessRole ? (accessRole.name || accessRole.display || accessRole) : 'LSW_Access';
       setReserveData(prev => ({
         ...prev,
-        nodeType: selectedNode.roleName || selectedNode.nodeType || prev.nodeType || ''
+        nodeType: defaultRole
       }));
     }
-  }, [selectedNode]);
+  }, [selectedNode, deviceRoles]);
 
 
 
@@ -675,6 +688,7 @@ export default function CDSSearchReservePage() {
         tenant: net.tenant,
         description: net.description,
       }));
+      setShowNetworkDropdown(false);
 
       // ตั้งค่าโหนดเริ่มต้น
       let updatedNode = { ...net };
@@ -937,8 +951,8 @@ export default function CDSSearchReservePage() {
         pe_name: selectedPePortObj ? selectedPePortObj.peName : '',
         ip_loopback: selectedPePortObj ? selectedPePortObj.peIp : '',
         model: selectedPePortObj?.peModel || '',
-        type: reserveData.nodeType || selectedNode?.nodeType || '',
-        pe_port_list: selectedPePortObj ? selectedPePortObj.pePort : '',
+        type: selectedNode?.roleName || selectedNode?.nodeType || '',
+        pe_port_list: '',
         pe_vlan_customer: getSelectedVlan(),
         agg_id: selectedNode?.aggregation || '',
         agg_ip_network: reserveData.ipNetwork,
@@ -947,10 +961,13 @@ export default function CDSSearchReservePage() {
         nw_lsw_ip: selectedNode?.ipAddress || '',
         nw_lsw_use_for: reserveData.remark || '',
         nw_lsw_port: reserveData.portDownlinkMain || '',
+        nw_lsw_port_backup: reserveData.portDownlinkBackup || '',
         access_lsw_id: activeNodeId,
         access_lsw_model: reserveData.modelLSW,
-        access_lsw_port_uplink: reserveData.portDownlinkMain || '',
-        access_lsw_port_customer: reserveData.portUplinkMain || '',
+        access_lsw_port_uplink: reserveData.portUplinkMain || '',
+        access_lsw_port_uplink_backup: reserveData.portUplinkBackup || '',
+        access_lsw_port_customer: reserveData.portDownlinkMain || '',
+        access_lsw_port_customer_backup: reserveData.portDownlinkBackup || '',
         access_lsw_ip: reserveData.ipAddress || selectedNode?.ipAddress || '',
         access_lsw_vlan_management: '',
         timestamp: new Date().toISOString().split('T')[0],
@@ -967,7 +984,7 @@ export default function CDSSearchReservePage() {
         console.warn('Cannot reach backend dashboard API, saved to LocalStorage only', e);
       }
 
-      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ!\nข้อมูลถูกบันทึกไว้ในระบบ Local เรียบร้อยแล้ว (ไม่ถูกส่งไปสร้างใน NetBox)\nNode: ${newDashboardItem.nodeId}\nModel LSW: ${reserveData.modelLSW}`);
+      alert(`ทำการ Reserve Port สำหรับ Switch สำเร็จ!\nข้อมูลถูกบันทึกและซิงค์ลง NetBox เรียบร้อยแล้ว\nNode: ${newDashboardItem.nodeId}\nModel LSW: ${reserveData.modelLSW}`);
       handleClearReserve();
       handleClearNode();
       setActiveStep(1);
@@ -1338,8 +1355,7 @@ export default function CDSSearchReservePage() {
                 options={deviceRoles
                   .filter(r => {
                     const name = String(r.name || r.display || r || '').toLowerCase();
-                    if (name.includes('lsw_network') || name.includes('lsw-network')) return false;
-                    return name === 'aggregation' || name === 'network' || name.includes('aggregation') || name.includes('network') || name.includes('agg');
+                    return name.includes('lsw_access') || name.includes('lsw-access');
                   })
                   .map(r => r.name || r.display || r)
                 }
@@ -1519,14 +1535,14 @@ export default function CDSSearchReservePage() {
               <DisplayField label="Use For" value={selectedNode?.useFor} placeholder="—" />
             </div>
 
-            {/* Select Port PE Section Header */}
+            {/* Show Port PE Section Header */}
             <div className="flex items-center gap-3 pt-4">
               <div className="h-px flex-1 bg-gradient-to-r from-cds/40 to-transparent" />
-              <span className="text-xs font-mono font-bold text-cds uppercase tracking-widest">Select Port PE</span>
+              <span className="text-xs font-mono font-bold text-cds uppercase tracking-widest">Show Port PE</span>
               <div className="h-px flex-1 bg-gradient-to-l from-cds/40 to-transparent" />
             </div>
 
-            {/* Select Port PE Table */}
+            {/* Show Port PE Table */}
             <div className="rounded-xl border border-base-600 bg-base-950 overflow-hidden shadow-glow">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs font-mono border-collapse">

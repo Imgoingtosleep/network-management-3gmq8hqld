@@ -18,10 +18,300 @@ async function createProject(data) {
 }
 
 async function getDashboardData() {
-  return cdsModel.findDashboardData();
+  return cdsModel.getDashboardData();
 }
 
 async function addDashboardData(item) {
+  try {
+    let deviceTypeId = null;
+    if (item.access_lsw_model) {
+      // 1. ค้นหาตรงๆ จากชื่อเต็ม (เช่น EX2300-24T)
+      let dtResp = await netboxService.get(`/dcim/device-types/?model=${encodeURIComponent(item.access_lsw_model)}&limit=1`);
+      if (dtResp && dtResp.length > 0) {
+        deviceTypeId = dtResp[0].id;
+      }
+
+      // 2. หากหาไม่เจอและมีช่องว่าง (เช่น "Juniper EX2300-24T" ให้ตัดคำแรกออกแล้วค้นด้วยโมเดลจริง "EX2300-24T")
+      if (!deviceTypeId && item.access_lsw_model.includes(' ')) {
+        const parts = item.access_lsw_model.split(' ');
+        const cleanModel = parts.slice(1).join(' '); // ตัดผู้ผลิตคำแรกออก
+        dtResp = await netboxService.get(`/dcim/device-types/?model=${encodeURIComponent(cleanModel)}&limit=1`);
+        if (dtResp && dtResp.length > 0) {
+          deviceTypeId = dtResp[0].id;
+        }
+      }
+
+      // 3. ปรับการหาแบบกว้างผ่านการพิมพ์ค้นหา (q)
+      if (!deviceTypeId) {
+        const dtRespQ = await netboxService.get(`/dcim/device-types/?q=${encodeURIComponent(item.access_lsw_model)}&limit=1`);
+        if (dtRespQ && dtRespQ.length > 0) {
+          deviceTypeId = dtRespQ[0].id;
+        }
+      }
+    }
+    if (!deviceTypeId) {
+      const allTypes = await netboxService.get('/dcim/device-types/?limit=1');
+      if (allTypes && allTypes.length > 0) {
+        deviceTypeId = allTypes[0].id;
+      }
+    }
+
+    let roleId = null;
+    try {
+      const roleResp = await netboxService.get(`/dcim/device-roles/?name=LSW_Access&limit=1`);
+      if (roleResp && roleResp.length > 0) {
+        roleId = roleResp[0].id;
+      } else {
+        const roleRespQ = await netboxService.get(`/dcim/device-roles/?q=lsw_access&limit=1`);
+        if (roleRespQ && roleRespQ.length > 0) {
+          roleId = roleRespQ[0].id;
+        }
+      }
+    } catch (roleErr) {
+      console.warn('⚠️ Failed to resolve LSW_Access role in NetBox:', roleErr.message);
+    }
+    if (!roleId) {
+      const roleQueries = ['lsw', 'access', 'switch'];
+      for (const qWord of roleQueries) {
+        const rResp = await netboxService.get(`/dcim/device-roles/?q=${qWord}&limit=1`);
+        if (rResp && rResp.length > 0) {
+          roleId = rResp[0].id;
+          break;
+        }
+      }
+    }
+    if (!roleId) {
+      const allRoles = await netboxService.get('/dcim/device-roles/?limit=1');
+      if (allRoles && allRoles.length > 0) {
+        roleId = allRoles[0].id;
+      }
+    }
+
+    let siteId = null;
+    try {
+      const siteResp = await netboxService.get(`/dcim/sites/?name=Customer&limit=1`);
+      if (siteResp && siteResp.length > 0) {
+        siteId = siteResp[0].id;
+      } else {
+        const siteRespQ = await netboxService.get(`/dcim/sites/?q=customer&limit=1`);
+        if (siteRespQ && siteRespQ.length > 0) {
+          siteId = siteRespQ[0].id;
+        }
+      }
+    } catch (siteErr) {
+      console.warn('⚠️ Failed to resolve Customer site in NetBox:', siteErr.message);
+    }
+    if (!siteId) {
+      const allSites = await netboxService.get('/dcim/sites/?limit=1');
+      if (allSites && allSites.length > 0) {
+        siteId = allSites[0].id;
+      }
+    }
+
+    console.log('addDashboardData - NetBox resolution audit:', {
+      access_lsw_model: item.access_lsw_model,
+      deviceTypeId,
+      type: item.type,
+      roleId,
+      siteCode: item.siteCode,
+      siteId
+    });
+
+    if (deviceTypeId && roleId && siteId) {
+      console.log(`Creating NetBox Device Name: ${item.nodeName}, Type ID: ${deviceTypeId}, Role ID: ${roleId}, Site ID: ${siteId}`);
+      const payload = {
+        name: item.nodeName,
+        device_type: deviceTypeId,
+        role: roleId,
+        site: siteId,
+        status: 'planned',
+        custom_fields: {
+          nodeid: item.nodeId || ''
+        }
+      };
+
+      let netboxResult = null;
+      try {
+        netboxResult = await netboxService.createDevice(payload);
+        console.log('NetBox Device Created Successfully:', netboxResult.id);
+      } catch (createErr) {
+        if (createErr.message.includes('Device name must be unique') || createErr.message.includes('unique') || createErr.message.includes('400')) {
+          console.warn('⚠️ LSW Access device already exists. Attempting to retrieve existing device ID...');
+          const allDevs = await netboxService.getDevices();
+          const existing = allDevs.find(d => String(d.name).toLowerCase() === String(item.nodeName).toLowerCase());
+          if (existing) {
+            netboxResult = { id: existing.id };
+            console.log(`Resolved existing LSW Access device ID: ${netboxResult.id}`);
+          }
+        }
+        if (!netboxResult) {
+          throw createErr;
+        }
+      }
+      item.netbox_device_id = netboxResult.id;
+
+      // 1.5. สร้างอินเตอร์เฟสเสมือน Vlanif และผูก IP Address ของ LSW Access
+      if (netboxResult.id && item.agg_vlan) {
+        try {
+          const vlanifName = `Vlanif${item.agg_vlan}`;
+          const vlanifId = await netboxService.getOrCreateInterface(netboxResult.id, vlanifName, 'virtual');
+          console.log(`Created virtual interface ${vlanifName} (ID: ${vlanifId}) on LSW Access Device`);
+
+          if (item.access_lsw_ip && item.access_lsw_ip !== '-' && item.access_lsw_ip !== '') {
+            const baseUrl = netboxService.getSanitizedUrl();
+            const token = process.env.NETBOX_API_TOKEN;
+
+            // ตรวจหา Subnet mask จาก IP Network (เช่น 10.99.101.0/24 -> 24)
+            let prefixLength = '24';
+            if (item.agg_ip_network && item.agg_ip_network.includes('/')) {
+              prefixLength = item.agg_ip_network.split('/')[1].split(' ')[0];
+            }
+
+            const cleanIp = item.access_lsw_ip.split('/')[0];
+            const ipWithMask = `${cleanIp}/${prefixLength}`;
+
+            // ลงทะเบียน/ผูกไอพีกับพอร์ต Vlanif เสริม
+            const ipId = await netboxService.getOrCreateIPAddress(ipWithMask, vlanifId);
+
+            // อัปเดต Device ให้รับไอพีตัวนี้เป็น Primary IP
+            await fetch(`${baseUrl}/dcim/devices/${netboxResult.id}/`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Token ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({
+                primary_ip4: ipId
+              })
+            });
+            console.log(`Successfully assigned primary IP ${ipWithMask} to virtual interface ${vlanifName}`);
+          }
+        } catch (vlanifErr) {
+          console.error('❌ Failed to create Vlanif interface or assign management IP:', vlanifErr.message);
+        }
+      }
+
+      // 2. Edit access interface Port Uplink Main / Port Uplink Backup (ขาลูกค้า) -> port_status = 'reserve'
+      if (netboxResult.id) {
+        try {
+          const targetPorts = [item.access_lsw_port_customer, item.access_lsw_port_customer_backup].filter(Boolean);
+          for (const portName of targetPorts) {
+            const ifaceId = await netboxService.getOrCreateInterface(netboxResult.id, portName, 'other');
+            await netboxService.updateInterface(ifaceId, {
+              custom_fields: {
+                port_status: 'reserve'
+              }
+            });
+            console.log(`Updated LSW Access interface ${portName} port_status to 'reserve'`);
+          }
+        } catch (ifaceErr) {
+          console.error('❌ Failed to update LSW Access interfaces status:', ifaceErr.message);
+        }
+      }
+
+      let targetNwDevice = null;
+
+      // 3. Edit network interface status -> port_status = 'reserve' (ฝั่ง LSW Network)
+      if (item.nw_lsw_id) {
+        try {
+          const allDevs = await netboxService.getDevices();
+          targetNwDevice = allDevs.find(d => 
+            String(d.name).toLowerCase() === String(item.nw_lsw_id).toLowerCase() ||
+            String(d.nodeid || d.custom_fields?.nodeid).toLowerCase() === String(item.nw_lsw_id).toLowerCase()
+          );
+
+          if (targetNwDevice && targetNwDevice.id) {
+            const targetNwPorts = [item.nw_lsw_port, item.nw_lsw_port_backup].filter(Boolean);
+            for (const portName of targetNwPorts) {
+              const ifaceId = await netboxService.getOrCreateInterface(targetNwDevice.id, portName, 'other');
+              await netboxService.updateInterface(ifaceId, {
+                custom_fields: {
+                  port_status: 'reserve'
+                }
+              });
+              console.log(`Updated LSW Network (${item.nw_lsw_id}) interface ${portName} port_status to 'reserve'`);
+            }
+          } else {
+            console.warn(`⚠️ LSW Network device ${item.nw_lsw_id} not found in NetBox`);
+          }
+        } catch (nwErr) {
+          console.error('❌ Failed to update LSW Network interfaces status:', nwErr.message);
+        }
+      }
+
+      // 4. Connection (Cabling and VLAN setup between LSW Access & LSW Network)
+      if (netboxResult.id && targetNwDevice && targetNwDevice.id) {
+        try {
+          let vlanDbId = null;
+          if (item.agg_vlan) {
+            vlanDbId = await netboxService.getVlanByVid(item.agg_vlan);
+          }
+
+          const accessMainIfaceId = item.access_lsw_port_uplink ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink, 'other') : null;
+          const accessBackupIfaceId = item.access_lsw_port_uplink_backup ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink_backup, 'other') : null;
+          
+          const networkMainIfaceId = item.nw_lsw_port ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port, 'other') : null;
+          const networkBackupIfaceId = item.nw_lsw_port_backup ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port_backup, 'other') : null;
+
+          const ifaceIdsToConfigure = [accessMainIfaceId, accessBackupIfaceId, networkMainIfaceId, networkBackupIfaceId].filter(Boolean);
+          if (vlanDbId) {
+            for (const ifaceId of ifaceIdsToConfigure) {
+              await netboxService.updateInterface(ifaceId, {
+                mode: 'access',
+                untagged_vlan: vlanDbId
+              });
+              console.log(`Configured VLAN ${item.agg_vlan} on interface ID ${ifaceId}`);
+            }
+          }
+
+          // Create Main Cable Link
+          if (accessMainIfaceId && networkMainIfaceId) {
+            await netboxService.createCable(accessMainIfaceId, networkMainIfaceId);
+            console.log(`Established Main Cable Link: LSW Access (ID ${accessMainIfaceId}) <---> LSW Network (ID ${networkMainIfaceId})`);
+          }
+
+          // Create Backup Cable Link
+          if (accessBackupIfaceId && networkBackupIfaceId) {
+            await netboxService.createCable(accessBackupIfaceId, networkBackupIfaceId);
+            console.log(`Established Backup Cable Link: LSW Access (ID ${accessBackupIfaceId}) <---> LSW Network (ID ${networkBackupIfaceId})`);
+          }
+        } catch (connErr) {
+          console.error('❌ Failed to establish cabling connections between LSW Access & LSW Network:', connErr.message);
+        }
+      }
+
+      // 5. Select/Edit Port PE -> port_status = 'reserve' (ฝั่ง PE Router Gateway)
+      if (item.pe_name && item.pe_port_list && item.pe_port_list !== 'Logical') {
+        try {
+          const allDevs = await netboxService.getDevices();
+          const targetPeDevice = allDevs.find(d => 
+            String(d.name).toLowerCase() === String(item.pe_name).toLowerCase() ||
+            String(d.nodeid || d.custom_fields?.nodeid).toLowerCase() === String(item.pe_name).toLowerCase()
+          );
+
+          if (targetPeDevice && targetPeDevice.id) {
+            const matchedIfaceId = await netboxService.getOrCreateInterface(targetPeDevice.id, item.pe_port_list, 'other');
+            await netboxService.updateInterface(matchedIfaceId, {
+              custom_fields: {
+                port_status: 'reserve'
+              }
+            });
+            console.log(`Updated PE Device (${item.pe_name}) interface ${item.pe_port_list} port_status to 'reserve'`);
+          } else {
+            console.warn(`⚠️ PE device ${item.pe_name} not found in NetBox`);
+          }
+        } catch (peErr) {
+          console.error('❌ Failed to update PE interfaces status:', peErr.message);
+        }
+      }
+    } else {
+      console.warn('⚠️ Missing NetBox mapping parameters (DeviceType, Role or Site ID), skipping real NetBox creation.');
+    }
+  } catch (nbErr) {
+    console.error('❌ Failed to integrate and create LSW Access Device in NetBox:', nbErr.message);
+  }
+
   return cdsModel.addDashboardItem(item);
 }
 
