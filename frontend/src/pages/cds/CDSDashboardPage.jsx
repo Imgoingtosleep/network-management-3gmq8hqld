@@ -2,11 +2,49 @@ import { useEffect, useState, useMemo } from 'react';
 import { cdsApi } from '../../api/cds.api.js';
 
 export default function CDSDashboardPage() {
+  // === State ===
   const [data, setData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('node'); // 'node' หรือ 'vlan'
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // ฟังก์ชันดึงข้อมูลจาก API จริง + ข้อมูลใน LocalStorage
+  // === Constants ===
+  const originalHeaders = [
+    { key: 'pe_name', label: 'PE Name' },
+    { key: 'ip_loopback', label: 'IP Loopback' },
+    { key: 'model', label: 'Model' },
+    { key: 'type', label: 'Role' },
+    { key: 'pe_port_list', label: 'PE Port List' },
+    { key: 'pe_vlan_customer', label: 'PE Vlan Customer' },
+    { key: 'agg_id', label: 'Aggregation' },
+    { key: 'agg_ip_network', label: 'IP Network' },
+    { key: 'agg_vlan', label: 'VLAN' },
+    { key: 'nw_lsw_id', label: 'ID LSW Network' },
+    { key: 'nw_lsw_ip', label: 'IP Address (NW LSW)' },
+    { key: 'nw_lsw_use_for', label: 'Use For (NW LSW)' },
+    { key: 'nw_lsw_port', label: 'Port Downlink Main (NW LSW)' },
+    { key: 'nw_lsw_port_backup', label: 'Port Downlink Backup (NW LSW)' },
+    { key: 'access_lsw_id', label: 'Node ID' },
+    { key: 'access_lsw_model', label: 'Model LSW' },
+    { key: 'access_lsw_port_uplink', label: 'Port Uplink Main' },
+    { key: 'access_lsw_port_uplink_backup', label: 'Port Uplink Backup' },
+    { key: 'access_lsw_ip', label: 'IP Address (Access LSW)' },
+    { key: 'access_lsw_vlan_management', label: 'VLAN Management' },
+    { key: 'ring_name', label: 'Ring Name' },
+    { key: 'timestamp', label: 'Timestamp' },
+  ];
+
+  const nodeHeaders = originalHeaders.filter(h => !h.key.includes('vlan'));
+  const vlanHeaders = originalHeaders;
+  const headers = activeTab === 'node' ? nodeHeaders : vlanHeaders;
+
+  // === Effects/API ===
+
+  /**
+   * Fetches dashboard data from the API and local storage,
+   * combining and sorting them by ID and timestamp.
+   */
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
@@ -49,52 +87,20 @@ export default function CDSDashboardPage() {
     fetchDashboardData();
   }, []);
 
-  const [activeTab, setActiveTab] = useState('node'); // 'node' หรือ 'vlan'
+  // === Handlers ===
 
-  const originalHeaders = [
-    { key: 'pe_name', label: 'PE Name' },
-    { key: 'ip_loopback', label: 'IP Loopback' },
-    { key: 'model', label: 'Model' },
-    { key: 'type', label: 'Role' },
-    { key: 'pe_port_list', label: 'PE Port List' },
-    { key: 'pe_vlan_customer', label: 'PE Vlan Customer' },
-    { key: 'agg_id', label: 'Aggregation' },
-    { key: 'agg_ip_network', label: 'IP Network' },
-    { key: 'agg_vlan', label: 'VLAN' },
-    { key: 'nw_lsw_id', label: 'ID LSW Network' },
-    { key: 'nw_lsw_ip', label: 'IP Address (NW LSW)' },
-    { key: 'nw_lsw_use_for', label: 'Use For (NW LSW)' },
-    { key: 'nw_lsw_port', label: 'Port Downlink Main (NW LSW)' },
-    { key: 'nw_lsw_port_backup', label: 'Port Downlink Backup (NW LSW)' },
-    { key: 'access_lsw_id', label: 'Node ID' },
-    { key: 'access_lsw_model', label: 'Model LSW' },
-    { key: 'access_lsw_port_uplink', label: 'Port Uplink Main' },
-    { key: 'access_lsw_port_uplink_backup', label: 'Port Uplink Backup' },
-    { key: 'access_lsw_ip', label: 'IP Address (Access LSW)' },
-    { key: 'access_lsw_vlan_management', label: 'VLAN Management' },
-    { key: 'ring_name', label: 'Ring Name' },
-    { key: 'timestamp', label: 'Timestamp' },
-  ];
+  /**
+   * Refreshes the dashboard data.
+   */
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDashboardData();
+    setIsRefreshing(false);
+  };
 
-  const nodeHeaders = originalHeaders.filter(h => !h.key.includes('vlan'));
-  const vlanHeaders = originalHeaders;
-
-  const headers = activeTab === 'node' ? nodeHeaders : vlanHeaders;
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // ฟังก์ชันสำหรับการฟิลเตอร์ข้อมูล
-  const filteredData = useMemo(() => {
-    if (!searchQuery) return data;
-    const query = searchQuery.toLowerCase();
-    return data.filter((item) =>
-      Object.values(item).some((value) =>
-        String(value).toLowerCase().includes(query)
-      )
-    );
-  }, [data, searchQuery]);
-
-  // ฟังก์ชันดาวน์โหลดข้อมูลเป็น CSV
+  /**
+   * Exports the currently filtered dashboard data to a CSV file.
+   */
   const handleExportCSV = () => {
     const csvRows = [];
     csvRows.push(headers.map(h => `"${h.label.replace(/"/g, '""')}"`).join(','));
@@ -119,11 +125,18 @@ export default function CDSDashboardPage() {
     document.body.removeChild(link);
   };
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await fetchDashboardData();
-    setIsRefreshing(false);
-  };
+  // === Memoized Values ===
+
+  // ฟังก์ชันสำหรับการฟิลเตอร์ข้อมูล
+  const filteredData = useMemo(() => {
+    if (!searchQuery) return data;
+    const query = searchQuery.toLowerCase();
+    return data.filter((item) =>
+      Object.values(item).some((value) =>
+        String(value).toLowerCase().includes(query)
+      )
+    );
+  }, [data, searchQuery]);
 
   return (
     <div className="space-y-6 text-left">
@@ -180,19 +193,6 @@ export default function CDSDashboardPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-base-600 bg-base-950/60 px-3.5 py-2 text-xs font-semibold text-ink-400 hover:text-ink-100 hover:bg-base-800 transition-all disabled:opacity-50"
             title="รีเฟรชข้อมูล"
           >
-            {/* <svg
-              className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 15H19"
-              />
-            </svg> */}
             <span>{isRefreshing ? '' : '↻'}</span>
           </button>
 

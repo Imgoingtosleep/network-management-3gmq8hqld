@@ -36,27 +36,63 @@ async function getAvailableCustomFields() {
 
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
 
-// ฟังก์ชันดึงข้อมูลแบบวนลูปทีละหน้าจนกว่าจะหมด เพื่อ bypass ขีดจำกัด MAX_PAGE_SIZE (1000) ของ NetBox
-async function getSingle(endpointPath) {
+/**
+ * Shared helper for making NetBox API requests.
+ * @param {string} endpoint - The API endpoint path (e.g., '/ipam/prefixes/').
+ * @param {string} method - HTTP method (GET, POST, PATCH, DELETE).
+ * @param {Object|null} [body=null] - Optional request payload.
+ * @returns {Promise<Object|string|boolean>} Parsed JSON response, true (for 204), or error string.
+ */
+async function fetchNetboxApi(endpoint, method = 'GET', body = null) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
+
   if (!baseUrl || !token) {
     throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
   }
 
-  const res = await fetch(`${baseUrl}${endpointPath}`, {
+  const options = {
+    method,
     headers: {
       'Authorization': `Token ${token}`,
       'Accept': 'application/json'
     }
-  });
+  };
 
-  if (!res.ok) {
+  if (body) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(`${baseUrl}${endpoint}`, options);
+
+  if (!res.ok && res.status !== 204) {
     const errText = await res.text();
-    throw new Error(`NetBox API GET single request failed with status ${res.status}: ${errText}`);
+    // Use generic error format for most CRUD, but some methods might have specific errors in callers
+    const error = new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
+    error.status = res.status;
+    error.text = errText;
+    throw error;
+  }
+
+  if (res.status === 204) {
+    return true;
   }
 
   return await res.json();
+}
+
+/**
+ * Fetches a single page of results or object.
+ * @param {string} endpointPath - The API endpoint.
+ * @returns {Promise<Object>} The API response.
+ */
+async function getSingle(endpointPath) {
+  try {
+    return await fetchNetboxApi(endpointPath, 'GET');
+  } catch (err) {
+    throw new Error(`NetBox API GET single request failed with status ${err.status}: ${err.text || err.message}`);
+  }
 }
 
 async function fetchAllPages(endpointPath) {
@@ -92,6 +128,12 @@ async function fetchAllPages(endpointPath) {
   return results;
 }
 
+// ==================== DEVICES ====================
+
+/**
+ * Retrieves all devices from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of mapped device objects.
+ */
 async function getDevices() {
   const now = Date.now();
   // ถ้ามีข้อมูลแคชอยู่และไม่หมดอายุ ให้ดึงจากแคชทันที
@@ -170,6 +212,12 @@ async function getDevices() {
   return mapped;
 }
 
+// ==================== IPAM & PREFIXES ====================
+
+/**
+ * Retrieves all prefixes from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of mapped prefix objects.
+ */
 async function getPrefixes() {
   const now = Date.now();
   if (memoryCache.prefixes.data && (now - memoryCache.prefixes.timestamp < CACHE_TTL)) {
@@ -225,6 +273,12 @@ async function getPrefixes() {
   return mapped;
 }
 
+// ==================== SITES & REGIONS ====================
+
+/**
+ * Retrieves all sites from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of mapped site objects.
+ */
 async function getSites() {
   const now = Date.now();
   if (memoryCache.sites.data && (now - memoryCache.sites.timestamp < CACHE_TTL)) {
@@ -264,6 +318,10 @@ async function getSites() {
   return mapped;
 }
 
+/**
+ * Retrieves all regions from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of region objects.
+ */
 async function getRegions() {
   const now = Date.now();
   if (!memoryCache.regions) {
@@ -284,6 +342,10 @@ async function getRegions() {
   return mapped;
 }
 
+/**
+ * Retrieves all VRFs from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of VRF objects.
+ */
 async function getVrfs() {
   const now = Date.now();
   if (!memoryCache.vrfs) {
@@ -310,6 +372,10 @@ async function getVrfs() {
   return mapped;
 }
 
+/**
+ * Retrieves all IP addresses from NetBox, optionally from cache.
+ * @returns {Promise<Array>} Array of IP address objects.
+ */
 async function getIpAddresses() {
   const now = Date.now();
   if (!memoryCache.ipAddresses) {
@@ -343,164 +409,70 @@ async function getIpAddresses() {
   return mapped;
 }
 
+/**
+ * Updates a prefix by ID.
+ * @param {string|number} id - Prefix ID.
+ * @param {Object} data - Update payload.
+ * @returns {Promise<Object>} Updated prefix.
+ */
 async function updatePrefix(id, data) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/ipam/prefixes/${id}/`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(data)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
-  const result = await res.json();
+  const result = await fetchNetboxApi(`/ipam/prefixes/${id}/`, 'PATCH', data);
   memoryCache.prefixes.data = null;
   return result;
 }
 
+/**
+ * Creates a new prefix.
+ * @param {Object} data - Prefix data.
+ * @returns {Promise<Object>} Created prefix.
+ */
 async function createPrefix(data) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/ipam/prefixes/`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(data)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
-  const result = await res.json();
+  const result = await fetchNetboxApi(`/ipam/prefixes/`, 'POST', data);
   memoryCache.prefixes.data = null;
   return result;
 }
 
+/**
+ * Deletes a prefix by ID.
+ * @param {string|number} id - Prefix ID.
+ * @returns {Promise<boolean>} True if successful.
+ */
 async function deletePrefix(id) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/ipam/prefixes/${id}/`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!res.ok && res.status !== 204) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
+  await fetchNetboxApi(`/ipam/prefixes/${id}/`, 'DELETE');
   memoryCache.prefixes.data = null;
   return true;
 }
 
+/**
+ * Updates a site by ID.
+ * @param {string|number} id - Site ID.
+ * @param {Object} data - Update payload.
+ * @returns {Promise<Object>} Updated site.
+ */
 async function updateSite(id, data) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/dcim/sites/${id}/`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(data)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
-  const result = await res.json();
+  const result = await fetchNetboxApi(`/dcim/sites/${id}/`, 'PATCH', data);
   memoryCache.sites.data = null;
   return result;
 }
 
+/**
+ * Creates a new site.
+ * @param {Object} data - Site data.
+ * @returns {Promise<Object>} Created site.
+ */
 async function createSite(data) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/dcim/sites/`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(data)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
-  const result = await res.json();
+  const result = await fetchNetboxApi(`/dcim/sites/`, 'POST', data);
   memoryCache.sites.data = null;
   return result;
 }
 
+/**
+ * Deletes a site by ID.
+ * @param {string|number} id - Site ID.
+ * @returns {Promise<boolean>} True if successful.
+ */
 async function deleteSite(id) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/dcim/sites/${id}/`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!res.ok && res.status !== 204) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
+  await fetchNetboxApi(`/dcim/sites/${id}/`, 'DELETE');
   memoryCache.sites.data = null;
   return true;
 }
@@ -525,6 +497,16 @@ async function sanitizeDeviceData(data) {
   }
 }
 
+// ==================== INTERFACES ====================
+
+/**
+ * Retrieves or creates an interface on a device.
+ * @param {string|number} deviceId - The device ID.
+ * @param {string} name - The interface name.
+ * @param {string} type - The interface type (default 'virtual').
+ * @param {string} label - The interface label.
+ * @returns {Promise<number>} The interface ID.
+ */
 async function getOrCreateInterface(deviceId, name, type = 'virtual', label = '') {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -583,6 +565,12 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   return result.id;
 }
 
+/**
+ * Retrieves or creates an IP address and assigns it to an interface.
+ * @param {string} addressStr - The IP address string.
+ * @param {string|number} interfaceId - The interface ID.
+ * @returns {Promise<number>} The IP address ID.
+ */
 async function getOrCreateIPAddress(addressStr, interfaceId) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -697,7 +685,13 @@ async function handleDeviceIPAssignments(deviceId, primaryIp4, primaryIp6, oobIp
   }
 }
 
-// Device CRUD Operations
+// ==================== DEVICE CRUD ====================
+
+/**
+ * Creates a new device in NetBox.
+ * @param {Object} data - The device data.
+ * @returns {Promise<Object>} The created device object.
+ */
 async function createDevice(data) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -1001,35 +995,19 @@ async function createInterfaceTemplates(deviceTypeId, data) {
   return result;
 }
 
+/**
+ * Updates a device by ID.
+ * @param {string|number} id - Device ID.
+ * @param {Object} data - Update payload.
+ * @returns {Promise<Object>} Updated device.
+ */
 async function updateDevice(id, data) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
   // แยกฟิลด์สำหรับจัดการ IP Address ออกจากข้อมูลดีไวซ์หลัก
   const { primary_ip4, primary_ip6, oob_ip, ...deviceData } = data;
 
   await sanitizeDeviceData(deviceData);
 
-  const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(deviceData)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
-  const result = await res.json();
+  const result = await fetchNetboxApi(`/dcim/devices/${id}/`, 'PATCH', deviceData);
   memoryCache.devices.data = null;
 
   // จัดการสร้าง/ผูก IP Address กับอุปกรณ์
@@ -1038,27 +1016,13 @@ async function updateDevice(id, data) {
   return result;
 }
 
+/**
+ * Deletes a device by ID.
+ * @param {string|number} id - Device ID.
+ * @returns {Promise<boolean>} True if successful.
+ */
 async function deleteDevice(id) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
-  }
-
-  const res = await fetch(`${baseUrl}/dcim/devices/${id}/`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!res.ok && res.status !== 204) {
-    const errText = await res.text();
-    throw new Error(`Netbox API ส่งคืนค่าผิดพลาดสถานะ ${res.status}: ${errText}`);
-  }
-
+  await fetchNetboxApi(`/dcim/devices/${id}/`, 'DELETE');
   memoryCache.devices.data = null;
   return true;
 }
@@ -1304,31 +1268,18 @@ async function getDeviceInterfaces(deviceId) {
   return results;
 }
 
+/**
+ * Updates an interface by ID.
+ * @param {string|number} interfaceId - Interface ID.
+ * @param {Object} payload - Update payload.
+ * @returns {Promise<Object>} Updated interface.
+ */
 async function updateInterface(interfaceId, payload) {
-  const baseUrl = getSanitizedUrl();
-  const token = process.env.NETBOX_API_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  try {
+    return await fetchNetboxApi(`/dcim/interfaces/${interfaceId}/`, 'PATCH', payload);
+  } catch (err) {
+    throw new Error(`NetBox API PATCH request failed with status ${err.status}: ${err.text || err.message}`);
   }
-
-  const res = await fetch(`${baseUrl}/dcim/interfaces/${interfaceId}/`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`NetBox API PATCH request failed with status ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  return data;
 }
 
 async function getInterfaceTypeChoices() {
@@ -1355,6 +1306,14 @@ async function getInterfaceTypeChoices() {
   return data.actions?.POST?.type?.choices || [];
 }
 
+// ==================== CABLES ====================
+
+/**
+ * Creates a cable connection between two interfaces.
+ * @param {string|number} aInterfaceId - The first interface ID.
+ * @param {string|number} bInterfaceId - The second interface ID.
+ * @returns {Promise<Object|null>} The created cable object, or null if already cabled.
+ */
 async function createCable(aInterfaceId, bInterfaceId) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
@@ -1389,6 +1348,13 @@ async function createCable(aInterfaceId, bInterfaceId) {
   return await res.json();
 }
 
+// ==================== VLANS ====================
+
+/**
+ * Gets a VLAN ID by its VID.
+ * @param {string|number} vid - The VLAN ID (VID).
+ * @returns {Promise<number|null>} The internal VLAN ID or null.
+ */
 async function getVlanByVid(vid) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;

@@ -146,8 +146,10 @@ const SelectField = ({ label, value, onChange, options, placeholder, className =
 );
 
 export default function CDSSearchReservePage() {
+  // === Step State ===
   const [activeStep, setActiveStep] = useState(1);
 
+  // === Form Data States ===
   const [formData, setFormData] = useState({
     idNetwork: '',
     areaGroup: '',
@@ -165,6 +167,7 @@ export default function CDSSearchReservePage() {
   const [selectedNode, setSelectedNode] = useState(null);
 
   // Form state สำหรับ Step 2
+  // === Reserve Data States ===
   const [reserveData, setReserveData] = useState({
     remark: '',
     jobRef: '',
@@ -183,6 +186,7 @@ export default function CDSSearchReservePage() {
   });
 
   // Search state สำหรับ Select Network (LSW_Network)
+  // === Search & Dropdown States ===
   const [networkSearch, setNetworkSearch] = useState('');
   const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
   const networkRef = useRef(null);
@@ -192,9 +196,11 @@ export default function CDSSearchReservePage() {
   const [showNodeDropdown, setShowNodeDropdown] = useState(false);
   const nodeRef = useRef(null);
 
+  // === NetBox API Data States ===
   const [devicesList, setDevicesList] = useState([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
 
+  // === Model & Interface States ===
   const [modelOptions, setModelOptions] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [rawDeviceTypes, setRawDeviceTypes] = useState([]);
@@ -258,6 +264,8 @@ export default function CDSSearchReservePage() {
   const filteredNodeIdOptions = devicesList.filter((node) =>
     node.nodeId.toLowerCase().includes(nodeSearch.toLowerCase())
   );
+
+  // === Effects ===
 
   // ดึงข้อมูลดีไวซ์และ Model LSW จาก NetBox เมื่อโหลดหน้าจอ
   useEffect(() => {
@@ -687,6 +695,10 @@ export default function CDSSearchReservePage() {
   }, []);
 
   // เมื่อเลือก Select Network -> auto-fill ข้อมูล Network + ดึง PE (Domain) & connected AGG ตาม Site Topo Logic
+  /**
+   * Handles selecting a network from the dropdown.
+   * Auto-fills Network data and fetches PE (Domain) & connected AGG.
+   */
   const handleNetworkSelect = async (net) => {
     if (net) {
       const displayText = `${net.nodeId}${net.nodeName ? ` (${net.nodeName})` : ''}`;
@@ -769,6 +781,10 @@ export default function CDSSearchReservePage() {
   const [availableIpOptions, setAvailableIpOptions] = useState([]);
 
   // เมื่อเลือก IP Network → ดึงรายการ IP Address ที่ยังว่างอยู่จาก NetBox IPAM โดยตรง + คำนวณ Gateway IP
+  /**
+   * Handles selecting an IP Network.
+   * Fetches available IP addresses from NetBox IPAM and calculates Gateway IP.
+   */
   const handleIpNetworkSelect = async (netVal) => {
     let gatewayIp = '';
 
@@ -826,6 +842,10 @@ export default function CDSSearchReservePage() {
   };
 
   // เมื่อเลือก Node ID → auto-fill ข้อมูล Network ด้านบน + เก็บ node object
+  /**
+   * Handles selecting a Node ID.
+   * Auto-fills Network data and stores the node object.
+   */
   const handleNodeSelect = async (node) => {
     setFormData({
       nodeId: node.nodeId,
@@ -844,6 +864,10 @@ export default function CDSSearchReservePage() {
     setShowNodeDropdown(false);
   };
 
+  /**
+   * Validates Step 1 and proceeds to Step 2.
+   * Prepares necessary data like PE, AGG, and IP networks for Step 2.
+   */
   const handleNextStep = async () => {
     if (!selectedNode) {
       alert('กรุณาเลือก LSW Network ก่อน');
@@ -903,6 +927,9 @@ export default function CDSSearchReservePage() {
   };
 
   // ล้างข้อมูลทั้งหมด
+  /**
+   * Clears all selected node data and search fields.
+   */
   const handleClearNode = () => {
     setFormData({ idNetwork: '', areaGroup: '', area: '', ipAddress: '', siteCode: '', siteName: '', nameThai: '', nodeId: '' });
     setSelectedNode(null);
@@ -911,6 +938,9 @@ export default function CDSSearchReservePage() {
   };
 
   // ล้างข้อมูล Step 2 ทั้งหมด
+  /**
+   * Clears all data related to Step 2 (Reserve Port).
+   */
   const handleClearReserve = () => {
     setReserveData({
       remark: '',
@@ -932,6 +962,10 @@ export default function CDSSearchReservePage() {
     setReserveData((prev) => ({ ...prev, [field]: value }));
   };
 
+  /**
+   * Validates form and submits the port reservation data.
+   * Saves to localStorage and sends to the backend dashboard API.
+   */
   const handleReserveSubmit = async () => {
     if (!selectedNode && !formData.nodeId) {
       alert('กรุณาเลือก Node ID ก่อน');
@@ -1092,6 +1126,7 @@ export default function CDSSearchReservePage() {
       <div className="rounded-xl border border-base-600 bg-base-900 p-6 shadow-glow">
 
         {/* ==================== STEP 1: Select Network ==================== */}
+        {/* Renders the form for selecting a network or creating a new node ID */}
         {activeStep === 1 && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-ink-100 font-display flex items-center gap-3">
@@ -1290,6 +1325,7 @@ export default function CDSSearchReservePage() {
         )}
 
         {/* ==================== STEP 2: Reserve Port ==================== */}
+        {/* Renders the reservation form fields and port selection */}
         {activeStep === 2 && (
           <div className="space-y-6">
             {/* Header + Status Badge */}

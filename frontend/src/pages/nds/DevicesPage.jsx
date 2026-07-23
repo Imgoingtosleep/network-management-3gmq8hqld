@@ -1220,7 +1220,7 @@ export default function DevicesPage() {
                 </div>
               )}
             </div>
-
+              
             <div className="mt-6 flex justify-end border-t border-base-600/30 pt-4">
               <button
                 type="button"

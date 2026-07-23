@@ -1,14 +1,28 @@
 const ndsModel = require('../models/nds.model');
 const netboxService = require('./netbox.service');
 
+/**
+ * Retrieves all projects.
+ * @returns {Promise<Array>} Array of projects.
+ */
 async function getAllProjects() {
   return ndsModel.findAll();
 }
 
+/**
+ * Retrieves a project by ID.
+ * @param {string|number} id - The project ID.
+ * @returns {Promise<Object>} The project object.
+ */
 async function getProjectById(id) {
   return ndsModel.findById(id);
 }
 
+/**
+ * Creates a new project.
+ * @param {Object} payload - The project payload.
+ * @returns {Promise<Object>} The created project.
+ */
 async function createProject(payload) {
   if (!payload?.name) {
     const err = new Error('กรุณาระบุชื่อโปรเจกต์ (name)');
@@ -18,7 +32,33 @@ async function createProject(payload) {
   return ndsModel.create(payload);
 }
 
-// Sites (ดึงตรงจาก NetBox)
+/**
+ * Maps a NetBox device object to the format expected by NDS.
+ * @param {Object} d - The NetBox device object.
+ * @returns {Object} The mapped device object.
+ */
+function mapDeviceToNds(d) {
+  return {
+    id: d.id,
+    name: d.name,
+    manufacturer: d.device_type?.manufacturer || 'N/A',
+    model: d.device_type?.model || 'N/A',
+    ip: d.primary_ip?.address?.split('/')[0] || 'N/A',
+    siteName: d.site?.name || 'N/A',
+    location: d.location || 'N/A',
+    rack: d.rack || 'N/A',
+    serial: d.serial || 'N/A',
+    asset_tag: d.asset_tag || 'N/A',
+    status: d.status?.label || 'Active',
+    last_updated: d.last_updated || 'N/A'
+  };
+}
+
+// ==================== Sites ====================
+/**
+ * Retrieves all sites from NetBox, falling back to local DB on failure.
+ * @returns {Promise<Array>} Array of sites.
+ */
 const getAllSites = async () => {
   try {
     const netboxSites = await netboxService.getSites();
@@ -63,20 +103,7 @@ const getAllPEs = async () => {
       d.device_role?.name?.toLowerCase() === 'provider edge'
     );
     if (filtered.length > 0) {
-      return filtered.map(d => ({
-        id: d.id,
-        name: d.name,
-        manufacturer: d.device_type?.manufacturer || 'N/A',
-        model: d.device_type?.model || 'N/A',
-        ip: d.primary_ip?.address?.split('/')[0] || 'N/A',
-        siteName: d.site?.name || 'N/A',
-        location: d.location || 'N/A',
-        rack: d.rack || 'N/A',
-        serial: d.serial || 'N/A',
-        asset_tag: d.asset_tag || 'N/A',
-        status: d.status?.label || 'Active',
-        last_updated: d.last_updated || 'N/A'
-      }));
+      return filtered.map(mapDeviceToNds);
     }
   } catch (err) {
     console.log('⚠️ Failed to load PEs from NetBox, using local database');
@@ -97,19 +124,8 @@ const getAllLswNts = async () => {
     );
     if (filtered.length > 0) {
       return filtered.map(d => ({
-        id: d.id,
-        name: d.name,
-        role: d.device_role?.name || 'LSW_Network',
-        manufacturer: d.device_type?.manufacturer || 'N/A',
-        model: d.device_type?.model || 'N/A',
-        ip: d.primary_ip?.address?.split('/')[0] || 'N/A',
-        siteName: d.site?.name || 'N/A',
-        location: d.location || 'N/A',
-        rack: d.rack || 'N/A',
-        serial: d.serial || 'N/A',
-        asset_tag: d.asset_tag || 'N/A',
-        status: d.status?.label || 'Active',
-        last_updated: d.last_updated || 'N/A'
+        ...mapDeviceToNds(d),
+        role: d.device_role?.name || 'LSW_Network'
       }));
     }
   } catch (err) {
@@ -249,20 +265,7 @@ const getAllAGGs = async () => {
       d.device_role?.name?.toLowerCase() === 'aggregation'
     );
     if (filtered.length > 0) {
-      return filtered.map(d => ({
-        id: d.id,
-        name: d.name,
-        manufacturer: d.device_type?.manufacturer || 'N/A',
-        model: d.device_type?.model || 'N/A',
-        ip: d.primary_ip?.address?.split('/')[0] || 'N/A',
-        siteName: d.site?.name || 'N/A',
-        location: d.location || 'N/A',
-        rack: d.rack || 'N/A',
-        serial: d.serial || 'N/A',
-        asset_tag: d.asset_tag || 'N/A',
-        status: d.status?.label || 'Active',
-        last_updated: d.last_updated || 'N/A'
-      }));
+      return filtered.map(mapDeviceToNds);
     }
   } catch (err) {
     console.log('⚠️ Failed to load AGGs from NetBox, using local database');
