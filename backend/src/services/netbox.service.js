@@ -550,7 +550,8 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
       const deviceTypeId = devData.device_type?.id;
       if (deviceTypeId) {
         const templates = await getInterfaceTemplates(deviceTypeId);
-        const match = templates.find(t => String(t.name).toLowerCase() === String(name).toLowerCase());
+        const cleanName = String(name).replace(/\s+/g, '').toLowerCase();
+        const match = templates.find(t => String(t.name).replace(/\s+/g, '').toLowerCase() === cleanName);
         if (match) {
           templateType = match.type?.value || match.type || type;
           templateLabel = match.label || label;

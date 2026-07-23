@@ -192,14 +192,12 @@ async function addDashboardData(item) {
         }
       }
 
-      // 2. Edit access interface Port Uplink and Port Customer (Downlink) -> port_status = 'reserve', label = 'Fiber'
+      // 2. Edit access interface Port Uplink -> port_status = 'reserve', label = 'Fiber'
       if (netboxResult.id) {
         try {
           const targetPorts = [
             item.access_lsw_port_uplink,
-            item.access_lsw_port_uplink_backup,
-            item.access_lsw_port_customer,
-            item.access_lsw_port_customer_backup
+            item.access_lsw_port_uplink_backup
           ].filter(Boolean);
           for (const portName of targetPorts) {
             const ifaceId = await netboxService.getOrCreateInterface(netboxResult.id, portName, 'other');
