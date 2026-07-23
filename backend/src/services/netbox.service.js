@@ -525,7 +525,7 @@ async function sanitizeDeviceData(data) {
   }
 }
 
-async function getOrCreateInterface(deviceId, name, type = 'virtual') {
+async function getOrCreateInterface(deviceId, name, type = 'virtual', label = '') {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
   
@@ -549,7 +549,8 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual') {
     body: JSON.stringify({
       device: deviceId,
       name: name,
-      type: type
+      type: type,
+      ...(label ? { label } : {})
     })
   });
   if (!createRes.ok) {

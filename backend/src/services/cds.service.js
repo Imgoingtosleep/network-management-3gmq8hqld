@@ -248,9 +248,16 @@ async function addDashboardData(item) {
             vlanDbId = await netboxService.getVlanByVid(item.agg_vlan);
           }
 
-          const accessMainIfaceId = item.access_lsw_port_uplink ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink, 'other') : null;
-          const accessBackupIfaceId = item.access_lsw_port_uplink_backup ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink_backup, 'other') : null;
+          const accessMainIfaceId = item.access_lsw_port_uplink ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink, 'other', 'fiber') : null;
+          const accessBackupIfaceId = item.access_lsw_port_uplink_backup ? await netboxService.getOrCreateInterface(netboxResult.id, item.access_lsw_port_uplink_backup, 'other', 'fiber') : null;
           
+          if (accessMainIfaceId) {
+            await netboxService.updateInterface(accessMainIfaceId, { label: 'fiber' });
+          }
+          if (accessBackupIfaceId) {
+            await netboxService.updateInterface(accessBackupIfaceId, { label: 'fiber' });
+          }
+
           const networkMainIfaceId = item.nw_lsw_port ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port, 'other') : null;
           const networkBackupIfaceId = item.nw_lsw_port_backup ? await netboxService.getOrCreateInterface(targetNwDevice.id, item.nw_lsw_port_backup, 'other') : null;
 
