@@ -206,6 +206,39 @@ export default function CDSDashboardPage() {
     setActiveTab('node');
   };
 
+  // ฟังก์ชัน Clear ค่า PE Port ของแถวที่เลือกกลับเป็นค่าว่าง
+  const handleClearAssignedPort = () => {
+    if (!selectedPeNode) return;
+    const targetRowIndex = selectedPeNode._rowIndex;
+    const targetId = selectedPeNode.id || selectedPeNode.access_lsw_id || selectedPeNode.nodeId;
+
+    // อัปเดตข้อมูลใน State ให้ pe_port_list กลับเป็นค่าว่าง
+    setData(prev => prev.map((item, idx) => {
+      if (typeof targetRowIndex === 'number' ? idx === targetRowIndex : (item.id === targetId || item.access_lsw_id === targetId)) {
+        return { ...item, pe_port_list: '' };
+      }
+      return item;
+    }));
+
+    // อัปเดตข้อมูลใน LocalStorage
+    const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+    const localIdx = localReserves.findIndex(r =>
+      r.id === targetId || r.access_lsw_id === targetId || r.nodeId === targetId
+    );
+    if (localIdx !== -1) {
+      localReserves[localIdx] = { ...localReserves[localIdx], pe_port_list: '' };
+      localStorage.setItem('cds_local_reserves', JSON.stringify(localReserves));
+    }
+
+    setStatusMsg({
+      type: 'success',
+      text: `ล้างค่า (Clear) PE Port ของ ${selectedPeNode.access_lsw_id || selectedPeNode.pe_name || 'แถวที่เลือก'} เรียบร้อยแล้ว`
+    });
+
+    setSelectedPePortId(null);
+    setActiveTab('node');
+  };
+
   // ดึงรายการอุปกรณ์เพื่อใช้ค้นหา PE
   useEffect(() => {
     const loadDevices = async () => {
@@ -600,6 +633,15 @@ export default function CDSDashboardPage() {
                 <span>✓ Assign PE Port ให้ {selectedPeNode?.pe_name || 'Node'}</span>
               </button>
             )}
+            {selectedPeNode?.pe_port_list && selectedPeNode.pe_port_list !== '-' && (
+              <button
+                onClick={handleClearAssignedPort}
+                className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 font-bold hover:bg-red-500/20 transition-all text-xs flex items-center gap-1"
+                title="ล้างค่า PE Port ที่เคย Assign ออกจากแถวนี้"
+              >
+                <span>✕ Clear Port ({selectedPeNode.pe_port_list})</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('node')}
               className="px-3 py-1.5 rounded-lg bg-base-950 border border-base-600 text-ink-300 hover:text-white transition-all text-xs flex items-center gap-1 font-bold"
@@ -696,6 +738,8 @@ export default function CDSDashboardPage() {
                     <th
                       key={header.key}
                       className={`whitespace-nowrap px-4 py-3 font-semibold text-ink-400 border-r border-base-600/50 last:border-r-0 tracking-wider uppercase ${
+                        header.key === 'pe_port_list' ? 'text-center' : ''
+                      } ${
                         editableVlanKeys.includes(header.key) && activeTab === 'vlan'
                           ? 'bg-emerald-500/5 text-emerald-400/80'
                           : ''
@@ -760,32 +804,25 @@ export default function CDSDashboardPage() {
                             );
                           }
 
-                          // คอลัมน์ PE Port List (ให้สามารถกดสลับไปดูหน้า PE Port Details เต็มรูปแบบเพื่อแก้ไขได้)
+                          // คอลัมน์ PE Port List (จัดวางให้อยู่ตรงกลาง text-center ทั้งหมด)
                           if (header.key === 'pe_port_list') {
                             const hasAssigned = value && value !== '-' && value !== 'Show PE Port';
 
                             return (
-                              <td key="pe_port_list" className="whitespace-nowrap px-3 py-2 border-r border-base-600/30 last:border-r-0">
+                              <td key="pe_port_list" className="whitespace-nowrap px-4 py-3 border-r border-base-600/30 last:border-r-0 text-center">
                                 <button
                                   onClick={() => {
                                     handleOpenPePortModal(row, index);
                                     setActiveTab('pe_ports');
                                   }}
-                                  className={`px-2.5 py-1 text-[11px] font-mono font-bold rounded transition-all inline-flex items-center gap-1.5 cursor-pointer ${
+                                  className={`text-xs font-mono font-bold transition-all cursor-pointer underline-offset-4 hover:underline ${
                                     hasAssigned
-                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                                      : 'bg-cds/10 text-cds border border-cds/30 hover:bg-cds/20'
+                                      ? 'text-emerald-400 hover:text-emerald-300'
+                                      : 'text-cds hover:text-cds/80'
                                   }`}
                                   title="คลิกเพื่อสลับไปดูตารางรายละเอียด PE Port หรือแก้ไขพอร์ตของ PE นี้"
                                 >
-                                  {hasAssigned ? (
-                                    <>
-                                      <span>{value}</span>
-                                      <span className="text-[9px] px-1 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-normal uppercase">Edit</span>
-                                    </>
-                                  ) : (
-                                    <span>Show PE Port</span>
-                                  )}
+                                  <span>{hasAssigned ? value : 'Show PE Port'}</span>
                                 </button>
                               </td>
                             );
