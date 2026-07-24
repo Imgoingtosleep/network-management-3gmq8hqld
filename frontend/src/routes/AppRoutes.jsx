@@ -18,6 +18,7 @@ import NDSVlansPage from '../pages/nds/NDSVlansPage.jsx';
 import CDSModelsPage from '../pages/cds/CDSModelsPage.jsx';
 import CDSSiteCodePage from '../pages/cds/CDSSiteCodePage.jsx';
 import CDSDevicesPage from '../pages/cds/CDSDevicesPage.jsx';
+import CDSVlanAssignPage from '../pages/cds/CDSVlanAssignPage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
 import LoginPage from '../pages/LoginPage.jsx';
 import MainLayout from '../layouts/MainLayout.jsx';
@@ -63,6 +64,7 @@ export default function AppRoutes() {
             <Route path="domain-ip" element={<CDSDomainIPPage />} />
             <Route path="domain-demo" element={<CDSDomainDemoPage />} />
             <Route path="vlans" element={<CDSVlansPage />} />
+            <Route path="vlan-assign" element={<CDSVlanAssignPage />} />
             <Route path="devices" element={<CDSDevicesPage />} />
             <Route path="models" element={<CDSModelsPage />} />
             <Route path="site-code" element={<CDSSiteCodePage />} />

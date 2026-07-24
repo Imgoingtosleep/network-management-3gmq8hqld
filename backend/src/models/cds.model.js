@@ -78,4 +78,16 @@ async function addDashboardItem(item) {
   return item;
 }
 
-module.exports = { findAll, findById, create, getDashboardData, addDashboardItem };
+async function updateDashboardItem(id, updates) {
+  const index = cdsDashboardData.findIndex(item => 
+    String(item.id) === String(id) || 
+    String(item.access_lsw_id) === String(id) || 
+    String(item.nodeId) === String(id)
+  );
+  if (index === -1) return null;
+  
+  cdsDashboardData[index] = { ...cdsDashboardData[index], ...updates };
+  return cdsDashboardData[index];
+}
+
+module.exports = { findAll, findById, create, getDashboardData, addDashboardItem, updateDashboardItem };

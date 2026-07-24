@@ -1002,10 +1002,10 @@ export default function CDSSearchReservePage() {
         model: selectedPePortObj?.peModel || '',
         type: selectedNode?.roleName || selectedNode?.nodeType || '',
         pe_port_list: '',
-        pe_vlan_customer: getSelectedVlan(),
+        pe_vlan_customer: '',
         agg_id: selectedNode?.aggregation || '',
         agg_ip_network: reserveData.ipNetwork,
-        agg_vlan: getSelectedVlan(),
+        agg_vlan: '',
         nw_lsw_id: formData.networkDevice || '',
         nw_lsw_ip: selectedNode?.ipAddress || '',
         nw_lsw_use_for: reserveData.remark || '',
@@ -1018,7 +1018,7 @@ export default function CDSSearchReservePage() {
         access_lsw_port_customer: '',
         access_lsw_port_customer_backup: '',
         access_lsw_ip: reserveData.ipAddress || selectedNode?.ipAddress || '',
-        access_lsw_vlan_management: '',
+        access_lsw_vlan_management: getSelectedVlan() || (reserveData.ipNetwork?.includes('115') ? '115' : '100'),
         timestamp: new Date().toISOString().split('T')[0],
       };
       // 1. บันทึกลง LocalStorage (Local Browser Storage)

@@ -123,4 +123,44 @@ async function getAvailableIps(req, res, next) {
   }
 }
 
-module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace, getDeviceDetails, getAvailableIps };
+async function updateDashboardData(req, res, next) {
+  try {
+    const { id } = req.params;
+    const data = await cdsService.updateDashboardVlan(id, req.body);
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล Dashboard นี้' });
+    }
+    return ok(res, data, 'อัปเดตข้อมูล VLAN บน Dashboard สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function createVlan(req, res, next) {
+  try {
+    const data = await cdsService.createVlan(req.body);
+    return created(res, data, 'สร้าง VLAN ใหม่ใน NetBox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function listVlanRoles(req, res, next) {
+  try {
+    const data = await cdsService.getVlanRoles();
+    return ok(res, data, 'ดึงรายการ VLAN Roles จาก NetBox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function listVlanGroups(req, res, next) {
+  try {
+    const data = await cdsService.getVlanGroups();
+    return ok(res, data, 'ดึงรายการ VLAN Groups จาก NetBox สำเร็จ');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listProjects, getProject, createProject, listPrefixes, listSites, listIpAddresses, getDashboardData, listVlans, addDashboardData, getSiteTopology, getPathTrace, getDeviceDetails, getAvailableIps, updateDashboardData, createVlan, listVlanRoles, listVlanGroups };

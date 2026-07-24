@@ -1351,6 +1351,24 @@ async function createCable(aInterfaceId, bInterfaceId) {
 // ==================== VLANS ====================
 
 /**
+ * Creates a new VLAN in NetBox.
+ * @param {Object} payload - VLAN payload (vid, name, status, role, group, site, description)
+ * @returns {Promise<Object>} Created VLAN object.
+ */
+async function createVlan(payload) {
+  try {
+    const result = await fetchNetboxApi('/ipam/vlans/', 'POST', payload);
+    // เคลียร์ memory cache ของ vlans เพื่อดึงข้อมูลอัปเดตครั้งถัดไป
+    if (memoryCache.vlans) {
+      memoryCache.vlans.data = null;
+    }
+    return result;
+  } catch (err) {
+    throw new Error(`NetBox API POST vlan failed with status ${err.status}: ${err.text || err.message}`);
+  }
+}
+
+/**
  * Gets a VLAN ID by its VID.
  * @param {string|number} vid - The VLAN ID (VID).
  * @returns {Promise<number|null>} The internal VLAN ID or null.
@@ -1370,6 +1388,98 @@ async function getVlanByVid(vid) {
     return data.results && data.results.length > 0 ? data.results[0].id : null;
   }
   return null;
+}
+
+/**
+ * Gets all VLAN roles from NetBox.
+ * @returns {Promise<Array>} Array of VLAN role objects.
+ */
+async function getVlanRoles() {
+  const now = Date.now();
+  if (!memoryCache.vlanRoles) {
+    memoryCache.vlanRoles = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.vlanRoles.data && (now - memoryCache.vlanRoles.timestamp < CACHE_TTL)) {
+    return memoryCache.vlanRoles.data;
+  }
+  let raw = [];
+  try {
+    raw = await fetchAllPages('/ipam/roles/');
+  } catch (err) {
+    try {
+      raw = await fetchAllPages('/dcim/roles/');
+    } catch (err2) {
+      try {
+        raw = await fetchAllPages('/dcim/device-roles/');
+      } catch (err3) {
+        console.warn('⚠️ Failed to fetch VLAN roles from NetBox endpoints:', err3.message);
+      }
+    }
+  }
+
+  let mapped = raw.map(r => ({ id: r.id, name: r.name, slug: r.slug }));
+
+  // ถ้ายังไม่พบข้อมูลจาก Roles API ให้สกัดรายชื่อ Role จากรายการ VLAN ที่มีอยู่จริงใน NetBox สดๆ
+  if (mapped.length === 0) {
+    try {
+      const allVlans = await getVlans();
+      const roleMap = new Map();
+      allVlans.forEach(v => {
+        if (v.role && v.role !== '-') {
+          roleMap.set(v.role, { id: v.role, name: v.role, slug: v.role.toLowerCase() });
+        }
+      });
+      mapped = Array.from(roleMap.values());
+    } catch (e) {
+      console.warn('⚠️ Failed to extract roles from VLAN list:', e.message);
+    }
+  }
+
+  memoryCache.vlanRoles.data = mapped;
+  memoryCache.vlanRoles.timestamp = now;
+  return mapped;
+}
+
+/**
+ * Gets all VLAN groups from NetBox.
+ * @returns {Promise<Array>} Array of VLAN group objects.
+ */
+async function getVlanGroups() {
+  const now = Date.now();
+  if (!memoryCache.vlanGroups) {
+    memoryCache.vlanGroups = { data: null, timestamp: 0 };
+  }
+  if (memoryCache.vlanGroups.data && (now - memoryCache.vlanGroups.timestamp < CACHE_TTL)) {
+    return memoryCache.vlanGroups.data;
+  }
+  let raw = [];
+  try {
+    raw = await fetchAllPages('/ipam/vlan-groups/');
+  } catch (err) {
+    console.warn('⚠️ Failed to fetch VLAN groups from /ipam/vlan-groups/:', err.message);
+  }
+
+  let mapped = raw.map(g => ({ id: g.id, name: g.name, slug: g.slug }));
+
+  // ถ้ายังไม่พบข้อมูลจาก API ให้สกัดรายชื่อ Group จากรายการ VLAN ที่มีอยู่จริงใน NetBox สดๆ
+  if (mapped.length === 0) {
+    try {
+      const allVlans = await getVlans();
+      const groupMap = new Map();
+      allVlans.forEach(v => {
+        if (v.group && v.group !== '-') {
+          groupMap.set(v.group, { id: v.group, name: v.group, slug: v.group.toLowerCase() });
+        }
+      });
+      mapped = Array.from(groupMap.values());
+    } catch (e) {
+      console.warn('⚠️ Failed to extract groups from VLAN list:', e.message);
+    }
+  }
+
+  memoryCache.vlanGroups.data = mapped;
+  memoryCache.vlanGroups.timestamp = now;
+  return mapped;
 }
 
 module.exports = {
@@ -1412,6 +1522,8 @@ module.exports = {
   getSingle,
   createCable,
   getVlanByVid,
+  getVlanRoles,
+  getVlanGroups,
   getOrCreateInterface,
   getOrCreateIPAddress,
   getSanitizedUrl

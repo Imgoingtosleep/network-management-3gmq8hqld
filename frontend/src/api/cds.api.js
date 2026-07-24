@@ -10,9 +10,14 @@ export const cdsApi = {
   getIpAddresses: () => axiosClient.get('/cds/ip-addresses'),
   getDashboard: () => axiosClient.get('/cds/dashboard'),
   addDashboard: (payload) => axiosClient.post('/cds/dashboard', payload),
+  updateDashboard: (id, payload) => axiosClient.patch(`/cds/dashboard/${encodeURIComponent(id)}`, payload),
   getVlans: () => axiosClient.get('/cds/vlans'),
+  createVlan: (payload) => axiosClient.post('/cds/vlans', payload),
+  getVlanRoles: () => axiosClient.get('/cds/vlan-roles'),
+  getVlanGroups: () => axiosClient.get('/cds/vlan-groups'),
   getSiteTopology: (siteCode = '') => axiosClient.get(`/cds/topology${siteCode ? `/${encodeURIComponent(siteCode)}` : ''}`),
   getPathTrace: (query = '') => axiosClient.get(`/cds/path-trace?query=${encodeURIComponent(query)}`),
   getDeviceDetails: (id) => axiosClient.get(`/cds/device-details/${id}`),
   getAvailableIps: (prefix = '') => axiosClient.get(`/cds/available-ips?prefix=${encodeURIComponent(prefix)}`),
 };
+

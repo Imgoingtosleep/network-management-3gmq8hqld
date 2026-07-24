@@ -1307,6 +1307,99 @@ async function getAvailableIps(prefixStr) {
   }
 }
 
+/**
+ * อัปเดตข้อมูล VLAN บน Dashboard และซิงก์ NetBox ทั้งหมด (Vlanif, Interfaces, Untagged VLAN)
+ * @param {string} id - Identifier ของ Dashboard item
+ * @param {Object} vlanData - ข้อมูล VLAN ที่ต้องการอัปเดต
+ */
+async function updateDashboardVlan(id, vlanData) {
+  const updates = {
+    pe_vlan_customer: vlanData.pe_vlan_customer,
+    agg_vlan: vlanData.agg_vlan,
+    access_lsw_vlan_management: vlanData.access_lsw_vlan_management
+  };
+  
+  // ลบฟิลด์ที่เป็น undefined
+  Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+  
+  const updatedItem = await cdsModel.updateDashboardItem(id, updates);
+  if (!updatedItem) return null;
+
+  // ค้นหา NetBox Device ID ถ้ายังไม่มีในตัวแปร (เช่น อุปกรณ์สร้างไว้ก่อนหน้า)
+  let deviceId = updatedItem.netbox_device_id;
+  if (!deviceId) {
+    const foundDev = await findDeviceByNameOrNodeId(updatedItem.access_lsw_id || updatedItem.nodeName || updatedItem.nodeId);
+    if (foundDev) {
+      deviceId = foundDev.id;
+      updatedItem.netbox_device_id = deviceId;
+    }
+  }
+
+  // ถ้ามี NetBox Device ID ให้ดำเนินการอัปเดตลง NetBox
+  if (deviceId) {
+    console.log(`📡 [NetBox Sync] Updating VLANs for device ID ${deviceId} (${updatedItem.access_lsw_id || updatedItem.nodeName})`);
+    
+    // 1. สร้าง/อัปเดต Vlanif + Management IP
+    if (updates.agg_vlan) {
+      await setupVlanifAndPrimaryIp(deviceId, updatedItem);
+    }
+
+    // 2. อัปเดต Untagged VLAN บน Port Uplink ของ LSW Access
+    if (updates.agg_vlan) {
+      try {
+        const vlanDbId = await netboxService.getVlanByVid(updates.agg_vlan);
+        if (vlanDbId) {
+          const uplinkPorts = [updatedItem.access_lsw_port_uplink, updatedItem.access_lsw_port_uplink_backup].filter(Boolean);
+          for (const portName of uplinkPorts) {
+            const ifaceId = await netboxService.getOrCreateInterface(deviceId, portName, 'other');
+            await netboxService.updateInterface(ifaceId, { mode: 'access', untagged_vlan: vlanDbId });
+            console.log(`✅ [NetBox Sync] Updated interface ${portName} on device ${deviceId} to VLAN ${updates.agg_vlan} (ID: ${vlanDbId})`);
+          }
+        }
+      } catch (err) {
+        console.error(`❌ [NetBox Sync Error] Failed to update untagged VLAN on interfaces:`, err.message);
+      }
+    }
+  } else {
+    console.warn(`⚠️ [NetBox Sync] Could not find matching device in NetBox for ${updatedItem.access_lsw_id || id}, updated dashboard state only.`);
+  }
+  
+  return updatedItem;
+}
+
+/**
+ * สร้าง VLAN ใหม่ใน NetBox (สร้าง Customer VLAN พร้อมฟิลด์มาตรฐาน NetBox ครบถ้วน)
+ */
+async function createVlan(data) {
+  const payload = {
+    vid: parseInt(data.vid, 10),
+    name: data.name,
+    status: data.status || 'active',
+  };
+
+  if (data.role) payload.role = isNaN(data.role) ? data.role : parseInt(data.role, 10);
+  if (data.group) payload.group = isNaN(data.group) ? data.group : parseInt(data.group, 10);
+  if (data.site) payload.site = isNaN(data.site) ? data.site : parseInt(data.site, 10);
+  if (data.tenant) payload.tenant = isNaN(data.tenant) ? data.tenant : parseInt(data.tenant, 10);
+  if (data.description) payload.description = data.description;
+  if (data.tags && Array.isArray(data.tags)) payload.tags = data.tags;
+  if (data.qinq_svlan) payload.qinq_svlan = parseInt(data.qinq_svlan, 10);
+  if (data.qinq_cvlan) payload.qinq_cvlan = parseInt(data.qinq_cvlan, 10);
+
+  return await netboxService.createVlan(payload);
+}
+
+/**
+ * ดึงรายการ VLAN Roles ทั้งหมดจาก NetBox
+ */
+async function getVlanRoles() {
+  return await netboxService.getVlanRoles();
+}
+
+async function getVlanGroups() {
+  return await netboxService.getVlanGroups();
+}
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -1317,4 +1410,8 @@ module.exports = {
   getPathTrace,
   getDeviceDetails,
   getAvailableIps,
+  updateDashboardVlan,
+  createVlan,
+  getVlanRoles,
+  getVlanGroups,
 };

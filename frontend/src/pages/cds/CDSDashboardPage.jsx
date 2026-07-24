@@ -9,6 +9,13 @@ export default function CDSDashboardPage() {
   const [activeTab, setActiveTab] = useState('node'); // 'node' หรือ 'vlan'
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // === State สำหรับ VLAN Assignment (ใช้เฉพาะแท็บ VLAN) ===
+  const [vlans, setVlans] = useState([]);
+  const [editingRowIndex, setEditingRowIndex] = useState(null);
+  const [editForm, setEditForm] = useState({ pe_vlan_customer: '', agg_vlan: '', access_lsw_vlan_management: '' });
+  const [saving, setSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState(null); // { type: 'success'|'error', text: '...' }
+
   // === Constants ===
   const originalHeaders = [
     { key: 'pe_name', label: 'PE Name' },
@@ -37,7 +44,12 @@ export default function CDSDashboardPage() {
 
   const nodeHeaders = originalHeaders.filter(h => !h.key.includes('vlan'));
   const vlanHeaders = originalHeaders;
-  const headers = activeTab === 'node' ? nodeHeaders : vlanHeaders;
+  // เพิ่มคอลัมน์ Action ในแท็บ VLAN
+  const vlanHeadersWithAction = [...vlanHeaders, { key: '_action', label: 'Action' }];
+  const headers = activeTab === 'node' ? nodeHeaders : vlanHeadersWithAction;
+
+  // === ฟิลด์ VLAN ที่แก้ไขได้ ===
+  const editableVlanKeys = ['pe_vlan_customer', 'agg_vlan', 'access_lsw_vlan_management'];
 
   // === Effects/API ===
 
@@ -83,9 +95,28 @@ export default function CDSDashboardPage() {
     }
   };
 
+  // โหลด VLAN List จาก NetBox เมื่อสลับไปแท็บ VLAN
+  const fetchVlans = async () => {
+    try {
+      const res = await cdsApi.getVlans();
+      setVlans(res.data?.data || res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch VLANs:', err);
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'vlan' && vlans.length === 0) {
+      fetchVlans();
+    }
+    // ปิด editing เมื่อสลับแท็บ
+    setEditingRowIndex(null);
+    setStatusMsg(null);
+  }, [activeTab]);
 
   // === Handlers ===
 
@@ -95,6 +126,7 @@ export default function CDSDashboardPage() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await fetchDashboardData();
+    if (activeTab === 'vlan') await fetchVlans();
     setIsRefreshing(false);
   };
 
@@ -102,11 +134,12 @@ export default function CDSDashboardPage() {
    * Exports the currently filtered dashboard data to a CSV file.
    */
   const handleExportCSV = () => {
+    const exportHeaders = activeTab === 'node' ? nodeHeaders : vlanHeaders;
     const csvRows = [];
-    csvRows.push(headers.map(h => `"${h.label.replace(/"/g, '""')}"`).join(','));
+    csvRows.push(exportHeaders.map(h => `"${h.label.replace(/"/g, '""')}"`).join(','));
     
     for (const row of filteredData) {
-      const values = headers.map(header => {
+      const values = exportHeaders.map(header => {
         const val = row[header.key] || '';
         return `"${String(val).replace(/"/g, '""')}"`;
       });
@@ -125,6 +158,64 @@ export default function CDSDashboardPage() {
     document.body.removeChild(link);
   };
 
+  // === VLAN Assignment Handlers ===
+
+  const handleEditRow = (index, row) => {
+    setEditingRowIndex(index);
+    setEditForm({
+      pe_vlan_customer: row.pe_vlan_customer || '',
+      agg_vlan: row.agg_vlan || '',
+      access_lsw_vlan_management: row.access_lsw_vlan_management || '',
+    });
+    setStatusMsg(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRowIndex(null);
+    setEditForm({ pe_vlan_customer: '', agg_vlan: '', access_lsw_vlan_management: '' });
+  };
+
+  const handleSaveVlan = async (row) => {
+    setSaving(true);
+    setStatusMsg(null);
+    try {
+      const itemId = row.id || row.access_lsw_id || row.nodeId;
+
+      // 1. บันทึกผ่าน Backend API
+      try {
+        await cdsApi.updateDashboard(itemId, editForm);
+      } catch (apiErr) {
+        console.warn('Backend API update failed, updating locally:', apiErr);
+      }
+
+      // 2. อัปเดต LocalStorage
+      const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+      const localIdx = localReserves.findIndex(r =>
+        r.id === itemId || r.access_lsw_id === itemId || r.nodeId === itemId
+      );
+      if (localIdx !== -1) {
+        localReserves[localIdx] = { ...localReserves[localIdx], ...editForm };
+        localStorage.setItem('cds_local_reserves', JSON.stringify(localReserves));
+      }
+
+      // 3. อัปเดต State
+      setData(prev => prev.map((item, idx) => {
+        if (idx === editingRowIndex) {
+          return { ...item, ...editForm };
+        }
+        return item;
+      }));
+
+      setStatusMsg({ type: 'success', text: `บันทึก VLAN สำเร็จสำหรับ ${row.access_lsw_id || row.pe_name || itemId}` });
+      setEditingRowIndex(null);
+    } catch (err) {
+      console.error('Failed to save VLAN:', err);
+      setStatusMsg({ type: 'error', text: 'เกิดข้อผิดพลาดในการบันทึก: ' + err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // === Memoized Values ===
 
   // ฟังก์ชันสำหรับการฟิลเตอร์ข้อมูล
@@ -138,8 +229,81 @@ export default function CDSDashboardPage() {
     );
   }, [data, searchQuery]);
 
+  // ตรวจสอบว่า VLAN ครบหรือไม่
+  const isVlanComplete = (row) => {
+    return row.pe_vlan_customer && row.agg_vlan && row.access_lsw_vlan_management &&
+      row.pe_vlan_customer !== '' && row.agg_vlan !== '' && row.access_lsw_vlan_management !== '';
+  };
+
+  // === Render VLAN Cell (Editable/Readonly) ===
+  const renderVlanCell = (header, row, rowIndex, value) => {
+    const isEditing = editingRowIndex === rowIndex && editableVlanKeys.includes(header.key);
+
+    if (isEditing) {
+      return (
+        <td key={header.key} className="whitespace-nowrap px-2 py-1.5 border-r border-base-600/30 last:border-r-0">
+          <div className="flex items-center gap-1">
+            <select
+              value={editForm[header.key]}
+              onChange={(e) => {
+                const newVal = e.target.value;
+                setEditForm(prev => ({ ...prev, [header.key]: newVal }));
+              }}
+              className="w-24 rounded border border-cds/40 bg-base-950 px-1.5 py-1 text-[11px] text-emerald-400 focus:border-cds focus:outline-none font-mono"
+            >
+              <option value="">—</option>
+              {vlans.map(v => (
+                <option key={v.id} value={v.vid}>
+                  {v.vid} - {v.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={editForm[header.key]}
+              onChange={(e) => {
+                const newVal = e.target.value;
+                setEditForm(prev => ({ ...prev, [header.key]: newVal }));
+              }}
+              placeholder="VID"
+              className="w-14 rounded border border-base-600 bg-base-950 px-1.5 py-1 text-[11px] text-emerald-400 text-center focus:border-cds focus:outline-none font-mono"
+            />
+          </div>
+        </td>
+      );
+    }
+
+    // Readonly cell — สีปกติ
+    let cellClass = "whitespace-nowrap px-4 py-3 text-ink-100 border-r border-base-600/30 last:border-r-0";
+    if (header.key === 'pe_name') {
+      cellClass += " font-bold text-cds";
+    } else if (header.key.includes('ip') || header.key.includes('loopback')) {
+      cellClass += " text-blue-400";
+    } else if (header.key.includes('vlan')) {
+      cellClass += " text-emerald-400";
+    }
+
+    return (
+      <td key={header.key} className={cellClass}>
+        {value || '-'}
+      </td>
+    );
+  };
+
   return (
     <div className="space-y-6 text-left">
+      {/* Status Message */}
+      {statusMsg && (
+        <div className={`rounded-lg border p-3 text-xs font-mono flex items-center justify-between transition-all ${
+          statusMsg.type === 'success'
+            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+            : 'border-red-500/20 bg-red-500/10 text-red-400'
+        }`}>
+          <span>{statusMsg.text}</span>
+          <button onClick={() => setStatusMsg(null)} className="ml-4 hover:opacity-70">✕</button>
+        </div>
+      )}
+
       {/* Sub-tabs: Node / VLAN */}
       <div className="flex border-b border-base-600/50 gap-2">
         <button
@@ -185,7 +349,7 @@ export default function CDSDashboardPage() {
           <span className="text-xs font-mono text-ink-400 mr-2">
             พบข้อมูล {filteredData.length} แถว
           </span>
-          
+
           {/* ปุ่ม Refresh */}
           <button
             onClick={handleRefresh}
@@ -224,7 +388,11 @@ export default function CDSDashboardPage() {
                 {headers.map((header) => (
                   <th
                     key={header.key}
-                    className="whitespace-nowrap px-4 py-3 font-semibold text-ink-400 border-r border-base-600/50 last:border-r-0 tracking-wider uppercase"
+                    className={`whitespace-nowrap px-4 py-3 font-semibold text-ink-400 border-r border-base-600/50 last:border-r-0 tracking-wider uppercase ${
+                      editableVlanKeys.includes(header.key) && activeTab === 'vlan'
+                        ? 'bg-emerald-500/5 text-emerald-400/80'
+                        : ''
+                    }`}
                   >
                     {header.label}
                   </th>
@@ -233,32 +401,83 @@ export default function CDSDashboardPage() {
             </thead>
             <tbody className="divide-y divide-base-600/40">
               {filteredData.length > 0 ? (
-                filteredData.map((row, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-cds/5 transition-colors group"
-                  >
-                    {headers.map((header) => {
-                      const value = row[header.key];
-                      // ไฮไลต์สีให้พิเศษตามประเภทข้อมูล
-                      let cellClass = "whitespace-nowrap px-4 py-3 text-ink-100 border-r border-base-600/30 last:border-r-0";
-                      
-                      if (header.key === 'pe_name') {
-                        cellClass += " font-bold text-cds";
-                      } else if (header.key.includes('ip') || header.key.includes('loopback')) {
-                        cellClass += " text-blue-400";
-                      } else if (header.key.includes('vlan')) {
-                        cellClass += " text-emerald-400";
-                      }
+                filteredData.map((row, index) => {
+                  const isEditing = editingRowIndex === index;
+                  const vlanOk = isVlanComplete(row);
 
-                      return (
-                        <td key={header.key} className={cellClass}>
-                          {value || '-'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
+                  return (
+                    <tr
+                      key={index}
+                      className={`transition-colors group ${
+                        isEditing
+                          ? 'bg-cds/10 ring-1 ring-inset ring-cds/30'
+                          : 'hover:bg-cds/5'
+                      }`}
+                    >
+                      {headers.map((header) => {
+                        const value = row[header.key];
+
+                        // คอลัมน์ Action (เฉพาะ VLAN tab)
+                        if (header.key === '_action') {
+                          return (
+                            <td key="_action" className="whitespace-nowrap px-3 py-2 border-r border-base-600/30 last:border-r-0">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleSaveVlan(row)}
+                                    disabled={saving}
+                                    className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-emerald-500 text-base-950 hover:bg-emerald-400 transition-all disabled:opacity-50"
+                                  >
+                                    {saving ? '...' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEdit}
+                                    className="px-2 py-1 text-[10px] font-semibold rounded-md border border-base-600 text-ink-400 hover:text-ink-100 hover:bg-base-800 transition-all"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => handleEditRow(index, row)}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all ${
+                                    vlanOk
+                                      ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                                      : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse'
+                                  }`}
+                                >
+                                  {vlanOk ? 'Edit' : 'Assign'}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        }
+
+                        // VLAN editable cells
+                        if (activeTab === 'vlan' && editableVlanKeys.includes(header.key)) {
+                          return renderVlanCell(header, row, index, value);
+                        }
+
+                        // ไฮไลต์สีให้พิเศษตามประเภทข้อมูล
+                        let cellClass = "whitespace-nowrap px-4 py-3 text-ink-100 border-r border-base-600/30 last:border-r-0";
+                        
+                        if (header.key === 'pe_name') {
+                          cellClass += " font-bold text-cds";
+                        } else if (header.key.includes('ip') || header.key.includes('loopback')) {
+                          cellClass += " text-blue-400";
+                        } else if (header.key.includes('vlan')) {
+                          cellClass += " text-emerald-400";
+                        }
+
+                        return (
+                          <td key={header.key} className={cellClass}>
+                            {value || '-'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td
