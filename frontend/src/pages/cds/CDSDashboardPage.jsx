@@ -158,6 +158,205 @@ export default function CDSDashboardPage() {
     document.body.removeChild(link);
   };
 
+  // === State สำหรับ Show PE Port Modal & Selection (Single Select Only) ===
+  const [showPePortModal, setShowPePortModal] = useState(false);
+  const [selectedPeNode, setSelectedPeNode] = useState(null);
+  const [pePorts, setPePorts] = useState([]);
+  const [loadingPePorts, setLoadingPePorts] = useState(false);
+  const [devicesList, setDevicesList] = useState([]);
+  const [selectedPePortId, setSelectedPePortId] = useState(null); // เลือกได้เพียง 1 พอร์ตเท่านั้น
+
+  const handleTogglePePort = (peId) => {
+    setSelectedPePortId(prev => (prev === peId ? null : peId));
+  };
+
+  // ฟังก์ชัน Assign พอร์ต PE ที่เลือกกลับไปยังแถวของ Node Dashboard
+  const handleAssignPePort = () => {
+    if (!selectedPePortId || !selectedPeNode) return;
+    const chosenPortObj = pePorts.find(p => p.peId === selectedPePortId);
+    if (!chosenPortObj) return;
+
+    const assignedPortName = chosenPortObj.pePort;
+    const targetRowIndex = selectedPeNode._rowIndex;
+    const targetId = selectedPeNode.id || selectedPeNode.access_lsw_id || selectedPeNode.nodeId;
+
+    // อัปเดตข้อมูลเฉพาะแถวเดียวใน State (อ้างอิง _rowIndex หรือ Unique ID ตรงๆ)
+    setData(prev => prev.map((item, idx) => {
+      if (typeof targetRowIndex === 'number' ? idx === targetRowIndex : (item.id === targetId || item.access_lsw_id === targetId)) {
+        return { ...item, pe_port_list: assignedPortName };
+      }
+      return item;
+    }));
+
+    // อัปเดตข้อมูลใน LocalStorage เฉพาะรายการที่ตรงกัน
+    const localReserves = JSON.parse(localStorage.getItem('cds_local_reserves') || '[]');
+    const localIdx = localReserves.findIndex(r =>
+      r.id === targetId || r.access_lsw_id === targetId || r.nodeId === targetId
+    );
+    if (localIdx !== -1) {
+      localReserves[localIdx] = { ...localReserves[localIdx], pe_port_list: assignedPortName };
+      localStorage.setItem('cds_local_reserves', JSON.stringify(localReserves));
+    }
+
+    setStatusMsg({
+      type: 'success',
+      text: `Assign PE Port "${assignedPortName}" ให้กับ ${selectedPeNode.access_lsw_id || selectedPeNode.pe_name || 'แถวที่เลือก'} เรียบร้อยแล้ว`
+    });
+
+    setActiveTab('node');
+  };
+
+  // ดึงรายการอุปกรณ์เพื่อใช้ค้นหา PE
+  useEffect(() => {
+    const loadDevices = async () => {
+      try {
+        const res = await cdsApi.getDevices();
+        setDevicesList(res.data?.data || res.data || []);
+      } catch (err) {
+        console.warn('Failed to load devices list for PE Port resolution:', err);
+      }
+    };
+    loadDevices();
+  }, []);
+
+  // ฟังก์ชันสแกนหาพอร์ต PE จาก NetBox (ใช้ Logic เดียวกันกับหน้า Reserve Port)
+  const handleOpenPePortModal = async (row, rowIndex = null) => {
+    setSelectedPeNode({ ...row, _rowIndex: rowIndex });
+    setSelectedPePortId(null); // ล้างค่าพอร์ตที่เลือกเดิมเมื่อสลับดู PE ตัวใหม่
+    setShowPePortModal(true);
+    setLoadingPePorts(true);
+    setPePorts([]);
+
+    try {
+      const aggName = row.agg_id || row.aggregation || '';
+      let siteAbbrev = 'BKK';
+      
+      const siteMatches = aggName.match(/(BCH|BKK|CNX|HKT)/i);
+      if (siteMatches) {
+        siteAbbrev = siteMatches[0].toUpperCase();
+      } else if (row.pe_name) {
+        const peMatches = row.pe_name.match(/(BCH|BKK|CNX|HKT)/i);
+        if (peMatches) {
+          siteAbbrev = peMatches[0].toUpperCase();
+        }
+      }
+
+      const siteCode = row.siteCode || siteAbbrev;
+      const allPorts = [];
+
+      // 1. ดึงข้อมูลพอร์ตเชื่อมต่อจาก Site Topology (AGG <-> PE)
+      try {
+        const topoRes = await cdsApi.getSiteTopology(siteCode);
+        const topology = topoRes.data?.data || topoRes.data || {};
+        const siteGateways = topology.gateways || [];
+        const topoLinks = topology.links || [];
+        const topoDevices = topology.devices || [];
+
+        topoLinks.forEach(link => {
+          const sourceDev = topoDevices.find(d => d.id === link.source);
+          const targetDev = topoDevices.find(d => d.id === link.target);
+          
+          const sourceRole = String(sourceDev?.role || link.target_role || '').toLowerCase();
+          const targetRole = String(targetDev?.role || link.target_role || '').toLowerCase();
+          
+          const isSourcePe = sourceRole.includes('pe') || sourceRole.includes('edge') || sourceRole.includes('router');
+          const isTargetPe = targetRole.includes('pe') || targetRole.includes('edge') || targetRole.includes('router');
+          
+          const isSourceAgg = sourceRole.includes('agg') || sourceRole.includes('dist');
+          const isTargetAgg = targetRole.includes('agg') || targetRole.includes('dist');
+          
+          if ((isSourcePe && isTargetAgg) || (isTargetPe && isSourceAgg)) {
+            const peDev = isSourcePe ? sourceDev : targetDev;
+            const aggDev = isSourcePe ? targetDev : sourceDev;
+            
+            const pePortName = isSourcePe ? link.source_port : link.target_port;
+            const aggPortName = isSourcePe ? link.target_port : link.source_port;
+            
+            const gwObj = siteGateways.find(g => String(g.id) === String(peDev?.id));
+            const peIpVal = gwObj?.ip ? gwObj.ip.split('/')[0] : (peDev?.primary_ip || row.ip_loopback || '10.254.1.1');
+            
+            allPorts.push({
+              peId: `PE-${peDev?.id || 'pe'}-${link.source}-${link.target}`,
+              peName: peDev?.name || row.pe_name || 'PE',
+              peIp: peIpVal,
+              pePort: pePortName || 'Logical',
+              mtu: '9000',
+              aggName: aggDev?.name || aggName || 'AGG',
+              aggPort: aggPortName || 'Logical',
+              description: gwObj?.interface ? `Connected via ${gwObj.interface}` : 'Topology Connection'
+            });
+          }
+        });
+      } catch (topoErr) {
+        console.warn('Failed to load topology links:', topoErr);
+      }
+
+      // 2. หากไม่พบใน Topology ให้ fallback ดึงจาก NetBox PE Interfaces
+      if (allPorts.length === 0) {
+        let peDevices = [];
+        if (row.pe_name) {
+          const cleanPeName = row.pe_name.toLowerCase();
+          peDevices = devicesList.filter(d => {
+            const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+            return dName.includes(cleanPeName) || cleanPeName.includes(dName);
+          });
+        }
+
+        if (peDevices.length === 0 && devicesList.length > 0) {
+          peDevices = devicesList.filter(d => {
+            const role = String(d.roleName || d.nodeType || '').toLowerCase();
+            const dName = String(d.nodeName || d.nodeId || '').toLowerCase();
+            return role.includes('pe') || role.includes('edge') || role.includes('router') || dName.includes('pe');
+          });
+        }
+
+        await Promise.all(peDevices.map(async (pe) => {
+          try {
+            const res = await cdsApi.getDeviceInterfaces?.(pe.id) || [];
+            const interfaces = res.data?.data || res.data || res || [];
+            interfaces.forEach(iface => {
+              if (iface.name && 
+                 (iface.name.toLowerCase().includes('gigabit') || 
+                  iface.name.toLowerCase().includes('eth') || 
+                  iface.name.toLowerCase().includes('xe-') || 
+                  iface.name.toLowerCase().includes('ge-') ||
+                  iface.name.toLowerCase().includes('et-'))) {
+                
+                let formattedMtu = '';
+                if (iface.mtu) {
+                  const mtuStr = String(iface.mtu);
+                  if (mtuStr.startsWith('9')) formattedMtu = '9000';
+                  else if (mtuStr.startsWith('15')) formattedMtu = '1500';
+                  else formattedMtu = mtuStr;
+                }
+
+                allPorts.push({
+                  peId: `PE-${pe.id}-${iface.id}`,
+                  peName: pe.nodeName || row.pe_name,
+                  peIp: pe.ipAddress || row.ip_loopback || '10.254.1.1',
+                  pePort: iface.name,
+                  mtu: formattedMtu,
+                  aggName: aggName || '-',
+                  aggPort: '10G-Port-1/1',
+                  description: iface.description || 'Interface'
+                });
+              }
+            });
+          } catch (e) {
+            console.error('Error fetching interfaces:', e);
+          }
+        }));
+      }
+
+      setPePorts(allPorts);
+    } catch (err) {
+      console.error('Error in handleOpenPePortModal:', err);
+      setPePorts([]);
+    } finally {
+      setLoadingPePorts(false);
+    }
+  };
+
   // === VLAN Assignment Handlers ===
 
   const handleEditRow = (index, row) => {
@@ -379,117 +578,257 @@ export default function CDSDashboardPage() {
         </div>
       </div>
 
-      {/* Table Container - Horizontal scrollable and packed into single rows */}
+      {/* Table Container - Horizontal scrollable */}
+      {activeTab === 'pe_ports' && (
+        <div className="flex items-center justify-between p-3.5 rounded-xl border border-cds/30 bg-cds/5 text-xs font-mono">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-cds text-sm">PE Port Details: {selectedPeNode?.pe_name || '-'}</span>
+            <span className="text-ink-400">({pePorts.length} Ports found)</span>
+            {selectedPePortId && (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                เลือกพอร์ต: {pePorts.find(p => p.peId === selectedPePortId)?.pePort || selectedPePortId}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {selectedPePortId && (
+              <button
+                onClick={handleAssignPePort}
+                className="px-4 py-1.5 rounded-lg bg-emerald-500 text-base-950 font-bold hover:bg-emerald-400 active:scale-95 transition-all text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 animate-pulse"
+              >
+                <span>✓ Assign PE Port ให้ {selectedPeNode?.pe_name || 'Node'}</span>
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab('node')}
+              className="px-3 py-1.5 rounded-lg bg-base-950 border border-base-600 text-ink-300 hover:text-white transition-all text-xs flex items-center gap-1 font-bold"
+            >
+              ← ย้อนกลับ
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-base-600 bg-base-900 shadow-glow overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full table-auto border-collapse text-left text-xs font-mono">
-            <thead>
-              <tr className="border-b border-base-600 bg-base-950/80">
-                {headers.map((header) => (
-                  <th
-                    key={header.key}
-                    className={`whitespace-nowrap px-4 py-3 font-semibold text-ink-400 border-r border-base-600/50 last:border-r-0 tracking-wider uppercase ${
-                      editableVlanKeys.includes(header.key) && activeTab === 'vlan'
-                        ? 'bg-emerald-500/5 text-emerald-400/80'
-                        : ''
-                    }`}
-                  >
-                    {header.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-base-600/40">
-              {filteredData.length > 0 ? (
-                filteredData.map((row, index) => {
-                  const isEditing = editingRowIndex === index;
-                  const vlanOk = isVlanComplete(row);
-
-                  return (
-                    <tr
-                      key={index}
-                      className={`transition-colors group ${
-                        isEditing
-                          ? 'bg-cds/10 ring-1 ring-inset ring-cds/30'
-                          : 'hover:bg-cds/5'
+          {activeTab === 'pe_ports' ? (
+            <table className="w-full table-auto border-collapse text-left text-xs font-mono">
+              <thead>
+                <tr className="border-b border-base-600 bg-base-950/80 text-ink-400 font-semibold uppercase tracking-wider">
+                  <th className="px-4 py-3 w-10 text-center">Select</th>
+                  <th className="px-4 py-3">PE Name</th>
+                  <th className="px-4 py-3">PE Port</th>
+                  <th className="px-4 py-3">PE IP</th>
+                  <th className="px-4 py-3">Description (MTU)</th>
+                  <th className="px-4 py-3">AGG Name</th>
+                  <th className="px-4 py-3">AGG Port</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-base-600/40 text-ink-100">
+                {loadingPePorts ? (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-8 text-center text-xs text-ink-500 font-mono animate-pulse">
+                      กำลังสแกนหาพอร์ตและลิงก์ PE จาก NetBox และ Topology...
+                    </td>
+                  </tr>
+                ) : pePorts.length > 0 ? (
+                  pePorts.map((row, idx) => {
+                    const isSelected = selectedPePortId === row.peId;
+                    return (
+                      <tr
+                        key={idx}
+                        className={`transition-colors duration-150 cursor-pointer ${
+                          isSelected ? 'bg-cds/10 border-l-2 border-l-cds' : 'hover:bg-cds/5'
+                        }`}
+                        onClick={() => handleTogglePePort(row.peId)}
+                      >
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleTogglePePort(row.peId)}
+                            className="rounded border-base-600 bg-base-950 text-cds focus:ring-cds/30 cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap font-bold text-cds">{row.peName}</td>
+                        <td className="px-4 py-3 whitespace-nowrap font-semibold text-emerald-400">{row.pePort}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-blue-400">{row.peIp}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span>{row.description || 'ไม่มีคำอธิบาย'}</span>
+                            {row.mtu && (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] text-ink-600 font-mono">MTU: {row.mtu}</span>
+                                {row.mtu === '9000' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/10 text-red-400 border border-red-500/30 uppercase">
+                                    Jumbo
+                                  </span>
+                                )}
+                                {row.mtu === '1500' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 uppercase">
+                                    Standard
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-ink-300">{row.aggName}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-ink-300">{row.aggPort}</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-8 text-center text-xs text-ink-600 italic">
+                      {selectedPeNode ? 'ไม่พบข้อมูลอินเตอร์เฟสสำหรับ PE นี้ใน NetBox' : 'กรุณาเลือก PE หรือคลิกปุ่ม Show PE Port บนตาราง Node/VLAN'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full table-auto border-collapse text-left text-xs font-mono">
+              <thead>
+                <tr className="border-b border-base-600 bg-base-950/80">
+                  {headers.map((header) => (
+                    <th
+                      key={header.key}
+                      className={`whitespace-nowrap px-4 py-3 font-semibold text-ink-400 border-r border-base-600/50 last:border-r-0 tracking-wider uppercase ${
+                        editableVlanKeys.includes(header.key) && activeTab === 'vlan'
+                          ? 'bg-emerald-500/5 text-emerald-400/80'
+                          : ''
                       }`}
                     >
-                      {headers.map((header) => {
-                        const value = row[header.key];
+                      {header.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-base-600/40">
+                {filteredData.length > 0 ? (
+                  filteredData.map((row, index) => {
+                    const isEditing = editingRowIndex === index;
+                    const vlanOk = isVlanComplete(row);
 
-                        // คอลัมน์ Action (เฉพาะ VLAN tab)
-                        if (header.key === '_action') {
-                          return (
-                            <td key="_action" className="whitespace-nowrap px-3 py-2 border-r border-base-600/30 last:border-r-0">
-                              {isEditing ? (
-                                <div className="flex items-center gap-1.5">
+                    return (
+                      <tr
+                        key={index}
+                        className={`transition-colors group ${
+                          isEditing
+                            ? 'bg-cds/10 ring-1 ring-inset ring-cds/30'
+                            : 'hover:bg-cds/5'
+                        }`}
+                      >
+                        {headers.map((header) => {
+                          const value = row[header.key];
+
+                          // คอลัมน์ Action (เฉพาะ VLAN tab)
+                          if (header.key === '_action') {
+                            return (
+                              <td key="_action" className="whitespace-nowrap px-3 py-2 border-r border-base-600/30 last:border-r-0">
+                                {isEditing ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => handleSaveVlan(row)}
+                                      disabled={saving}
+                                      className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-emerald-500 text-base-950 hover:bg-emerald-400 transition-all disabled:opacity-50"
+                                    >
+                                      {saving ? '...' : 'Save'}
+                                    </button>
+                                    <button
+                                      onClick={handleCancelEdit}
+                                      className="px-2 py-1 text-[10px] font-semibold rounded-md border border-base-600 text-ink-400 hover:text-ink-100 hover:bg-base-800 transition-all"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
                                   <button
-                                    onClick={() => handleSaveVlan(row)}
-                                    disabled={saving}
-                                    className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-emerald-500 text-base-950 hover:bg-emerald-400 transition-all disabled:opacity-50"
+                                    onClick={() => handleEditRow(index, row)}
+                                    className={`px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all ${
+                                      vlanOk
+                                        ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                                        : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse'
+                                    }`}
                                   >
-                                    {saving ? '...' : 'Save'}
+                                    {vlanOk ? 'Edit' : 'Assign'}
                                   </button>
-                                  <button
-                                    onClick={handleCancelEdit}
-                                    className="px-2 py-1 text-[10px] font-semibold rounded-md border border-base-600 text-ink-400 hover:text-ink-100 hover:bg-base-800 transition-all"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ) : (
+                                )}
+                              </td>
+                            );
+                          }
+
+                          // คอลัมน์ PE Port List (ให้สามารถกดสลับไปดูหน้า PE Port Details เต็มรูปแบบเพื่อแก้ไขได้)
+                          if (header.key === 'pe_port_list') {
+                            const hasAssigned = value && value !== '-' && value !== 'Show PE Port';
+
+                            return (
+                              <td key="pe_port_list" className="whitespace-nowrap px-3 py-2 border-r border-base-600/30 last:border-r-0">
                                 <button
-                                  onClick={() => handleEditRow(index, row)}
-                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all ${
-                                    vlanOk
-                                      ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
-                                      : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse'
+                                  onClick={() => {
+                                    handleOpenPePortModal(row, index);
+                                    setActiveTab('pe_ports');
+                                  }}
+                                  className={`px-2.5 py-1 text-[11px] font-mono font-bold rounded transition-all inline-flex items-center gap-1.5 cursor-pointer ${
+                                    hasAssigned
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
+                                      : 'bg-cds/10 text-cds border border-cds/30 hover:bg-cds/20'
                                   }`}
+                                  title="คลิกเพื่อสลับไปดูตารางรายละเอียด PE Port หรือแก้ไขพอร์ตของ PE นี้"
                                 >
-                                  {vlanOk ? 'Edit' : 'Assign'}
+                                  {hasAssigned ? (
+                                    <>
+                                      <span>{value}</span>
+                                      <span className="text-[9px] px-1 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-normal uppercase">Edit</span>
+                                    </>
+                                  ) : (
+                                    <span>Show PE Port</span>
+                                  )}
                                 </button>
-                              )}
+                              </td>
+                            );
+                          }
+
+                          // VLAN editable cells
+                          if (activeTab === 'vlan' && editableVlanKeys.includes(header.key)) {
+                            return renderVlanCell(header, row, index, value);
+                          }
+
+                          // ไฮไลต์สีให้พิเศษตามประเภทข้อมูล
+                          let cellClass = "whitespace-nowrap px-4 py-3 text-ink-100 border-r border-base-600/30 last:border-r-0";
+                          
+                          if (header.key === 'pe_name') {
+                            cellClass += " font-bold text-cds";
+                          } else if (header.key.includes('ip') || header.key.includes('loopback')) {
+                            cellClass += " text-blue-400";
+                          } else if (header.key.includes('vlan')) {
+                            cellClass += " text-emerald-400";
+                          }
+
+                          return (
+                            <td key={header.key} className={cellClass}>
+                              {value || '-'}
                             </td>
                           );
-                        }
-
-                        // VLAN editable cells
-                        if (activeTab === 'vlan' && editableVlanKeys.includes(header.key)) {
-                          return renderVlanCell(header, row, index, value);
-                        }
-
-                        // ไฮไลต์สีให้พิเศษตามประเภทข้อมูล
-                        let cellClass = "whitespace-nowrap px-4 py-3 text-ink-100 border-r border-base-600/30 last:border-r-0";
-                        
-                        if (header.key === 'pe_name') {
-                          cellClass += " font-bold text-cds";
-                        } else if (header.key.includes('ip') || header.key.includes('loopback')) {
-                          cellClass += " text-blue-400";
-                        } else if (header.key.includes('vlan')) {
-                          cellClass += " text-emerald-400";
-                        }
-
-                        return (
-                          <td key={header.key} className={cellClass}>
-                            {value || '-'}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td
-                    colSpan={headers.length}
-                    className="px-4 py-8 text-center text-ink-600"
-                  >
-                    ไม่พบข้อมูลที่ค้นหา
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                        })}
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={headers.length}
+                      className="px-4 py-8 text-center text-ink-600"
+                    >
+                      ไม่พบข้อมูลที่ค้นหา
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
