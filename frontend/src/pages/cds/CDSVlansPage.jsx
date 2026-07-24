@@ -26,7 +26,7 @@ export default function CDSVlansPage() {
   const [showSiteDropdown, setShowSiteDropdown] = useState(false);
   const [tenantInput, setTenantInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
-  const [tagsInput, setTagsInput] = useState('QinQ, 802.1ad');
+  const [tagsInput, setTagsInput] = useState('');
   const [qinqRoleInput, setQinqRoleInput] = useState('');
   const [qinqRoleSearchQuery, setQinqRoleSearchQuery] = useState('');
   const [showQinqRoleDropdown, setShowQinqRoleDropdown] = useState(false);
@@ -348,7 +348,7 @@ export default function CDSVlansPage() {
                 </div>
                 <div>
                   <label className="block text-ink-300 font-semibold mb-1 uppercase text-[10px]">
-                    Role (NetBox VLAN Role)
+                    Role
                   </label>
                   {roles.length > 0 ? (
                     <select
@@ -438,7 +438,7 @@ export default function CDSVlansPage() {
                 </div>
                 <div>
                   <label className="block text-ink-300 font-semibold mb-1 uppercase text-[10px]">
-                    Site (PE Location)
+                    Site  
                   </label>
                   <div className="relative">
                     <input
@@ -507,7 +507,7 @@ export default function CDSVlansPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-ink-300 font-semibold mb-1 uppercase text-[10px]">
-                    Tenant (Customer Organization)
+                    Tenant
                   </label>
                   <input
                     type="text"
@@ -539,7 +539,6 @@ export default function CDSVlansPage() {
                   <span className="text-[10px] uppercase font-bold text-cds">
                     Q-in-Q Configuration (IEEE 802.1ad)
                   </span>
-                  <span className="text-[9px] text-ink-500">Service / Customer Role & S-VLAN</span>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -688,7 +687,7 @@ export default function CDSVlansPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น QinQ, 802.1ad, Customer-A"
+                  placeholder=""
                   value={tagsInput}
                   onChange={(e) => setTagsInput(e.target.value)}
                   onFocus={closeAllDropdowns}
