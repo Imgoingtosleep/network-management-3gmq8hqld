@@ -35,9 +35,8 @@ const mockNodeData = [
     status: "Active",
     nodeType: "Core Switch",
     nodeName: "Bangkok-Core-01",
-    peName: "90101_BKK-MX480-PE",
     domain: "90101",
-    aggregation: "AGG-BKK-01",
+    aggregation: "-",
     ipNetworks: ["10.100.100.0/24 (VLAN 100)", "10.100.115.0/24 (VLAN 115)"]
   },
   {
@@ -53,7 +52,7 @@ const mockNodeData = [
     nodeName: "ChiangMai-Dist-02",
     peName: "90200_CNX-MX480-PE",
     domain: "90200",
-    aggregation: "AGG-CNX-02",
+    aggregation: "-",
     ipNetworks: ["10.200.100.0/24 (VLAN 100)", "10.200.115.0/24 (VLAN 115)"]
   },
   {

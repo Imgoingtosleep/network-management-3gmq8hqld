@@ -1225,30 +1225,118 @@ async function getTags() {
 }
 
 async function getVlans() {
-  const now = Date.now();
-  if (!memoryCache.vlans) {
-    memoryCache.vlans = { data: null, timestamp: 0 };
+  try {
+    const [rawVlans, rawPrefixes] = await Promise.all([
+      fetchAllPages('/ipam/vlans/').catch(() => []),
+      fetchAllPages('/ipam/prefixes/').catch(() => [])
+    ]);
+
+    // Helper สกัดค่า String จาก Ring Name
+    const extractRingStr = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object') return val.name || val.label || val.display || val.value || null;
+      return String(val);
+    };
+
+    // สร้าง Map สำหรับจัดกลุ่ม Prefix Objects (รวม vrf และ ring_name) ตาม VLAN ID หรือ VLAN VID
+    const vlanPrefixMap = {};
+    const vlanVrfMap = {};
+    const vlanRingMap = {};
+
+    for (const p of rawPrefixes) {
+      if (p.vlan) {
+        const vKeyId = p.vlan.id;
+        const vKeyVid = p.vlan.vid;
+        const pStr = p.prefix;
+        
+        // ดึง VRF จาก Prefix
+        const pVrf = p.vrf ? (typeof p.vrf === 'object' ? (p.vrf.name || p.vrf.rd) : p.vrf) : null;
+        // ดึง Ring จาก Prefix/Custom Fields (เน้น ringname)
+        const pRing = extractRingStr(p.custom_fields?.ringname) || extractRingStr(p.ring_name) || extractRingStr(p.custom_fields?.ring_name) || extractRingStr(p.custom_fields?.ring) || extractRingStr(p.custom_fields?.ring_id);
+
+        const pObj = {
+          prefix: pStr,
+          vrf: pVrf || '-',
+          ring_name: pRing || '-'
+        };
+
+        if (vKeyId) {
+          if (!vlanPrefixMap[vKeyId]) vlanPrefixMap[vKeyId] = [];
+          if (!vlanPrefixMap[vKeyId].some(item => item.prefix === pStr)) vlanPrefixMap[vKeyId].push(pObj);
+          if (pVrf && !vlanVrfMap[vKeyId]) vlanVrfMap[vKeyId] = pVrf;
+          if (pRing && !vlanRingMap[vKeyId]) vlanRingMap[vKeyId] = pRing;
+        }
+        if (vKeyVid) {
+          if (!vlanPrefixMap[`vid_${vKeyVid}`]) vlanPrefixMap[`vid_${vKeyVid}`] = [];
+          if (!vlanPrefixMap[`vid_${vKeyVid}`].some(item => item.prefix === pStr)) vlanPrefixMap[`vid_${vKeyVid}`].push(pObj);
+          if (pVrf && !vlanVrfMap[`vid_${vKeyVid}`]) vlanVrfMap[`vid_${vKeyVid}`] = pVrf;
+          if (pRing && !vlanRingMap[`vid_${vKeyVid}`]) vlanRingMap[`vid_${vKeyVid}`] = pRing;
+        }
+      }
+    }
+
+    const mapped = rawVlans.map(v => {
+      // ดึง VRF และ Ring ประจำ VLAN
+      const directVrf = v.vrf ? (typeof v.vrf === 'object' ? (v.vrf.name || v.vrf.rd) : v.vrf) : null;
+      const vrfVal = directVrf || vlanVrfMap[v.id] || vlanVrfMap[`vid_${v.vid}`] || v.custom_fields?.vrf || '-';
+
+      const directRing = extractRingStr(v.custom_fields?.ringname) ||
+                         extractRingStr(v.ring_name) ||
+                         extractRingStr(v.custom_fields?.ring_name) ||
+                         extractRingStr(v.custom_fields?.ring) ||
+                         extractRingStr(v.custom_fields?.ring_id) ||
+                         extractRingStr(v.custom_fields?.Ring);
+      const ringVal = directRing || vlanRingMap[v.id] || vlanRingMap[`vid_${v.vid}`] || '-';
+
+      // 1. ดึงจาก v.prefixes ที่ติดมากับ VLAN object (ถ้ามี)
+      const directPrefixes = Array.isArray(v.prefixes) ? v.prefixes.map(p => ({
+        prefix: typeof p === 'object' ? p.prefix : p,
+        vrf: vrfVal,
+        ring_name: ringVal
+      })).filter(p => p.prefix) : [];
+
+      // 2. ดึงจาก Map ที่สแกนจาก NetBox IPAM Prefixes ด้วย VLAN ID / VID
+      const mappedById = vlanPrefixMap[v.id] || [];
+      const mappedByVid = vlanPrefixMap[`vid_${v.vid}`] || [];
+
+      // รวมและเติม VRF/Ring ให้สมบูรณ์หากของ Prefix นั้นไม่มี
+      const combinedPrefixesMap = new Map();
+      [...directPrefixes, ...mappedById, ...mappedByVid].forEach(item => {
+        if (!item || !item.prefix) return;
+        if (!combinedPrefixesMap.has(item.prefix)) {
+          combinedPrefixesMap.set(item.prefix, {
+            prefix: item.prefix,
+            vrf: item.vrf && item.vrf !== '-' ? item.vrf : vrfVal,
+            ring_name: item.ring_name && item.ring_name !== '-' ? item.ring_name : ringVal
+          });
+        }
+      });
+
+      const finalPrefixList = Array.from(combinedPrefixesMap.values());
+
+      return {
+        id: v.id,
+        name: v.name,
+        vid: v.vid,
+        display: `${v.name} (${v.vid})`,
+        site: v.site ? v.site.name : '-',
+        group: v.group ? v.group.name : '-',
+        prefixes_list: finalPrefixList,
+        prefixes: finalPrefixList.length,
+        vrf: vrfVal,
+        ring_name: ringVal,
+        tenant: v.tenant ? v.tenant.name : '-',
+        status: v.status ? (typeof v.status === 'object' ? v.status.label : v.status) : '-',
+        role: v.role ? v.role.name : '-',
+        description: v.description || '-'
+      };
+    });
+
+    return mapped;
+  } catch (err) {
+    console.error('Failed to fetch VLANs from NetBox:', err);
+    return [];
   }
-  if (memoryCache.vlans.data && (now - memoryCache.vlans.timestamp < CACHE_TTL)) {
-    return memoryCache.vlans.data;
-  }
-  const raw = await fetchAllPages('/ipam/vlans/');
-  const mapped = raw.map(v => ({
-    id: v.id,
-    name: v.name,
-    vid: v.vid,
-    display: `${v.name} (${v.vid})`,
-    site: v.site ? v.site.name : '-',
-    group: v.group ? v.group.name : '-',
-    prefixes: v.prefixes ? v.prefixes.map(p => p.prefix).join(', ') : '-',
-    tenant: v.tenant ? v.tenant.name : '-',
-    status: v.status ? (typeof v.status === 'object' ? v.status.label : v.status) : '-',
-    role: v.role ? v.role.name : '-',
-    description: v.description || '-'
-  }));
-  memoryCache.vlans.data = mapped;
-  memoryCache.vlans.timestamp = now;
-  return mapped;
 }
 
 async function getInterfaceTemplates(deviceTypeId) {
