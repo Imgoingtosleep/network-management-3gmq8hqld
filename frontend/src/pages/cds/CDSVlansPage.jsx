@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { cdsApi } from '../../api/cds.api.js';
 
 export default function CDSVlansPage() {
@@ -152,8 +152,54 @@ export default function CDSVlansPage() {
     }
   };
 
-  const [activeTab, setActiveTab] = useState('vlans'); // 'vlans' | 'groups'
+  const [activeTab, setActiveTab] = useState('vlans'); // 'vlans' | 'groups' | 'prefixes'
   const [selectedGroupFilter, setSelectedGroupFilter] = useState('');
+  const [selectedVlanForPrefix, setSelectedVlanForPrefix] = useState(null);
+  const [prefixSearchQuery, setPrefixSearchQuery] = useState('');
+
+  // รวบรวมรายการ Prefixes ทั้งหมดในระบบ CDS/NetBox สำหรับแท็บ VLAN Prefixes
+  const allPrefixItems = useMemo(() => {
+    const list = [];
+    vlans.forEach(v => {
+      if (Array.isArray(v.prefixes_list) && v.prefixes_list.length > 0) {
+        v.prefixes_list.forEach(p => {
+          const pStr = typeof p === 'object' ? p.prefix : p;
+          const pVrf = (typeof p === 'object' && p.vrf && p.vrf !== '-') ? p.vrf : (v.vrf || '-');
+          const pRing = (typeof p === 'object' && p.ring_name && p.ring_name !== '-') ? p.ring_name : (v.ring_name || '-');
+
+          list.push({
+            vlanId: v.id,
+            vlanName: v.name,
+            vid: v.vid,
+            site: v.site || '-',
+            group: v.group || '-',
+            prefix: pStr,
+            vrf: pVrf,
+            ring_name: pRing
+          });
+        });
+      }
+    });
+    return list;
+  }, [vlans]);
+
+  const filteredPrefixItems = useMemo(() => {
+    return allPrefixItems.filter(item => {
+      if (selectedVlanForPrefix && item.vlanId !== selectedVlanForPrefix.id) {
+        return false;
+      }
+      if (!prefixSearchQuery && !searchQuery) return true;
+      const query = (prefixSearchQuery || searchQuery).toLowerCase();
+      return (
+        String(item.prefix).toLowerCase().includes(query) ||
+        String(item.vlanName).toLowerCase().includes(query) ||
+        String(item.vid).toLowerCase().includes(query) ||
+        String(item.vrf).toLowerCase().includes(query) ||
+        String(item.ring_name).toLowerCase().includes(query) ||
+        String(item.site).toLowerCase().includes(query)
+      );
+    });
+  }, [allPrefixItems, selectedVlanForPrefix, prefixSearchQuery, searchQuery]);
 
   const filteredVlans = vlans.filter((v) => {
     if (!v) return false;
@@ -217,10 +263,13 @@ export default function CDSVlansPage() {
         </div>
       )}
 
-      {/* Main Tab Bar: VLANs / VLAN Groups */}
+      {/* Main Tab Bar: VLANs / VLAN Groups / VLAN Prefixes */}
       <div className="flex border-b border-base-600/50 gap-2">
         <button
-          onClick={() => setActiveTab('vlans')}
+          onClick={() => {
+            setActiveTab('vlans');
+            setSelectedVlanForPrefix(null);
+          }}
           className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
             activeTab === 'vlans'
               ? 'border-cds text-cds bg-cds/5'
@@ -230,7 +279,10 @@ export default function CDSVlansPage() {
           VLAN List ({vlans.length})
         </button>
         <button
-          onClick={() => setActiveTab('groups')}
+          onClick={() => {
+            setActiveTab('groups');
+            setSelectedVlanForPrefix(null);
+          }}
           className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
             activeTab === 'groups'
               ? 'border-cds text-cds bg-cds/5'
@@ -239,6 +291,19 @@ export default function CDSVlansPage() {
         >
           VLAN Groups ({vlanGroups.length})
         </button>
+        <button
+          onClick={() => {
+            setActiveTab('prefixes');
+            setSelectedVlanForPrefix(null);
+          }}
+          className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'prefixes'
+              ? 'border-cds text-cds bg-cds/5'
+              : 'border-transparent text-ink-400 hover:text-ink-200'
+          }`}
+        >
+          VLAN Prefixes ({allPrefixItems.length})
+        </button>
       </div>
 
       <div className="flex flex-col h-full rounded-xl border border-base-600 bg-base-900 overflow-hidden shadow-glow">
@@ -246,14 +311,32 @@ export default function CDSVlansPage() {
         <div className="p-4 border-b border-base-600/50 bg-base-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-mono text-ink-600 px-2 py-0.5 rounded bg-base-950 border border-base-600/30">
-              {activeTab === 'vlans' ? `${filteredVlans.length} VLANs` : `${filteredGroups.length} Groups`}
+              {activeTab === 'vlans' ? `${filteredVlans.length} VLANs` : activeTab === 'groups' ? `${filteredGroups.length} Groups` : `${filteredPrefixItems.length} Subnet Prefixes`}
             </span>
+            {activeTab === 'prefixes' && selectedVlanForPrefix && (
+              <span className="text-xs text-cds font-bold bg-cds/10 border border-cds/30 px-2.5 py-1 rounded-lg flex items-center gap-2">
+                <span>กรอง VLAN: {selectedVlanForPrefix.name} (VID: {selectedVlanForPrefix.vid})</span>
+                <button
+                  onClick={() => setSelectedVlanForPrefix(null)}
+                  className="hover:text-white"
+                  title="ยกเลิกการกรอง VLAN"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <input
               type="text"
-              placeholder={activeTab === 'vlans' ? "ค้นหา VLAN (VID, Name, Site...)" : "ค้นหา VLAN Group (Name, Slug...)"}
+              placeholder={
+                activeTab === 'vlans'
+                  ? "ค้นหา VLAN (VID, Name, Site...)"
+                  : activeTab === 'groups'
+                  ? "ค้นหา VLAN Group (Name, Slug...)"
+                  : "ค้นหา Prefix, VRF, Ring Name..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full sm:w-64 rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none transition-colors"
@@ -309,15 +392,12 @@ export default function CDSVlansPage() {
                       <td className="px-4 py-3 whitespace-nowrap text-ink-300">
                         {v.prefixes_list && v.prefixes_list.length > 0 ? (
                           <button
-                            onClick={() => setPrefixModalData({
-                              vlanName: v.name,
-                              vid: v.vid,
-                              vrf: v.vrf || '-',
-                              ringName: v.ring_name || '-',
-                              prefixes: v.prefixes_list
-                            })}
-                            className="px-2 py-0.5 text-xs font-mono font-bold rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all cursor-pointer inline-flex items-center"
-                            title="คลิกเพื่อดูรายละเอียด Prefixes ทั้งหมด"
+                            onClick={() => {
+                              setSelectedVlanForPrefix(v);
+                              setActiveTab('prefixes');
+                            }}
+                            className="px-2.5 py-0.5 text-xs font-mono font-bold rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all cursor-pointer inline-flex items-center"
+                            title="คลิกเพื่อสลับไปดูตารางรายละเอียด Prefixes ของ VLAN นี้"
                           >
                             <span>{v.prefixes_list.length}</span>
                           </button>
@@ -344,6 +424,56 @@ export default function CDSVlansPage() {
             ) : (
               <div className="p-8 text-center text-xs text-ink-650 font-mono">
                 ไม่พบข้อมูล VLANs
+              </div>
+            )
+          ) : activeTab === 'prefixes' ? (
+            /* Tab: VLAN Prefixes (Full Page View) */
+            filteredPrefixItems.length > 0 ? (
+              <table className="w-full text-left text-xs font-mono border-collapse">
+                <thead>
+                  <tr className="border-b border-base-600 bg-base-950 text-[10px] font-mono uppercase text-ink-400">
+                    <th className="px-4 py-3">Subnet Prefix</th>
+                    <th className="px-4 py-3">VRF</th>
+                    <th className="px-4 py-3">Ring Name</th>
+                    <th className="px-4 py-3">VLAN Name</th>
+                    <th className="px-4 py-3">VID</th>
+                    <th className="px-4 py-3">Site</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-base-600/20 text-ink-100">
+                  {filteredPrefixItems.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-cds/5 transition-colors duration-150">
+                      <td className="px-4 py-3 whitespace-nowrap font-bold text-emerald-400 text-sm">
+                        {item.prefix}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap font-semibold text-purple-400">
+                        {item.vrf || '-'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap font-semibold text-amber-400">
+                        {item.ring_name || '-'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap font-semibold text-ink-100">
+                        {item.vlanName}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap font-bold text-cds">
+                        {item.vid}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-300">
+                        {item.site}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-right">
+                        <span className="px-2 py-0.5 rounded bg-base-950 border border-base-700 text-[10px] text-ink-400">
+                          Subnet
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="p-8 text-center text-xs text-ink-650 font-mono">
+                ไม่พบข้อมูล VLAN Prefixes
               </div>
             )
           ) : (
@@ -870,116 +1000,6 @@ export default function CDSVlansPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal แสดงรายละเอียด Prefixes ทั้งหมดของ VLAN */}
-      {prefixModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-xl border border-base-600 bg-base-900 p-5 shadow-2xl space-y-4 font-mono">
-            <div className="flex items-center justify-between border-b border-base-600/50 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-cds">
-                  VLAN Prefixes Detail
-                </h3>
-                <p className="text-[11px] text-ink-400 mt-0.5">
-                  VLAN: <span className="font-bold text-ink-100">{prefixModalData.vlanName}</span> (VID: {prefixModalData.vid})
-                </p>
-                <div className="flex items-center gap-3 mt-1.5 text-[10px] font-mono">
-                  <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                    VRF: <strong className="text-purple-300">{prefixModalData.vrf}</strong>
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    Ring: <strong className="text-amber-300">{prefixModalData.ringName}</strong>
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setPrefixModalData(null);
-                  setModalPrefixSearch('');
-                }}
-                className="text-ink-400 hover:text-ink-100 text-sm self-start"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* ช่องค้นหา Prefix ภายใน Modal */}
-            <div>
-              <input
-                type="text"
-                placeholder="ค้นหา Subnet Prefix ใน VLAN นี้..."
-                value={modalPrefixSearch}
-                onChange={(e) => setModalPrefixSearch(e.target.value)}
-                className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none"
-              />
-            </div>
-
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              <span className="text-[10px] text-ink-500 uppercase font-bold">
-                รายการ Prefixes ({prefixModalData.prefixes.filter(p => {
-                  const pStr = typeof p === 'object' ? p.prefix : p;
-                  const pVrf = typeof p === 'object' ? p.vrf : prefixModalData.vrf;
-                  const pRing = typeof p === 'object' ? p.ring_name : prefixModalData.ringName;
-                  const q = modalPrefixSearch.toLowerCase();
-                  return String(pStr).toLowerCase().includes(q) || String(pVrf).toLowerCase().includes(q) || String(pRing).toLowerCase().includes(q);
-                }).length} / {prefixModalData.prefixes.length}):
-              </span>
-              <div className="space-y-2">
-                {prefixModalData.prefixes
-                  .filter(p => {
-                    const pStr = typeof p === 'object' ? p.prefix : p;
-                    const pVrf = typeof p === 'object' ? p.vrf : prefixModalData.vrf;
-                    const pRing = typeof p === 'object' ? p.ring_name : prefixModalData.ringName;
-                    const q = modalPrefixSearch.toLowerCase();
-                    return String(pStr).toLowerCase().includes(q) || String(pVrf).toLowerCase().includes(q) || String(pRing).toLowerCase().includes(q);
-                  })
-                  .map((p, idx) => {
-                    const pStr = typeof p === 'object' ? p.prefix : p;
-                    const pVrf = (typeof p === 'object' && p.vrf && p.vrf !== '-') ? p.vrf : prefixModalData.vrf;
-                    const pRing = (typeof p === 'object' && p.ring_name && p.ring_name !== '-') ? p.ring_name : prefixModalData.ringName;
-
-                    return (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-lg border border-base-600 bg-base-950 text-xs font-mono space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-emerald-400 font-bold text-sm">{pStr}</span>
-                          <span className="text-[9px] text-ink-500 font-normal px-1.5 py-0.5 rounded bg-base-900 border border-base-700">Subnet</span>
-                        </div>
-                        <div className="flex items-center gap-2 pt-1 border-t border-base-800 text-[10px]">
-                          <span className="text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
-                            VRF: <strong className="text-purple-300">{pVrf}</strong>
-                          </span>
-                          <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                            Ring: <strong className="text-amber-300">{pRing}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                {prefixModalData.prefixes.length === 0 && (
-                  <div className="p-4 text-center text-xs text-ink-600 font-mono">
-                    ไม่มีรายการ Prefix ใน VLAN นี้
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-base-600/50 text-right">
-              <button
-                onClick={() => {
-                  setPrefixModalData(null);
-                  setModalPrefixSearch('');
-                }}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-base-950 border border-base-600 text-ink-200 hover:bg-base-800"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
           </div>
         </div>
       )}
