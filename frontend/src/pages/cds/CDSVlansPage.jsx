@@ -142,8 +142,18 @@ export default function CDSVlansPage() {
     }
   };
 
+  const [activeTab, setActiveTab] = useState('vlans'); // 'vlans' | 'groups'
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState('');
+
   const filteredVlans = vlans.filter((v) => {
     if (!v) return false;
+    
+    // กรองตาม VLAN Group Filter ถ้ามีการเลือก
+    if (selectedGroupFilter && (v.group || '') !== selectedGroupFilter) {
+      return false;
+    }
+
+    if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
       String(v.vid).toLowerCase().includes(query) ||
@@ -155,6 +165,17 @@ export default function CDSVlansPage() {
       (v.status || '').toLowerCase().includes(query) ||
       (v.role || '').toLowerCase().includes(query) ||
       (v.description || '').toLowerCase().includes(query)
+    );
+  });
+
+  const filteredGroups = vlanGroups.filter((g) => {
+    if (!g) return false;
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      (g.name || '').toLowerCase().includes(query) ||
+      (g.slug || '').toLowerCase().includes(query) ||
+      String(g.id).toLowerCase().includes(query)
     );
   });
 
@@ -173,19 +194,43 @@ export default function CDSVlansPage() {
         </div>
       )}
 
+      {/* Main Tab Bar: VLANs / VLAN Groups */}
+      <div className="flex border-b border-base-600/50 gap-2">
+        <button
+          onClick={() => setActiveTab('vlans')}
+          className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'vlans'
+              ? 'border-cds text-cds bg-cds/5'
+              : 'border-transparent text-ink-400 hover:text-ink-200'
+          }`}
+        >
+          VLAN List ({vlans.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('groups')}
+          className={`px-5 py-2.5 text-xs font-mono font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'groups'
+              ? 'border-cds text-cds bg-cds/5'
+              : 'border-transparent text-ink-400 hover:text-ink-200'
+          }`}
+        >
+          VLAN Groups ({vlanGroups.length})
+        </button>
+      </div>
+
       <div className="flex flex-col h-full rounded-xl border border-base-600 bg-base-900 overflow-hidden shadow-glow">
         {/* Header & Actions */}
         <div className="p-4 border-b border-base-600/50 bg-base-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-mono text-ink-600 px-2 py-0.5 rounded bg-base-950 border border-base-600/30">
-              {filteredVlans.length} VLANs
+              {activeTab === 'vlans' ? `${filteredVlans.length} VLANs` : `${filteredGroups.length} Groups`}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <input
               type="text"
-              placeholder="ค้นหา VLAN (VID, Name, Site...)"
+              placeholder={activeTab === 'vlans' ? "ค้นหา VLAN (VID, Name, Site...)" : "ค้นหา VLAN Group (Name, Slug...)"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full sm:w-64 rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-600 focus:border-cds focus:outline-none transition-colors"
@@ -209,55 +254,98 @@ export default function CDSVlansPage() {
           </div>
         </div>
 
-        {/* VLAN Table Container */}
+        {/* Content Table Container */}
         <div className="overflow-x-auto">
           {loading ? (
             <div className="p-8 text-center text-xs text-ink-600 font-mono">
-              กำลังโหลดข้อมูล VLANs...
+              กำลังโหลดข้อมูล...
             </div>
-          ) : filteredVlans.length > 0 ? (
-            <table className="w-full text-left text-xs font-mono border-collapse">
-              <thead>
-                <tr className="border-b border-base-600 bg-base-950 text-[10px] font-mono uppercase text-ink-400">
-                  <th className="px-4 py-3">VID</th>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Site</th>
-                  <th className="px-4 py-3">Group</th>
-                  <th className="px-4 py-3">Prefixes</th>
-                  <th className="px-4 py-3">Tenant</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-base-600/20 text-ink-100">
-                {filteredVlans.map((v) => (
-                  <tr key={v.id} className="hover:bg-cds/5 transition-colors duration-150">
-                    <td className="px-4 py-3 whitespace-nowrap font-bold text-cds">{v.vid}</td>
-                    <td className="px-4 py-3 whitespace-nowrap font-semibold">{v.name}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink-300">{v.site}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.group}</td>
-                    <td className="px-4 py-3 text-ink-300 max-w-xs truncate" title={v.prefixes}>{v.prefixes}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.tenant}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`rounded px-1.5 py-0.5 text-[9px] uppercase font-semibold ${
-                        v.status?.toLowerCase() === 'active'
-                          ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                          : 'bg-base-650 text-ink-400 border border-base-600'
-                      }`}>
-                        {v.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.role}</td>
-                    <td className="px-4 py-3 text-ink-600 max-w-xs truncate" title={v.description}>{v.description}</td>
+          ) : activeTab === 'vlans' ? (
+            filteredVlans.length > 0 ? (
+              <table className="w-full text-left text-xs font-mono border-collapse">
+                <thead>
+                  <tr className="border-b border-base-600 bg-base-950 text-[10px] font-mono uppercase text-ink-400">
+                    <th className="px-4 py-3">VID</th>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Site</th>
+                    <th className="px-4 py-3">Group</th>
+                    <th className="px-4 py-3">Prefixes</th>
+                    <th className="px-4 py-3">Tenant</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Description</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-base-600/20 text-ink-100">
+                  {filteredVlans.map((v) => (
+                    <tr key={v.id} className="hover:bg-cds/5 transition-colors duration-150">
+                      <td className="px-4 py-3 whitespace-nowrap font-bold text-cds">{v.vid}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-semibold">{v.name}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-300">{v.site}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.group}</td>
+                      <td className="px-4 py-3 text-ink-300 max-w-xs truncate" title={v.prefixes}>{v.prefixes}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.tenant}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] uppercase font-semibold ${
+                          v.status?.toLowerCase() === 'active'
+                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                            : 'bg-base-650 text-ink-400 border border-base-600'
+                        }`}>
+                          {v.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-400">{v.role}</td>
+                      <td className="px-4 py-3 text-ink-600 max-w-xs truncate" title={v.description}>{v.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="p-8 text-center text-xs text-ink-650 font-mono">
+                ไม่พบข้อมูล VLANs
+              </div>
+            )
           ) : (
-            <div className="p-8 text-center text-xs text-ink-650 font-mono">
-              ไม่พบข้อมูล VLANs
-            </div>
+            /* Tab: VLAN Groups */
+            filteredGroups.length > 0 ? (
+              <table className="w-full text-left text-xs font-mono border-collapse">
+                <thead>
+                  <tr className="border-b border-base-600 bg-base-950 text-[10px] font-mono uppercase text-ink-400">
+                    <th className="px-4 py-3">Group Name</th>
+                    <th className="px-4 py-3">Slug</th>
+                    <th className="px-4 py-3">VLAN Count</th>
+                    <th className="px-4 py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-base-600/20 text-ink-100">
+                  {filteredGroups.map((g) => {
+                    const count = vlans.filter(v => v.group === g.name).length;
+                    return (
+                      <tr key={g.id} className="hover:bg-cds/5 transition-colors duration-150">
+                        <td className="px-4 py-3 whitespace-nowrap font-bold text-cds">{g.name}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-ink-400">{g.slug || '-'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap font-mono text-emerald-400">{count} VLANs</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <button
+                            onClick={() => {
+                              setSelectedGroupFilter(g.name);
+                              setActiveTab('vlans');
+                            }}
+                            className="px-2.5 py-1 text-[10px] font-bold rounded border border-cds/30 bg-cds/10 text-cds hover:bg-cds/20 transition-all"
+                          >
+                            ดู VLANs ในกลุ่มนี้ ➔
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="p-8 text-center text-xs text-ink-650 font-mono">
+                ไม่พบข้อมูล VLAN Groups
+              </div>
+            )
           )}
         </div>
       </div>
@@ -538,7 +626,7 @@ export default function CDSVlansPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase font-bold text-cds">
                     Q-in-Q Configuration (IEEE 802.1ad)
-                  </span>
+                  </span> 
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
