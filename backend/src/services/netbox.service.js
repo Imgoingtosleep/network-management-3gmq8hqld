@@ -1570,6 +1570,93 @@ async function getVlanGroups() {
   return mapped;
 }
 
+/**
+ * Synchronize interfaces of a device with its DeviceType templates.
+ * @param {string|number} deviceId - ID of the device to sync.
+ * @param {Object} options - Sync options ({ mode: 'add_missing' | 'force_override' | 'remove_unused' })
+ * @returns {Promise<Object>} Summary of sync results.
+ */
+async function syncDeviceInterfaces(deviceId, options = {}) {
+  const mode = options.mode || 'add_missing'; // 'add_missing', 'force_override', 'replace_all'
+  
+  // Fetch device details
+  const device = await getSingle(`/dcim/devices/${deviceId}/`);
+  if (!device || !device.device_type) {
+    throw new Error('ไม่พบข้อมูล Device หรือ Device Type ของอุปกรณ์นี้');
+  }
+
+  const deviceTypeId = device.device_type.id;
+
+  // Fetch interface templates of the device type
+  const templates = await fetchAllPages(`/dcim/interface-templates/?device_type_id=${deviceTypeId}`);
+  
+  // Fetch existing interfaces of the device
+  const currentInterfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+
+  const summary = {
+    deviceName: device.name || device.display || `ID:${deviceId}`,
+    deviceTypeName: device.device_type.model || device.device_type.display,
+    added: [],
+    updated: [],
+    deleted: [],
+    skipped: []
+  };
+
+  const existingMap = new Map();
+  currentInterfaces.forEach(iface => {
+    existingMap.set(iface.name, iface);
+  });
+
+  const templateNames = new Set(templates.map(t => t.name));
+
+  // Process templates
+  for (const t of templates) {
+    const existing = existingMap.get(t.name);
+    if (!existing) {
+      // Add missing interface
+      const payload = {
+        device: Number(deviceId),
+        name: t.name,
+        type: t.type?.value || t.type || '1000base-t',
+        mgmt_only: Boolean(t.mgmt_only),
+        description: t.description || ''
+      };
+      const created = await fetchNetboxApi('/dcim/interfaces/', 'POST', payload);
+      summary.added.push(created.name);
+    } else {
+      // Interface exists
+      const targetType = t.type?.value || t.type;
+      const currentType = existing.type?.value || existing.type;
+      if (mode === 'force_override' || currentType !== targetType) {
+        // Update type / mgmt_only to match template
+        const payload = {
+          type: targetType,
+          mgmt_only: Boolean(t.mgmt_only)
+        };
+        await fetchNetboxApi(`/dcim/interfaces/${existing.id}/`, 'PATCH', payload);
+        summary.updated.push(`${existing.name} (${currentType} -> ${targetType})`);
+      } else {
+        summary.skipped.push(existing.name);
+      }
+    }
+  }
+
+  // If mode is replace_all or remove_unused: remove interfaces on device that are no longer in device type template
+  if (options.removeUnused) {
+    for (const iface of currentInterfaces) {
+      if (!templateNames.has(iface.name)) {
+        await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
+        summary.deleted.push(iface.name);
+      }
+    }
+  }
+
+  // Clear devices cache
+  memoryCache.devices.timestamp = 0;
+
+  return summary;
+}
+
 module.exports = {
   getDevices,
   getPrefixes,
@@ -1606,6 +1693,7 @@ module.exports = {
   getInterfaceTypeChoices,
   getDeviceInterfaces,
   updateInterface,
+  syncDeviceInterfaces,
   get: fetchAllPages,
   getSingle,
   createCable,

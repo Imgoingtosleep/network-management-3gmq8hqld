@@ -10,6 +10,7 @@ router.post('/projects', ndsController.createProject);
 
 // NetBox Devices (API connection)
 router.get('/devices', ndsController.listDevices);
+router.post('/devices/sync-interfaces', ndsController.syncDeviceInterfaces);
 router.get('/devices/:id/interfaces', ndsController.listDeviceInterfaces);
 router.patch('/interfaces/:interfaceId', ndsController.updateDeviceInterface);
 router.post('/devices', ndsController.createDevice);

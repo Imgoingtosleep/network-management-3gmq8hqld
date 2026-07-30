@@ -334,4 +334,25 @@ module.exports = {
 
   // Rings
   listRings: ringHandlers.list, createRing: ringHandlers.create, updateRing: ringHandlers.update, deleteRing: ringHandlers.delete,
+
+  // Sync Device Interfaces from Device Type Template
+  syncDeviceInterfaces: async (req, res, next) => {
+    try {
+      const { deviceId, deviceIds, mode, removeUnused } = req.body;
+      const idsToSync = deviceIds || (deviceId ? [deviceId] : []);
+      if (!idsToSync || idsToSync.length === 0) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุ deviceId หรือ deviceIds' });
+      }
+
+      const results = [];
+      for (const id of idsToSync) {
+        const resObj = await netboxService.syncDeviceInterfaces(id, { mode, removeUnused });
+        results.push(resObj);
+      }
+
+      return ok(res, results, `ซิงค์อินเตอร์เฟสกับ NetBox เรียบร้อยแล้ว (${results.length} อุปกรณ์)`);
+    } catch (err) {
+      return next(err);
+    }
+  }
 };

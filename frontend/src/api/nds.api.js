@@ -16,6 +16,7 @@ export const ndsApi = {
   getDeviceInterfaces: (id) => axiosClient.get(`/nds/devices/${id}/interfaces`),
   updateDeviceInterface: (id, payload) => axiosClient.patch(`/nds/interfaces/${id}`, payload),
   createDevice: (payload) => axiosClient.post('/nds/devices', payload),
+  syncDeviceInterfaces: (payload) => axiosClient.post('/nds/devices/sync-interfaces', payload),
   updateDevice: (id, payload) => axiosClient.put(`/nds/devices/${id}`, payload),
   deleteDevice: (id) => axiosClient.delete(`/nds/devices/${id}`),
   getRegions: () => axiosClient.get('/nds/regions'),
