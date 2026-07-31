@@ -1647,10 +1647,71 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
     }
   }
 
-  // If mode is replace_all or remove_unused: remove interfaces on device that are no longer in device type template
+  // If removeUnused is true: remove interfaces on device that are no longer in device type template
+  // If a deleted interface has IP address bound, migrate the IP binding to matching new/renamed interface if available
   if (options.removeUnused) {
+    // Fetch IP addresses assigned to this device
+    const deviceIps = await fetchAllPages(`/ipam/ip-addresses/?device_id=${deviceId}`);
+    
+    // Refresh updated list of interfaces after additions
+    const updatedInterfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+    const updatedMap = new Map();
+    updatedInterfaces.forEach(iface => updatedMap.set(iface.name, iface));
+
     for (const iface of currentInterfaces) {
-      if (!templateNames.has(iface.name)) {
+      const ifaceNameLower = (iface.name || '').toLowerCase();
+      const ifaceTypeLower = (iface.type?.value || iface.type || '').toLowerCase();
+
+      // Check if this is a Virtual / Logical / VLAN interface that should never be deleted
+      const isVirtualOrVlan = 
+        ifaceNameLower.includes('vlan') || 
+        ifaceNameLower.includes('vlanif') || 
+        ifaceNameLower.includes('loopback') ||
+        ifaceNameLower.includes('null') ||
+        ifaceNameLower.includes('.') || // Sub-interfaces like Gi0/0/0.100
+        ifaceTypeLower === 'virtual';
+
+      if (!templateNames.has(iface.name) && !isVirtualOrVlan) {
+        // Find IP addresses assigned to this old interface
+        const boundIps = deviceIps.filter(ip => ip.assigned_object_id === iface.id);
+
+        if (boundIps.length > 0) {
+          // Smart Matching: 
+          // 1. Match by index number extracted from port name (e.g. Gi0/0/1 -> 1 -> Gi0/1/1 or first available template port with same index)
+          // 2. Match by exact/similar prefix or same position in list
+          const oldIndexMatch = iface.name.match(/\d+$/);
+          const oldIndex = oldIndexMatch ? oldIndexMatch[0] : null;
+
+          let targetInterface = null;
+
+          if (oldIndex !== null) {
+            // Find template interface ending with the same index number
+            const matchedTemplate = templates.find(t => t.name.endsWith(oldIndex) || t.name.endsWith(`/${oldIndex}`));
+            if (matchedTemplate) {
+              targetInterface = updatedMap.get(matchedTemplate.name);
+            }
+          }
+
+          // Fallback: match by position index or first template interface
+          if (!targetInterface) {
+            const oldPortPos = currentInterfaces.indexOf(iface);
+            const targetTemplate = templates[oldPortPos] || templates[0];
+            if (targetTemplate) {
+              targetInterface = updatedMap.get(targetTemplate.name);
+            }
+          }
+
+          if (targetInterface) {
+            for (const ipObj of boundIps) {
+              await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+                assigned_object_type: 'dcim.interface',
+                assigned_object_id: targetInterface.id
+              });
+              summary.updated.push(`ย้าย IP ${ipObj.address} จาก ${iface.name} ไปยัง ${targetInterface.name}`);
+            }
+          }
+        }
+
         await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
         summary.deleted.push(iface.name);
       }
