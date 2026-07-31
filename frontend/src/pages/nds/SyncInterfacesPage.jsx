@@ -6,6 +6,7 @@ export default function SyncInterfacesPage() {
   const [devices, setDevices] = useState([]);
   const [deviceTypes, setDeviceTypes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchModelQuery, setSearchModelQuery] = useState('');
   const [selectedDeviceType, setSelectedDeviceType] = useState('');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,8 +24,10 @@ export default function SyncInterfacesPage() {
         ndsApi.getDevices(),
         ndsApi.getDeviceTypes()
       ]);
-      setDevices(devRes.data || []);
-      setDeviceTypes(dtRes.data || []);
+      const rawDevs = devRes.data?.data || devRes.data || [];
+      const rawDts = dtRes.data?.data || dtRes.data || [];
+      setDevices(Array.isArray(rawDevs) ? rawDevs : []);
+      setDeviceTypes(Array.isArray(rawDts) ? rawDts : []);
     } catch (err) {
       console.error('Error fetching devices/device-types:', err);
       setErrorMessage(err.response?.data?.message || 'ไม่สามารถโหลดข้อมูลอุปกรณ์จาก NetBox ได้');
@@ -37,14 +40,26 @@ export default function SyncInterfacesPage() {
     loadData();
   }, []);
 
+  // Filter device types by searchModelQuery
+  const filteredDeviceTypes = deviceTypes.filter(dt => {
+    if (!searchModelQuery) return true;
+    const model = (dt.model || dt.display || '').toLowerCase();
+    const mfg = (dt.manufacturer?.name || '').toLowerCase();
+    const q = searchModelQuery.toLowerCase();
+    return model.includes(q) || mfg.includes(q);
+  });
+
   // Filter devices
   const filteredDevices = devices.filter(dev => {
+    if (!dev) return false;
     if (!selectedDeviceType) return true;
-    const devTypeObj = dev.device_type;
-    const devTypeId = devTypeObj?.id ? String(devTypeObj.id) : '';
-    const devTypeModel = (devTypeObj?.model || devTypeObj?.display || (typeof devTypeObj === 'string' ? devTypeObj : '')).toLowerCase();
-    const devTypeSlug = (devTypeObj?.slug || '').toLowerCase();
+    
     const target = String(selectedDeviceType).toLowerCase();
+    
+    const devTypeObj = dev.device_type;
+    const devTypeId = devTypeObj?.id ? String(devTypeObj.id) : (dev.device_type_id ? String(dev.device_type_id) : '');
+    const devTypeModel = (devTypeObj?.model || devTypeObj?.display || dev.type || (typeof devTypeObj === 'string' ? devTypeObj : '')).toLowerCase();
+    const devTypeSlug = (devTypeObj?.slug || '').toLowerCase();
 
     const matchType = devTypeId === target || devTypeModel === target || devTypeSlug === target;
     const devName = (dev.name || dev.display || '').toLowerCase();
@@ -86,7 +101,8 @@ export default function SyncInterfacesPage() {
         removeUnused: removeUnused
       };
       const res = await ndsApi.syncDeviceInterfaces(payload);
-      setSyncLogs(res.data || []);
+      const logs = res.data?.data || res.data || [];
+      setSyncLogs(Array.isArray(logs) ? logs : []);
       alert('ซิงค์ข้อมูล Interface เรียบร้อยแล้ว!');
     } catch (err) {
       console.error('Error during bulk sync:', err);
@@ -103,7 +119,7 @@ export default function SyncInterfacesPage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-ink-100 flex items-center gap-2">
-                <span>🔄</span> Bulk Sync Device Interfaces with NetBox Model
+                Bulk Sync Device Interfaces with NetBox Model
               </h2>
               <p className="mt-1 text-sm text-ink-400">
                 ซิงค์และอัปเดตพอร์ต (Interfaces) ของ Devices ในระบบ NetBox ให้ตรงตาม Interface Templates ล่าสุดของ Model (Device Type)
@@ -114,14 +130,14 @@ export default function SyncInterfacesPage() {
               disabled={loading || syncing}
               className="inline-flex items-center gap-2 rounded-lg bg-base-700 px-4 py-2 text-sm font-medium text-ink-200 hover:bg-base-600 transition"
             >
-              🔄 โหลดข้อมูลใหม่
+              โหลดข้อมูลใหม่
             </button>
           </div>
         </div>
 
         {errorMessage && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
-            ⚠️ {errorMessage}
+            {errorMessage}
           </div>
         )}
 
@@ -130,8 +146,17 @@ export default function SyncInterfacesPage() {
           {/* Filter Card */}
           <div className="rounded-xl border border-base-700 bg-base-800/40 p-5 space-y-4">
             <h3 className="text-sm font-semibold text-nds tracking-wider uppercase">1. กรองอุปกรณ์</h3>
-            <div>
-              <label className="block text-xs text-ink-400 mb-1">เลือก Model Type (Device Type)</label>
+            
+            {/* Search & Select Model */}
+            <div className="space-y-2">
+              <label className="block text-xs text-ink-400">ค้นหา & เลือก Model Type (Device Type)</label>
+              <input
+                type="text"
+                placeholder="พิมพ์เพื่อค้นหา Model..."
+                value={searchModelQuery}
+                onChange={(e) => setSearchModelQuery(e.target.value)}
+                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-400 focus:border-nds focus:outline-none"
+              />
               <select
                 value={selectedDeviceType}
                 onChange={(e) => {
@@ -140,8 +165,8 @@ export default function SyncInterfacesPage() {
                 }}
                 className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
               >
-                <option value="">-- อุปกรณ์ทุก Model --</option>
-                {deviceTypes.map(dt => {
+                <option value="">-- อุปกรณ์ทุก Model ({filteredDeviceTypes.length}) --</option>
+                {filteredDeviceTypes.map(dt => {
                   const val = dt.id || dt.model || dt.display;
                   return (
                     <option key={dt.id || dt.model} value={val}>
@@ -166,7 +191,7 @@ export default function SyncInterfacesPage() {
                 onClick={() => setSelectedDeviceIds(filteredDevices.map(d => d.id))}
                 className="w-full rounded-lg border border-nds/40 bg-nds/10 px-3 py-1.5 text-xs font-medium text-nds hover:bg-nds/20 transition flex items-center justify-center gap-1.5"
               >
-                <span>🎯</span> เลือกทุก Device ที่เป็น Model นี้ ({filteredDevices.length} เครื่อง)
+                เลือกทุก Device ที่เป็น Model นี้ ({filteredDevices.length} เครื่อง)
               </button>
             )}
           </div>
@@ -241,11 +266,11 @@ export default function SyncInterfacesPage() {
               >
                 {syncing ? (
                   <>
-                    <span className="animate-spin">🌀</span> กำลัง Sync ข้อมูลกับ NetBox...
+                    กำลัง Sync ข้อมูลกับ NetBox...
                   </>
                 ) : (
                   <>
-                    ⚡ อัปเดต Interface อุปกรณ์ที่เลือก ({selectedDeviceIds.length})
+                    อัปเดต Interface อุปกรณ์ที่เลือก ({selectedDeviceIds.length})
                   </>
                 )}
               </button>
@@ -319,7 +344,9 @@ export default function SyncInterfacesPage() {
                           {dev.site?.name || dev.site?.display || '-'}
                         </td>
                         <td className="p-4 font-mono text-xs text-ink-300">
-                          {dev.primary_ip?.address || dev.primary_ip4?.address || '-'}
+                          {dev.ip && dev.ip !== 'N/A' 
+                            ? dev.ip 
+                            : (dev.primary_ip4?.address || dev.primary_ip4 || dev.primary_ip?.address || dev.primary_ip || '-')}
                         </td>
                         <td className="p-4 text-xs">
                           <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -343,7 +370,7 @@ export default function SyncInterfacesPage() {
         {syncLogs && (
           <div className="rounded-xl border border-emerald-500/30 bg-base-900 p-6 space-y-4">
             <h3 className="text-md font-bold text-emerald-400 flex items-center gap-2">
-              <span>✅</span> ผลลัพธ์การ Sync กับ NetBox (Sync Summary)
+              ผลลัพธ์การ Sync กับ NetBox (Sync Summary)
             </h3>
             <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
               {syncLogs.map((log, idx) => (
@@ -354,18 +381,18 @@ export default function SyncInterfacesPage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="text-emerald-400">
-                      ➕ เพิ่มใหม่ ({log.added?.length || 0}): {log.added?.join(', ') || 'ไม่มี'}
+                      เพิ่มใหม่ ({log.added?.length || 0}): {log.added?.join(', ') || 'ไม่มี'}
                     </div>
                     <div className="text-amber-400">
-                      ✏️ อัปเดตพอร์ต ({log.updated?.length || 0}): {log.updated?.join(', ') || 'ไม่มี'}
+                      อัปเดตพอร์ต ({log.updated?.length || 0}): {log.updated?.join(', ') || 'ไม่มี'}
                     </div>
                     <div className="text-ink-400">
-                      ⏩ ข้าม/ตรงอยู่แล้ว ({log.skipped?.length || 0}) พอร์ต
+                      ข้าม/ตรงอยู่แล้ว ({log.skipped?.length || 0}) พอร์ต
                     </div>
                   </div>
                   {log.deleted && log.deleted.length > 0 && (
                     <div className="mt-2 text-red-400 border-t border-base-700/50 pt-1">
-                      🗑️ ลบออก ({log.deleted.length}): {log.deleted.join(', ')}
+                      ลบออก ({log.deleted.length}): {log.deleted.join(', ')}
                     </div>
                   )}
                 </div>

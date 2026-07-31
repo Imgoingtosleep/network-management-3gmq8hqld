@@ -178,6 +178,12 @@ async function getDevices() {
     manufacturer: device.device_type?.manufacturer?.name || 'N/A',
     type: device.device_type?.model || device.device_type?.name || 'N/A',
     device_type_id: device.device_type?.id || null,
+    device_type: device.device_type ? {
+      id: device.device_type.id,
+      model: device.device_type.model || device.device_type.name || '',
+      display: device.device_type.display || device.device_type.model || device.device_type.name || '',
+      slug: device.device_type.slug || ''
+    } : null,
     ip: device.primary_ip4?.address || device.primary_ip?.address || 'N/A',
     primary_ip4: device.primary_ip4?.address || '',
     primary_ip6: device.primary_ip6?.address || '',

@@ -190,6 +190,21 @@ const groupInterfaceChoices = (choices) => {
     .map(([label, options]) => ({ label, options }));
 };
 
+const filterPortTypeGroups = (groups, query) => {
+  if (!query) return groups;
+  const q = query.toLowerCase();
+  return groups
+    .map(g => ({
+      ...g,
+      options: g.options.filter(opt => {
+        const val = (opt.value || '').toLowerCase();
+        const lbl = (opt.display_name || opt.label || '').toLowerCase();
+        return val.includes(q) || lbl.includes(q);
+      })
+    }))
+    .filter(g => g.options.length > 0);
+};
+
 const getRangePreview = (range) => {
   const start = parseInt(range.start);
   const count = parseInt(range.count);
@@ -212,6 +227,9 @@ export default function DeviceTypesPage() {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+
+  // Port Type Search state for modals
+  const [searchPortTypeQuery, setSearchPortTypeQuery] = useState('');
 
   // Loaded presets list
   const [presets, setPresets] = useState([]);
@@ -976,7 +994,18 @@ export default function DeviceTypesPage() {
 
               {/* Conditional Rendering of Method inputs */}
               {portSourceMode === 'manual' && (
-                <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
+                <div className="space-y-3 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between bg-base-950/60 p-3 rounded-lg border border-base-600/30">
+                    <span className="text-xs text-ink-300 font-medium">ค้นหาชนิดพอร์ต (Filter Port Types):</span>
+                    <input
+                      type="text"
+                      placeholder="พิมพ์เพื่อค้นหาชนิดพอร์ต (e.g. sfp, 10g, copper...)"
+                      value={searchPortTypeQuery}
+                      onChange={(e) => setSearchPortTypeQuery(e.target.value)}
+                      className="w-80 rounded-lg border border-base-600 bg-base-900 px-3 py-1 text-xs text-ink-100 placeholder-ink-500 focus:border-nds focus:outline-none"
+                    />
+                  </div>
+                  <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
                   <table className="w-full text-left text-xs font-mono">
                     <thead>
                       <tr className="text-ink-500 uppercase tracking-wider border-b border-base-600/30 pb-2">
@@ -1030,7 +1059,10 @@ export default function DeviceTypesPage() {
                               onChange={(e) => handleRangeChange(index, 'type', e.target.value)}
                               className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                             >
-                              {(interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS).map((group) => (
+                              {filterPortTypeGroups(
+                                interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS,
+                                searchPortTypeQuery
+                              ).map((group) => (
                                 <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
                                   {group.options.map((opt) => (
                                     <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
@@ -1067,6 +1099,7 @@ export default function DeviceTypesPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                   <div className="mt-3 flex justify-start">
                     <button
                       type="button"
@@ -1218,6 +1251,17 @@ export default function DeviceTypesPage() {
                 />
               </div>
 
+              <div className="flex items-center justify-between bg-base-950/60 p-3 rounded-lg border border-base-600/30">
+                <span className="text-xs text-ink-300 font-medium">ค้นหาชนิดพอร์ต (Filter Port Types):</span>
+                <input
+                  type="text"
+                  placeholder="พิมพ์เพื่อค้นหาชนิดพอร์ต (e.g. sfp, 10g, copper...)"
+                  value={searchPortTypeQuery}
+                  onChange={(e) => setSearchPortTypeQuery(e.target.value)}
+                  className="w-80 rounded-lg border border-base-600 bg-base-900 px-3 py-1 text-xs text-ink-100 placeholder-ink-500 focus:border-nds focus:outline-none"
+                />
+              </div>
+
               <div className="overflow-x-auto border border-base-600/30 rounded-xl bg-base-950/40 p-4">
                 <table className="w-full text-left text-xs font-mono">
                   <thead>
@@ -1272,7 +1316,10 @@ export default function DeviceTypesPage() {
                             onChange={(e) => handlePresetRangeChange(index, 'type', e.target.value)}
                             className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-1.5 text-xs text-ink-100 focus:border-nds focus:outline-none"
                           >
-                            {(interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS).map((group) => (
+                            {filterPortTypeGroups(
+                              interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS,
+                              searchPortTypeQuery
+                            ).map((group) => (
                               <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
                                 {group.options.map((opt) => (
                                   <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
