@@ -1694,6 +1694,16 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
         payload.type = currentType;
       }
 
+      // Preserve Untagged VLAN from existing interface
+      if (existing.untagged_vlan?.id || existing.untagged_vlan) {
+        payload.untagged_vlan = existing.untagged_vlan?.id || existing.untagged_vlan;
+      }
+
+      // Preserve Tagged VLANs list from existing interface
+      if (existing.tagged_vlans && existing.tagged_vlans.length > 0) {
+        payload.tagged_vlans = existing.tagged_vlans.map(v => (v.id ? v.id : v));
+      }
+
       // Preserve parent interface binding from existing interface (Sub-interface parent link)
       if (existing.parent) {
         payload.parent = existing.parent.id || existing.parent;
