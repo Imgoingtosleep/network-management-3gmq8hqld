@@ -52,19 +52,34 @@ export default function SyncInterfacesPage() {
   // Filter devices
   const filteredDevices = devices.filter(dev => {
     if (!dev) return false;
-    if (!selectedDeviceType) return true;
     
-    const target = String(selectedDeviceType).toLowerCase();
-    
-    const devTypeObj = dev.device_type;
-    const devTypeId = devTypeObj?.id ? String(devTypeObj.id) : (dev.device_type_id ? String(dev.device_type_id) : '');
-    const devTypeModel = (devTypeObj?.model || devTypeObj?.display || dev.type || (typeof devTypeObj === 'string' ? devTypeObj : '')).toLowerCase();
-    const devTypeSlug = (devTypeObj?.slug || '').toLowerCase();
+    // 1. Check Model filter (if selected)
+    if (selectedDeviceType) {
+      const target = String(selectedDeviceType).toLowerCase();
+      const devTypeObj = dev.device_type;
+      const devTypeId = devTypeObj?.id ? String(devTypeObj.id) : (dev.device_type_id ? String(dev.device_type_id) : '');
+      const devTypeModel = (devTypeObj?.model || devTypeObj?.display || dev.type || (typeof devTypeObj === 'string' ? devTypeObj : '')).toLowerCase();
+      const devTypeSlug = (devTypeObj?.slug || '').toLowerCase();
 
-    const matchType = devTypeId === target || devTypeModel === target || devTypeSlug === target;
-    const devName = (dev.name || dev.display || '').toLowerCase();
-    const matchSearch = !searchQuery || devName.includes(searchQuery.toLowerCase()) || devTypeModel.includes(searchQuery.toLowerCase());
-    return matchType && matchSearch;
+      const matchType = devTypeId === target || devTypeModel === target || devTypeSlug === target;
+      if (!matchType) return false;
+    }
+    
+    // 2. Check Device Search Query (Name / IP / Site / Node ID / Model)
+    if (searchQuery && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const name = (dev.name || '').toLowerCase();
+      const display = (dev.display || '').toLowerCase();
+      const ip = (dev.ip || dev.primary_ip4 || '').toLowerCase();
+      const site = (dev.site_name || dev.site || '').toLowerCase();
+      const nodeId = (dev.nodeid || '').toLowerCase();
+      const model = (dev.device_type?.model || dev.type || '').toLowerCase();
+
+      const matchSearch = name.includes(q) || display.includes(q) || ip.includes(q) || site.includes(q) || nodeId.includes(q) || model.includes(q);
+      if (!matchSearch) return false;
+    }
+
+    return true;
   });
 
   const handleSelectAll = (e) => {
@@ -145,17 +160,29 @@ export default function SyncInterfacesPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Filter Card */}
           <div className="rounded-xl border border-base-700 bg-base-800/40 p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-nds tracking-wider uppercase">1. กรองอุปกรณ์</h3>
+            <h3 className="text-sm font-semibold text-nds tracking-wider uppercase">1. ค้นหา & กรองอุปกรณ์</h3>
             
-            {/* Search & Select Model */}
-            <div className="space-y-2">
-              <label className="block text-xs text-ink-400">ค้นหา & เลือก Model Type (Device Type)</label>
+            {/* Primary Device Search */}
+            <div>
+              <label className="block text-xs font-semibold text-ink-200 mb-1">ค้นหาตามชื่อ / IP ของ Device (ค้นหาได้ทันที)</label>
               <input
                 type="text"
-                placeholder="พิมพ์เพื่อค้นหา Model..."
+                placeholder="พิมพ์ชื่ออุปกรณ์ หรือ IP Address เพื่อค้นหา..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-nds/50 bg-base-900 px-3 py-2 text-sm text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none"
+              />
+            </div>
+
+            {/* Optional Filter by Model */}
+            <div className="space-y-2 pt-2 border-t border-base-700/60">
+              <label className="block text-xs text-ink-400">กรองเพิ่มเติมตาม Model (Optional Filter)</label>
+              <input
+                type="text"
+                placeholder="พิมพ์เพื่อกรองตาม Model..."
                 value={searchModelQuery}
                 onChange={(e) => setSearchModelQuery(e.target.value)}
-                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-400 focus:border-nds focus:outline-none"
+                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-1.5 text-xs text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none"
               />
               <select
                 value={selectedDeviceType}
@@ -163,9 +190,9 @@ export default function SyncInterfacesPage() {
                   setSelectedDeviceType(e.target.value);
                   setSelectedDeviceIds([]);
                 }}
-                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
+                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-xs text-ink-100 focus:border-nds focus:outline-none"
               >
-                <option value="">-- อุปกรณ์ทุก Model ({filteredDeviceTypes.length}) --</option>
+                <option value="">-- แสดงอุปกรณ์ทุก Model ({filteredDeviceTypes.length}) --</option>
                 {filteredDeviceTypes.map(dt => {
                   const val = dt.id || dt.model || dt.display;
                   return (
@@ -176,22 +203,13 @@ export default function SyncInterfacesPage() {
                 })}
               </select>
             </div>
-            <div>
-              <label className="block text-xs text-ink-400 mb-1">ค้นหาตามชื่อ Device</label>
-              <input
-                type="text"
-                placeholder="พิมพ์ชื่ออุปกรณ์..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-sm text-ink-100 focus:border-nds focus:outline-none"
-              />
-            </div>
+
             {selectedDeviceType && (
               <button
                 onClick={() => setSelectedDeviceIds(filteredDevices.map(d => d.id))}
                 className="w-full rounded-lg border border-nds/40 bg-nds/10 px-3 py-1.5 text-xs font-medium text-nds hover:bg-nds/20 transition flex items-center justify-center gap-1.5"
               >
-                เลือกทุก Device ที่เป็น Model นี้ ({filteredDevices.length} เครื่อง)
+                เลือกทุก Device ที่ตรงกับตัวกรอง ({filteredDevices.length} เครื่อง)
               </button>
             )}
           </div>

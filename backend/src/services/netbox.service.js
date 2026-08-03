@@ -1615,32 +1615,103 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
 
   const templateNames = new Set(templates.map(t => t.name));
 
+  // Fetch IP addresses assigned to this device in advance to check IP bindings accurately
+  const deviceIps = await fetchAllPages(`/ipam/ip-addresses/?device_id=${deviceId}`);
+  const ipBoundInterfaceIds = new Set(deviceIps.map(ip => ip.assigned_object_id).filter(Boolean));
+
+  // Helper check: พอร์ตมี Connection หรือไม่
+  const hasConnection = (iface) => {
+    if (!iface) return false;
+    // 1. เช็กสายสัญญาณ / Cable / Link Peers / Connected Endpoints
+    if (iface.cable || iface.cable_id || (iface.link_peers && iface.link_peers.length > 0) || (iface.connected_endpoints && iface.connected_endpoints.length > 0) || iface.mark_connected) {
+      return true;
+    }
+    // 2. เช็ก IP Address ที่ผูกอยู่กับพอร์ตนี้
+    if (ipBoundInterfaceIds.has(iface.id) || iface.count_ipaddresses > 0 || (iface.ip_addresses && iface.ip_addresses.length > 0)) {
+      return true;
+    }
+    // 3. เช็ก Description / Comment ที่มีการลงรายละเอียดไว้
+    if (iface.description && iface.description.trim() !== '' && iface.description.trim() !== '-') {
+      return true;
+    }
+    return false;
+  };
+
   // Process templates
   for (const t of templates) {
     const existing = existingMap.get(t.name);
+
     if (!existing) {
-      // Add missing interface
+      // Add missing interface - keep label and MTU from template (or t.label / t.mtu)
       const payload = {
         device: Number(deviceId),
         name: t.name,
         type: t.type?.value || t.type || '1000base-t',
         mgmt_only: Boolean(t.mgmt_only),
+        label: t.label || '',
         description: t.description || ''
       };
+      if (t.mtu) payload.mtu = Number(t.mtu);
+      
       const created = await fetchNetboxApi('/dcim/interfaces/', 'POST', payload);
       summary.added.push(created.name);
     } else {
       // Interface exists
       const targetType = t.type?.value || t.type;
       const currentType = existing.type?.value || existing.type;
+      
+      const payload = {};
       if (mode === 'force_override' || currentType !== targetType) {
-        // Update type / mgmt_only to match template
-        const payload = {
-          type: targetType,
-          mgmt_only: Boolean(t.mgmt_only)
-        };
+        payload.type = targetType;
+        payload.mgmt_only = Boolean(t.mgmt_only);
+      }
+      
+      // Preserve label from existing interface (or set template label if existing label is empty)
+      if (existing.label) {
+        payload.label = existing.label;
+      } else if (t.label) {
+        payload.label = t.label;
+      }
+
+      // Preserve description from existing interface
+      if (existing.description) {
+        payload.description = existing.description;
+      }
+
+      // Preserve MTU from existing interface (or fallback to template MTU)
+      const mtuVal = existing.mtu || t.mtu;
+      if (mtuVal) {
+        payload.mtu = Number(mtuVal);
+      }
+
+      // Preserve Mode (access/tagged/tagged-all) from existing interface
+      if (existing.mode?.value || existing.mode) {
+        payload.mode = existing.mode?.value || existing.mode;
+      }
+
+      // Preserve speed / type from existing interface if mode is not force_override
+      if (mode !== 'force_override' && currentType) {
+        payload.type = currentType;
+      }
+
+      // Preserve parent interface binding from existing interface (Sub-interface parent link)
+      if (existing.parent) {
+        payload.parent = existing.parent.id || existing.parent;
+      }
+
+      // ถ้าพบ Connection / IP / Description บนพอร์ตนี้ ให้ตั้งค่า port_status เป็น USE ทันที
+      try {
+        const availableCFs = await getAvailableCustomFields();
+        if (availableCFs.includes('port_status')) {
+          if (hasConnection(existing)) {
+            payload.custom_fields = { port_status: 'USE' };
+          }
+        }
+      } catch (cfErr) {}
+
+      if (Object.keys(payload).length > 0) {
         await fetchNetboxApi(`/dcim/interfaces/${existing.id}/`, 'PATCH', payload);
-        summary.updated.push(`${existing.name} (${currentType} -> ${targetType})`);
+        summary.updated.push(existing.name);
       } else {
         summary.skipped.push(existing.name);
       }
@@ -1677,15 +1748,27 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
 
         if (boundIps.length > 0) {
           // Smart Matching: 
-          // 1. Match by index number extracted from port name (e.g. Gi0/0/1 -> 1 -> Gi0/1/1 or first available template port with same index)
-          // 2. Match by exact/similar prefix or same position in list
+          // 1. Exact Slot/Subslot/Port Pattern Match (e.g. Gi0/0/1 -> "0/0/1" or Gi1/0/1 -> "1/0/1")
+          // 2. Exact Port Index Match (e.g. eth1 -> "1")
+          // 3. Fallback to Position Index in list
+          const slotPatternMatch = iface.name.match(/\d+[\/\.\:\-_]\d+(?:[\/\.\:\-_]\d+)*/);
+          const oldSlotPath = slotPatternMatch ? slotPatternMatch[0] : null;
+
           const oldIndexMatch = iface.name.match(/\d+$/);
           const oldIndex = oldIndexMatch ? oldIndexMatch[0] : null;
 
           let targetInterface = null;
 
-          if (oldIndex !== null) {
-            // Find template interface ending with the same index number
+          if (oldSlotPath) {
+            // Match template with exact same Slot/Subslot/Port path (e.g. "0/0/1" or "1/0/1")
+            const matchedTemplate = templates.find(t => t.name.includes(oldSlotPath));
+            if (matchedTemplate) {
+              targetInterface = updatedMap.get(matchedTemplate.name);
+            }
+          }
+
+          if (!targetInterface && oldIndex !== null) {
+            // Fallback to trailing port number match
             const matchedTemplate = templates.find(t => t.name.endsWith(oldIndex) || t.name.endsWith(`/${oldIndex}`));
             if (matchedTemplate) {
               targetInterface = updatedMap.get(matchedTemplate.name);
@@ -1858,9 +1941,14 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         oldIface.type?.value || oldIface.type || '1000base-t'
       );
 
-      // 2. Transfer full configurations (VLANs, Mode, MTU, Description)
+      // 2. Transfer full configurations (VLANs, Mode, MTU, Description) & Set custom_fields port_status to USE
       const updatePayload = {};
-      if (oldIface.description) updatePayload.description = oldIface.description;
+      
+      // นำ Description อันเดิมมาใช้ 100%
+      if (oldIface.description !== undefined) {
+        updatePayload.description = oldIface.description;
+      }
+
       if (oldIface.enabled !== undefined) updatePayload.enabled = oldIface.enabled;
       if (oldIface.mtu) updatePayload.mtu = oldIface.mtu;
       if (oldIface.mode?.value) updatePayload.mode = oldIface.mode.value;
@@ -1868,6 +1956,14 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       if (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
         updatePayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
       }
+
+      // เปลี่ยนเฉพาะพอร์ตปลายทางที่มี Interface เดิมถูกเลือกมาตกใส่ ให้ port_status = 'USE'
+      try {
+        const availableCFs = await getAvailableCustomFields();
+        if (availableCFs.includes('port_status')) {
+          updatePayload.custom_fields = { port_status: 'USE' };
+        }
+      } catch (cfErr) {}
 
       if (Object.keys(updatePayload).length > 0) {
         await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', updatePayload);
