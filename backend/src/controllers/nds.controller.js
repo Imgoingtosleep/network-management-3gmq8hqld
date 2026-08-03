@@ -279,7 +279,28 @@ async function listInterfaceTypeChoices(req, res, next) {
   } catch (err) { return next(err); }
 }
 
+async function replaceDevice(req, res, next) {
+  try {
+    const { deviceId, oldDeviceId, newDeviceId, newDeviceTypeId, interfaceMappings, vlanifOption } = req.body;
+    const targetDeviceId = deviceId || oldDeviceId;
+    const targetTypeId = newDeviceTypeId || newDeviceId;
+
+    if (!targetDeviceId) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุ deviceId (อุปกรณ์ที่ต้องการเปลี่ยน Model)' });
+    }
+    if (!targetTypeId) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุ newDeviceTypeId (Model ใหม่ที่ต้องการเปลี่ยนไปใช้)' });
+    }
+    if (!interfaceMappings || !Array.isArray(interfaceMappings) || interfaceMappings.length === 0) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุ interfaceMappings อย่างน้อย 1 รายการ' });
+    }
+    const data = await ndsService.replaceDevice(targetDeviceId, targetTypeId, interfaceMappings, vlanifOption);
+    return ok(res, data, 'เปลี่ยน Model อุปกรณ์และย้ายข้อมูลพอร์ตสำเร็จ');
+  } catch (err) { return next(err); }
+}
+
 module.exports = {
+  replaceDevice,
   listProjects,
   getProject,
   createProject,

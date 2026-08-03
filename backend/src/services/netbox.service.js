@@ -1724,7 +1724,213 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
   return summary;
 }
 
+/**
+ * Replaces the model (Device Type) of an existing device and maps interfaces.
+ * @param {number} deviceId - The target device ID.
+ * @param {number} newDeviceTypeId - The new Device Type ID.
+ * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
+ * @returns {Promise<Object>} Summary of replace model actions.
+ */
+async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115') {
+  const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [] };
+
+  // 1. Update Device Type on the device
+  try {
+    await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
+      device_type: parseInt(newDeviceTypeId)
+    });
+    summary.deviceUpdated = true;
+  } catch (err) {
+    throw new Error(`ไม่สามารถอัปเดต Model อุปกรณ์ได้: ${err.message}`);
+  }
+
+  // Handle Vlanif creation & automatic IP/Config migration from old Vlanif interfaces
+  if (vlanifOption && vlanifOption !== 'none') {
+    const targetVlanifName = vlanifOption === 'vlanif100' ? 'Vlanif100' : 'Vlanif115';
+    try {
+      const targetVlanifId = await getOrCreateInterface(deviceId, targetVlanifName, 'virtual');
+      summary.vlanifCreated.push(targetVlanifName);
+
+      const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+      const oldVlanifs = allDeviceIfaces.filter(i => {
+        const nameLower = (i.name || '').toLowerCase();
+        return nameLower.includes('vlan') && i.id !== targetVlanifId;
+      });
+
+      for (const oldVlanif of oldVlanifs) {
+        if (oldVlanif.description) {
+          await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
+        }
+
+        const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
+        for (const ipObj of vlanifIps) {
+          await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+            assigned_object_type: 'dcim.interface',
+            assigned_object_id: targetVlanifId
+          });
+          summary.migrated.push({
+            oldInterface: oldVlanif.name,
+            newInterface: targetVlanifName,
+            ipsTransferred: 1,
+            ipAddress: ipObj.address
+          });
+        }
+
+        try {
+          await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
+        } catch (delVifErr) {
+          console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+        }
+      }
+    } catch (vifErr) {
+      console.warn(`Failed to process Vlanif migration to ${targetVlanifName}:`, vifErr.message);
+    }
+  }
+
+  // Handle Loopback/Management Interfaces
+  try {
+    const allIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+    const loopbackIfaces = allIfaces.filter(i => {
+      const nameLower = (i.name || '').toLowerCase();
+      const typeLower = (i.type?.value || i.type || '').toLowerCase();
+      return nameLower.includes('loopback') || typeLower.includes('loopback') || nameLower.includes('mgmt') || nameLower.includes('management');
+    });
+
+    for (const lbIface of loopbackIfaces) {
+      const lbIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${lbIface.id}`);
+      summary.migrated.push({
+        oldInterface: lbIface.name,
+        newInterface: lbIface.name,
+        ipsTransferred: lbIps.length,
+        status: 'Preserved & Retained Loopback/Mgmt IP'
+      });
+    }
+  } catch (lbErr) {
+    console.warn('Failed to process Loopback interfaces preservation:', lbErr.message);
+  }
+
+  // ===== FIX 4: Separate Main Physical Interfaces & Sub-Interfaces (Parent-First) =====
+  const fetchedMappings = [];
+  for (const m of interfaceMappings) {
+    try {
+      const ifaceObj = await getSingle(`/dcim/interfaces/${m.oldInterfaceId}/`);
+      if (ifaceObj) {
+        fetchedMappings.push({ ...m, ifaceObj });
+      }
+    } catch (e) {
+      summary.skipped.push({ interface: m.oldInterfaceId, reason: 'ไม่พบข้อมูล Interface' });
+    }
+  }
+
+  // Sort: Parent (Main Physical) interfaces FIRST, Sub-interfaces SECOND
+  fetchedMappings.sort((a, b) => {
+    const aIsSub = a.ifaceObj.name.includes('.') || !!a.ifaceObj.parent;
+    const bIsSub = b.ifaceObj.name.includes('.') || !!b.ifaceObj.parent;
+    return aIsSub === bIsSub ? 0 : aIsSub ? 1 : -1;
+  });
+
+  // ===== FIX 2: Rename Old Interfaces to avoid Name Collision =====
+  for (const item of fetchedMappings) {
+    try {
+      const tempName = `${item.ifaceObj.name}_OLD_TEMP_${Date.now()}`;
+      await fetchNetboxApi(`/dcim/interfaces/${item.ifaceObj.id}/`, 'PATCH', { name: tempName });
+      item.tempName = tempName;
+    } catch (renameErr) {
+      console.warn(`Could not rename old interface ${item.ifaceObj.name} to temp name:`, renameErr.message);
+    }
+  }
+
+  // ===== FIX 3: Transfer Configs & IPs with Safe Fallback & Detailed Logging =====
+  for (const item of fetchedMappings) {
+    const oldIface = item.ifaceObj;
+    const targetName = item.newInterfaceName;
+
+    if (!targetName) {
+      summary.skipped.push({ interface: oldIface.name, reason: 'ไม่ได้เลือก Interface ปลายทาง' });
+      continue;
+    }
+
+    try {
+      // 1. Create or Find target interface on device
+      const newIfaceId = await getOrCreateInterface(
+        deviceId,
+        targetName,
+        oldIface.type?.value || oldIface.type || '1000base-t'
+      );
+
+      // 2. Transfer full configurations (VLANs, Mode, MTU, Description)
+      const updatePayload = {};
+      if (oldIface.description) updatePayload.description = oldIface.description;
+      if (oldIface.enabled !== undefined) updatePayload.enabled = oldIface.enabled;
+      if (oldIface.mtu) updatePayload.mtu = oldIface.mtu;
+      if (oldIface.mode?.value) updatePayload.mode = oldIface.mode.value;
+      if (oldIface.untagged_vlan?.id) updatePayload.untagged_vlan = oldIface.untagged_vlan.id;
+      if (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
+        updatePayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', updatePayload);
+      }
+
+      // 3. Disconnect cable if attached on old interface to avoid NetBox cable lock errors
+      if (oldIface.cable?.id) {
+        try {
+          await fetchNetboxApi(`/dcim/cables/${oldIface.cable.id}/`, 'DELETE');
+        } catch (cableDelErr) {
+          console.warn(`Failed to disconnect cable on ${oldIface.name}:`, cableDelErr.message);
+        }
+      }
+
+      // 4. Transfer all bound IP addresses
+      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
+      for (const ip of boundIps) {
+        await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
+          assigned_object_type: 'dcim.interface',
+          assigned_object_id: newIfaceId
+        });
+      }
+
+      // 4. Delete old temporary interface
+      try {
+        await fetchNetboxApi(`/dcim/interfaces/${oldIface.id}/`, 'DELETE');
+      } catch (delErr) {
+        console.warn(`Cleanup old interface ${oldIface.name} failed:`, delErr.message);
+      }
+
+      summary.migrated.push({
+        oldInterface: oldIface.name,
+        newInterface: targetName,
+        ipsTransferred: boundIps.length,
+        propertiesCopied: Object.keys(updatePayload)
+      });
+
+    } catch (err) {
+      summary.errors.push({
+        interface: oldIface.name,
+        error: err.message
+      });
+    }
+  }
+
+  // Clear memory cache after operations
+  memoryCache.devices.data = null;
+  return summary;
+}
+
+/**
+ * Replaces/migrates interfaces from an old device to a new device.
+ * @param {number} oldDeviceId - The source device ID.
+ * @param {number} newDeviceId - The target device ID.
+ * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
+ * @returns {Promise<Object>} Summary of migration actions.
+ */
+async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption) {
+  return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption);
+}
+
 module.exports = {
+  replaceDevice,
   getDevices,
   getPrefixes,
   getSites,

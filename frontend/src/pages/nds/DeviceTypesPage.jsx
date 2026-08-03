@@ -246,7 +246,113 @@ export default function DeviceTypesPage() {
     selectedPresetId: '' // Selected preset template
   });
 
-  // Custom Port Templates state (for direct assignment modal)
+  // Import Spec state
+  const [importSpecText, setImportSpecText] = useState('');
+  const [editableParsedInterfaces, setEditableParsedInterfaces] = useState([]);
+
+  // Helper parser for Import Spec
+  const parseSpecText = (text) => {
+    if (!text) return { modelName: '', interfaces: [] };
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return { modelName: '', interfaces: [] };
+
+    let modelName = '';
+    let currentType = '1000base-t';
+    let currentLabel = 'copper';
+    const interfaces = [];
+
+    // Map keywords to NetBox interface types using system choices & fallback groups
+    const mapTypeHeader = (headerText) => {
+      const h = (headerText || '').toLowerCase();
+
+      // Explicit SFP / SFP+ check
+      if (h.includes('sfp+') && (h.includes('10ge') || h.includes('10g'))) {
+        return { type: '10gbase-x-sfpp', label: 'fiber' };
+      }
+      if (h.includes('sfp+') && (h.includes('1ge') || h.includes('1g'))) {
+        return { type: '1000base-x-sfp', label: 'fiber' }; // SFP+ 1GE is SFP 1GE
+      }
+      if (h.includes('sfp') && !h.includes('sfp+')) {
+        return { type: '1000base-x-sfp', label: 'fiber' };
+      }
+
+      // Collect all available NDS choices
+      let allChoices = [];
+      if (interfaceTypeChoices && interfaceTypeChoices.length > 0) {
+        allChoices = interfaceTypeChoices.map(c => ({
+          value: c.value,
+          label: c.display_name || c.label || c.value
+        }));
+      } else {
+        INTERFACE_TYPE_GROUPS.forEach(g => {
+          allChoices = allChoices.concat(g.options || []);
+        });
+      }
+
+      // Match against available choices in NDS/NetBox
+      const cleanH = h.replace(/[^a-z0-9]/g, '');
+      const match = allChoices.find(c => {
+        const val = (c.value || '').toLowerCase();
+        const lbl = (c.label || '').toLowerCase();
+        const cleanVal = val.replace(/[^a-z0-9]/g, '');
+        const cleanLbl = lbl.replace(/[^a-z0-9]/g, '');
+        return val === h || lbl === h || (cleanVal && cleanVal === cleanH) || (cleanVal && cleanH.includes(cleanVal));
+      });
+
+      if (match) {
+        const isFiber = h.includes('fiber') || match.value.includes('base-x') || match.value.includes('sfp') || match.value.includes('qsfp') || match.value.includes('cfp');
+        return { type: match.value, label: isFiber ? 'fiber' : 'copper' };
+      }
+
+      // Default fallbacks
+      if (h.includes('10g')) return { type: '10gbase-t', label: 'copper' };
+      if (h.includes('100base')) return { type: '100base-tx', label: 'copper' };
+      return { type: '1000base-t', label: h.includes('fiber') ? 'fiber' : 'copper' };
+    };
+
+    lines.forEach((line, idx) => {
+      if (idx === 0 && !line.toLowerCase().startsWith('interface') && !line.toLowerCase().includes('base')) {
+        modelName = line;
+        return;
+      }
+
+      if (line.toLowerCase().startsWith('interface')) {
+        const parts = line.split(/\s+/);
+        const name = parts.length > 1 ? parts[1] : line;
+        interfaces.push({
+          name: name,
+          type: currentType,
+          label: currentLabel
+        });
+      } else {
+        // Type header line
+        const mapped = mapTypeHeader(line);
+        currentType = mapped.type;
+        currentLabel = mapped.label;
+      }
+    });
+
+    return { modelName, interfaces };
+  };
+
+  const handleImportTextChange = (e) => {
+    const text = e.target.value;
+    setImportSpecText(text);
+    const parsed = parseSpecText(text);
+    setEditableParsedInterfaces(parsed.interfaces);
+  };
+
+  const handleUpdateParsedInterface = (index, field, value) => {
+    setEditableParsedInterfaces(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const handleRemoveParsedInterface = (index) => {
+    setEditableParsedInterfaces(prev => prev.filter((_, idx) => idx !== index));
+  };
   const [portRanges, setPortRanges] = useState([
     { prefix: 'GigabitEthernet0/0/', start: 0, count: 20, type: '1000base-x-sfp', label: 'fiber' }
   ]);
@@ -570,6 +676,14 @@ export default function DeviceTypesPage() {
           type: r.type,
           label: r.label || 'fiber'
         }))
+      };
+    } else if (portSourceMode === 'import_spec') {
+      if (!importSpecText.trim() || editableParsedInterfaces.length === 0) {
+        setSaveError('กรุณาวางข้อความ/CSV Specification ที่ถูกต้อง และมีพอร์ตอย่างน้อย 1 พอร์ต');
+        return;
+      }
+      payload = {
+        interfaces: editableParsedInterfaces
       };
     } else if (portSourceMode === 'clone') {
       if (!selectedSourceDeviceTypeId) {
@@ -990,6 +1104,17 @@ export default function DeviceTypesPage() {
                 >
                   คัดลอกพอร์ตจากรุ่นอื่น (Clone Device Type)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setPortSourceMode('import_spec')}
+                  className={`pb-1 text-xs font-semibold border-b-2 transition-all ${
+                    portSourceMode === 'import_spec'
+                      ? 'border-nds text-nds'
+                      : 'border-transparent text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  นำเข้าจากข้อความ / CSV (Import Spec)
+                </button>
               </div>
 
               {/* Conditional Rendering of Method inputs */}
@@ -1140,6 +1265,114 @@ export default function DeviceTypesPage() {
                             </div>
                           ))}
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {portSourceMode === 'import_spec' && (
+                <div className="space-y-4 border border-base-600/30 rounded-xl bg-base-950/40 p-4 animate-in fade-in duration-200">
+                  <div>
+                    <label className="block text-xs font-mono text-ink-400 mb-1">
+                      วางข้อความ / CSV Specification (Model & Interface Lists) <span className="text-red-500">*</span>
+                    </label>
+                    <p className="text-[11px] text-ink-500 mb-2">
+                      รองรับหัวข้อชนิดพอร์ต เช่น <code className="text-nds font-mono">SFP+ 1GE</code> (➔ SFP 1GE), <code className="text-nds font-mono">SFP+ 10GE</code> (➔ SFP+ 10GE), <code className="text-nds font-mono">1000Base-T UTP</code>
+                    </p>
+                    <textarea
+                      rows={8}
+                      value={importSpecText}
+                      onChange={handleImportTextChange}
+                      placeholder={`S5731-S24T4X\n1000Base-T UTP\ninterface GigabitEthernet0/0/1\ninterface GigabitEthernet0/0/2\n\nSFP+ 10GE fiber\ninterface XGigabitEthernet0/0/1\ninterface XGigabitEthernet0/0/2`}
+                      className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-xs font-mono text-ink-100 placeholder-ink-600 focus:border-nds focus:outline-none"
+                    />
+                  </div>
+
+                  {importSpecText.trim() && (
+                    <div className="rounded-lg bg-base-950 p-4 space-y-3 border border-base-600/30">
+                      <div className="flex justify-between items-center border-b border-base-600/20 pb-2">
+                        <span className="text-xs font-mono font-semibold text-ink-200">
+                          พอร์ตที่สกัดได้จากข้อความ ({editableParsedInterfaces.length} พอร์ต - สามารถแก้ไขรายละเอียดได้):
+                        </span>
+                        {parseSpecText(importSpecText).modelName && (
+                          <span className="text-xs font-mono text-nds bg-nds/10 border border-nds/20 px-2 py-0.5 rounded">
+                            Model: {parseSpecText(importSpecText).modelName}
+                          </span>
+                        )}
+                      </div>
+                      {editableParsedInterfaces.length === 0 ? (
+                        <div className="text-xs font-mono text-amber-400">ยังไม่พบรูปแบบพอร์ตที่สกัดได้จากข้อความ</div>
+                      ) : (
+                        <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                          <table className="w-full text-left text-xs font-mono">
+                            <thead className="bg-base-900 sticky top-0">
+                              <tr className="text-ink-500 uppercase border-b border-base-600/30">
+                                <th className="p-2">#</th>
+                                <th className="p-2">Interface Name</th>
+                                <th className="p-2">Port Type</th>
+                                <th className="p-2 w-28">Label</th>
+                                <th className="p-2 w-12 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-base-600/10">
+                              {editableParsedInterfaces.map((it, idx) => (
+                                <tr key={idx} className="hover:bg-base-900/40">
+                                  <td className="p-2 text-ink-500">{idx + 1}</td>
+                                  <td className="p-2">
+                                    <input
+                                      type="text"
+                                      value={it.name}
+                                      onChange={(e) => handleUpdateParsedInterface(idx, 'name', e.target.value)}
+                                      className="w-full rounded bg-base-900 border border-base-600 px-2 py-1 text-xs text-nds font-mono focus:border-nds focus:outline-none"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <select
+                                      value={it.type}
+                                      onChange={(e) => handleUpdateParsedInterface(idx, 'type', e.target.value)}
+                                      className="w-full rounded bg-base-900 border border-base-600 px-2 py-1 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                                    >
+                                      {filterPortTypeGroups(
+                                        interfaceTypeChoices.length > 0 ? groupInterfaceChoices(interfaceTypeChoices) : INTERFACE_TYPE_GROUPS,
+                                        searchPortTypeQuery
+                                      ).map((group) => (
+                                        <optgroup key={group.label} label={group.label} className="bg-base-900 text-ink-300">
+                                          {group.options.map((opt) => (
+                                            <option key={opt.value} value={opt.value} className="bg-base-950 text-ink-100">
+                                              {opt.display_name || opt.label || opt.value}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="p-2">
+                                    <select
+                                      value={it.label || 'copper'}
+                                      onChange={(e) => handleUpdateParsedInterface(idx, 'label', e.target.value)}
+                                      className="w-full rounded bg-base-900 border border-base-600 px-2 py-1 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                                    >
+                                      <option value="copper">copper</option>
+                                      <option value="fiber">fiber</option>
+                                      <option value="combo">combo</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveParsedInterface(idx)}
+                                      className="p-1 text-red-500 hover:bg-red-500/10 rounded transition"
+                                      title="ลบพอร์ตนี้"
+                                    >
+                                      ✕
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

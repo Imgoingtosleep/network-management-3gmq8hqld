@@ -7,6 +7,7 @@ import DeviceTypesPage from '../pages/nds/DeviceTypesPage.jsx';
 import SyncInterfacesPage from '../pages/nds/SyncInterfacesPage.jsx';
 import PrefixesPage from '../pages/nds/PrefixesPage.jsx';
 import DomainsPage from '../pages/nds/DomainsPage.jsx';
+import ReplaceDevicePage from '../pages/nds/ReplaceDevicePage.jsx';
 import CDSLayout from '../pages/cds/CDSLayout.jsx';
 import CDSDashboardPage from '../pages/cds/CDSDashboardPage.jsx';
 import CDSSearchReservePage from '../pages/cds/CDSSearchReservePage.jsx';
@@ -51,6 +52,7 @@ export default function AppRoutes() {
             <Route path="devices" element={<DevicesPage />} />
             <Route path="device-types" element={<DeviceTypesPage />} />
             <Route path="sync-interfaces" element={<SyncInterfacesPage />} />
+            <Route path="replace-device" element={<ReplaceDevicePage />} />
             <Route path="prefixes" element={<PrefixesPage />} />
             <Route path="domains" element={<DomainsPage />} />
             <Route path="vlans" element={<NDSVlansPage />} />

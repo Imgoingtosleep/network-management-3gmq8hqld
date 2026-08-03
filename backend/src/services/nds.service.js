@@ -323,7 +323,12 @@ const getRegions = async () => {
   }
 };
 
+const replaceDevice = async (oldDeviceId, newDeviceId, interfaceMappings, vlanifOption) => {
+  return netboxService.replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption);
+};
+
 module.exports = {
+  replaceDevice,
   getAllProjects,
   getProjectById,
   createProject,

@@ -38,6 +38,7 @@ export const ndsApi = {
   getVirtualChassises: () => axiosClient.get('/nds/virtual-chassises'),
   getTags: () => axiosClient.get('/nds/tags'),
   getVlans: () => axiosClient.get('/nds/vlans'),
+  replaceDevice: (payload) => axiosClient.post('/nds/devices/replace', payload),
 
   // CRUD Bindings
   sites: makeCrudApi('sites'),
