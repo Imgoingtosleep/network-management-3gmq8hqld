@@ -87,11 +87,11 @@ export default function ReplaceDevicePage() {
     }
   };
 
-  // 3. คำนวณการจับคู่อัตโนมัติ (Auto Match - กรองเอาเฉพาะ Physical Interfaces)
+  // 3. คำนวณการจับคู่อัตโนมัติ (Smart Auto Match)
   const generateMappings = (oldIfaces, targetTemplates) => {
     if (!oldIfaces.length) return;
     
-    // กรองพวก Virtual Interface เช่น Vlanif, Loopback, Bridge, LAG ออก ไม่ให้แสดงในตารางย้าย Interface
+    // กรองพวก Virtual Interface ออก
     const physicalOnly = oldIfaces.filter(oldIf => {
       const nameLower = (oldIf.name || '').toLowerCase();
       const typeLower = (oldIf.type?.value || oldIf.type?.label || oldIf.type || '').toLowerCase();
@@ -99,15 +99,14 @@ export default function ReplaceDevicePage() {
       return !isVirtual;
     });
 
-    const mappings = physicalOnly.map(oldIf => {
-      // ลองค้นหาชื่อพอร์ตตรงกันจาก Model ใหม่
-      const matchingTemplate = targetTemplates.find(tmpl => tmpl.name === oldIf.name);
-      
+    const mappings = physicalOnly.map((oldIf) => {
+      const oldName = oldIf.name;
+
       return {
         oldInterfaceId: oldIf.id,
-        oldInterfaceName: oldIf.name,
-        newInterfaceName: matchingTemplate ? matchingTemplate.name : (targetTemplates[0]?.name || oldIf.name),
-        selected: true, // ค่าเริ่มต้นเลือก Physical Interface ทั้งหมด
+        oldInterfaceName: oldName,
+        newInterfaceName: '', // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ตปลายทาง
+        selected: false,      // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ต (ผู้ใช้เลือกเอง)
         description: oldIf.description || '',
         type: oldIf.type?.label || oldIf.type?.value || 'Physical',
         untagged_vlan: oldIf.untagged_vlan?.vid ? `VLAN ${oldIf.untagged_vlan.vid}` : null
@@ -116,8 +115,19 @@ export default function ReplaceDevicePage() {
     setInterfaceMappings(mappings);
   };
 
+  const maxAllowedSelection = newDeviceTypeTemplates.length;
+
   const toggleMappingSelection = (index) => {
     const newMappings = [...interfaceMappings];
+    const currentlySelectedCount = newMappings.filter(m => m.selected).length;
+    const targetItem = newMappings[index];
+
+    // Check if trying to select a new port while already reaching the limit
+    if (!targetItem.selected && maxAllowedSelection > 0 && currentlySelectedCount >= maxAllowedSelection) {
+      alert(`ไม่สามารถเลือกพอร์ตเพิ่มได้: Model ใหม่มีจำนวน Interface สูงสุดเพียง ${maxAllowedSelection} พอร์ต`);
+      return;
+    }
+
     newMappings[index].selected = !newMappings[index].selected;
     setInterfaceMappings(newMappings);
   };
@@ -130,7 +140,15 @@ export default function ReplaceDevicePage() {
   };
 
   const selectAllPhysical = (select) => {
-    setInterfaceMappings(interfaceMappings.map(m => (!m.isVirtual ? { ...m, selected: select } : m)));
+    if (select && maxAllowedSelection > 0) {
+      // Select only up to maxAllowedSelection ports
+      setInterfaceMappings(interfaceMappings.map((m, idx) => ({
+        ...m,
+        selected: idx < maxAllowedSelection
+      })));
+    } else {
+      setInterfaceMappings(interfaceMappings.map(m => ({ ...m, selected: false })));
+    }
   };
 
   const deselectAll = () => {
@@ -453,10 +471,19 @@ export default function ReplaceDevicePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-base-700 pb-4">
             <div>
               <h3 className="text-base font-bold text-ink-100 flex items-center gap-2">
-                <span>🔀</span> จับคู่การย้าย Interface ({selectedCount} / {interfaceMappings.length} พอร์ตถูกเลือก)
+                <span>🔀</span> จับคู่การย้าย Interface 
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold ${
+                  selectedCount === maxAllowedSelection 
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : selectedCount > maxAllowedSelection
+                      ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                      : 'bg-nds/20 text-nds border border-nds/40'
+                }`}>
+                  เลือกแล้ว {selectedCount} / โควตาสูงสุด {maxAllowedSelection} พอร์ต (จาก Model ใหม่)
+                </span>
               </h3>
               <p className="text-xs text-ink-400 mt-0.5">
-                เลือกพอร์ตบน Model ใหม่ที่จะรองรับข้อมูล (Description/VLAN/IP) จากพอร์ตของอุปกรณ์เดิม
+                เลือกพอร์ตบน Model ใหม่ที่จะรองรับข้อมูล (ระบบจำกัดจำนวนที่ติ๊กเลือกได้ไม่เกิน {maxAllowedSelection} พอร์ตตามพอร์ตรุ่นใหม่)
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -472,6 +499,17 @@ export default function ReplaceDevicePage() {
               >
                 ยกเลิกทั้งหมด
               </button>
+            </div>
+          </div>
+
+          {/* Warning Banner for Unselected Ports Data Loss */}
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
+            <span className="text-base shrink-0">⚠️</span>
+            <div>
+              <span className="font-bold block text-amber-200 mb-0.5">คำเตือนสำคัญเกี่ยวกับข้อมูลพอร์ต:</span>
+              <p className="text-amber-300/90 leading-relaxed">
+                พอร์ตของอุปกรณ์เดิมที่ **ไม่ถูกเลือก (ไม่ได้ติ๊กถูก)** ข้อมูลเดิม (เช่น Description, IP Address, Configs) **จะถูกลบทิ้งออกจากอุปกรณ์ในระบบ NetBox โดยอัตโนมัติ** หลังจากการดำเนินการ Replace Model สำเร็จ กรุณาตรวจสอบให้แน่ใจว่าได้เลือกพอร์ตที่ต้องการเก็บข้อมูลครบถ้วนแล้ว
+              </p>
             </div>
           </div>
 

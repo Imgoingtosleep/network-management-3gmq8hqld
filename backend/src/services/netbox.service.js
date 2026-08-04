@@ -2082,6 +2082,34 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
+  // ===== FIX 5: Delete Unmapped/Unselected Old Physical Interfaces =====
+  try {
+    const remainingIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+    const mappedOldIds = new Set(interfaceMappings.map(m => Number(m.oldInterfaceId)));
+
+    for (const iface of remainingIfaces) {
+      const nameLower = (iface.name || '').toLowerCase();
+      const typeLower = (iface.type?.value || iface.type || '').toLowerCase();
+      const isVirtual = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+
+      // If it's a physical interface or an old temp interface, and it was NOT mapped/selected to a new port -> DELETE IT
+      if (!isVirtual && (mappedOldIds.has(iface.id) || iface.name.includes('_OLD_TEMP_'))) {
+        try {
+          if (iface.cable?.id) {
+            await fetchNetboxApi(`/dcim/cables/${iface.cable.id}/`, 'DELETE');
+          }
+          await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
+          summary.deleted = summary.deleted || [];
+          summary.deleted.push(iface.name);
+        } catch (delErr) {
+          console.warn(`Failed to delete unmapped old interface ${iface.name}:`, delErr.message);
+        }
+      }
+    }
+  } catch (cleanErr) {
+    console.warn('Failed to cleanup unmapped old interfaces:', cleanErr.message);
+  }
+
   // Clear memory cache after operations
   memoryCache.devices.data = null;
   return summary;
