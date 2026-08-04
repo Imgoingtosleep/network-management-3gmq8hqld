@@ -1594,8 +1594,11 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
   const deviceTypeId = device.device_type.id;
 
   // Fetch interface templates of the device type
-  const templates = await fetchAllPages(`/dcim/interface-templates/?device_type_id=${deviceTypeId}`);
+  const allTemplates = await fetchAllPages(`/dcim/interface-templates/?device_type_id=${deviceTypeId}`);
   
+  // Filter out MEth (Management Ethernet) ports — e.g. MEth0/0/0, MEth0/0/1
+  const templates = allTemplates.filter(t => !/^MEth\d/i.test(t.name));
+
   // Fetch existing interfaces of the device
   const currentInterfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
 
