@@ -367,11 +367,30 @@ module.exports = {
 
       const results = [];
       for (const id of idsToSync) {
-        const resObj = await netboxService.syncDeviceInterfaces(id, { mode, removeUnused });
-        results.push(resObj);
+        try {
+          const resObj = await netboxService.syncDeviceInterfaces(id, { mode, removeUnused });
+          results.push({ ...resObj, success: true });
+        } catch (deviceErr) {
+          // Capture per-device error instead of failing the entire batch
+          results.push({
+            deviceName: `Device ID: ${id}`,
+            success: false,
+            error: deviceErr.message || 'Unknown error occurred during sync',
+            added: [],
+            updated: [],
+            deleted: [],
+            skipped: []
+          });
+        }
       }
 
-      return ok(res, results, `ซิงค์อินเตอร์เฟสกับ NetBox เรียบร้อยแล้ว (${results.length} อุปกรณ์)`);
+      const failedCount = results.filter(r => !r.success).length;
+      const successCount = results.filter(r => r.success).length;
+      const message = failedCount > 0
+        ? `ซิงค์เสร็จสิ้น: สำเร็จ ${successCount} / ล้มเหลว ${failedCount} จากทั้งหมด ${results.length} อุปกรณ์`
+        : `ซิงค์อินเตอร์เฟสกับ NetBox เรียบร้อยแล้ว (${results.length} อุปกรณ์)`;
+
+      return ok(res, results, message);
     } catch (err) {
       return next(err);
     }

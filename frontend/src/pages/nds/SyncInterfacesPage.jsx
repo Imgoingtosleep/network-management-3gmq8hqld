@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import NDSPageContainer from '../../components/NDSPageContainer.jsx';
 import { ndsApi } from '../../api/nds.api.js';
 
@@ -15,6 +15,10 @@ export default function SyncInterfacesPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Progress tracking state
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, currentDeviceName: '' });
+  const abortRef = useRef(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -108,24 +112,76 @@ export default function SyncInterfacesPage() {
     setSyncing(true);
     setSyncLogs(null);
     setErrorMessage('');
+    abortRef.current = false;
 
-    try {
-      const payload = {
-        deviceIds: selectedDeviceIds,
-        mode: syncMode,
-        removeUnused: removeUnused
-      };
-      const res = await ndsApi.syncDeviceInterfaces(payload);
-      const logs = res.data?.data || res.data || [];
-      setSyncLogs(Array.isArray(logs) ? logs : []);
-      alert('ซิงค์ข้อมูล Interface เรียบร้อยแล้ว!');
-    } catch (err) {
-      console.error('Error during bulk sync:', err);
-      setErrorMessage(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดขณะซิงค์ข้อมูล');
-    } finally {
-      setSyncing(false);
+    const total = selectedDeviceIds.length;
+    setSyncProgress({ current: 0, total, currentDeviceName: 'กำลังเริ่มต้น...' });
+
+    const allResults = [];
+
+    for (let i = 0; i < total; i++) {
+      if (abortRef.current) break;
+
+      const deviceId = selectedDeviceIds[i];
+      // Find device name for progress display
+      const deviceInfo = devices.find(d => d.id === deviceId);
+      const deviceName = deviceInfo?.name || deviceInfo?.display || `Device ID: ${deviceId}`;
+
+      setSyncProgress({ current: i, total, currentDeviceName: deviceName });
+
+      try {
+        const payload = {
+          deviceIds: [deviceId],
+          mode: syncMode,
+          removeUnused: removeUnused
+        };
+        const res = await ndsApi.syncDeviceInterfaces(payload);
+        const logs = res.data?.data || res.data || [];
+        const deviceLogs = Array.isArray(logs) ? logs : [logs];
+        allResults.push(...deviceLogs);
+      } catch (err) {
+        console.error(`Error syncing device ${deviceName}:`, err);
+        // Extract detailed error message
+        const errMsg = err.response?.data?.message 
+          || err.response?.data?.error 
+          || err.message 
+          || 'Unknown error';
+        allResults.push({
+          deviceName: deviceName,
+          deviceTypeName: deviceInfo?.device_type?.model || deviceInfo?.device_type?.display || '-',
+          success: false,
+          error: errMsg,
+          added: [],
+          updated: [],
+          deleted: [],
+          skipped: []
+        });
+      }
+
+      // Update logs in real-time
+      setSyncLogs([...allResults]);
     }
+
+    // Final progress
+    setSyncProgress({ current: total, total, currentDeviceName: 'เสร็จสิ้น' });
+
+    const failedCount = allResults.filter(r => r.success === false).length;
+    const successCount = allResults.length - failedCount;
+
+    if (failedCount > 0) {
+      setErrorMessage(`ซิงค์เสร็จสิ้น: สำเร็จ ${successCount} / ล้มเหลว ${failedCount} จากทั้งหมด ${allResults.length} อุปกรณ์`);
+    }
+
+    setSyncing(false);
   };
+
+  const handleAbortSync = () => {
+    abortRef.current = true;
+  };
+
+  const progressPercent = syncProgress.total > 0 
+    ? Math.round((syncProgress.current / syncProgress.total) * 100) 
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -153,6 +209,41 @@ export default function SyncInterfacesPage() {
         {errorMessage && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
             {errorMessage}
+          </div>
+        )}
+
+        {/* Progress Bar (visible during sync) */}
+        {syncing && (
+          <div className="rounded-xl border border-nds/30 bg-base-800/80 p-5 space-y-3 backdrop-blur-md">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-nds flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-nds animate-pulse" />
+                กำลัง Sync...
+              </h3>
+              <button
+                onClick={handleAbortSync}
+                className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20 transition"
+              >
+                ยกเลิก
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-3 rounded-full bg-base-900 overflow-hidden border border-base-700">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-nds/80 to-nds transition-all duration-500 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <span className="text-sm font-bold text-ink-100 tabular-nums min-w-[4rem] text-right">
+                {syncProgress.current} / {syncProgress.total}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-ink-400">
+              <span>
+                กำลังประมวลผล: <span className="text-ink-200 font-medium">{syncProgress.currentDeviceName}</span>
+              </span>
+              <span>{progressPercent}%</span>
+            </div>
           </div>
         )}
 
@@ -244,7 +335,7 @@ export default function SyncInterfacesPage() {
                 />
                 <div>
                   <span className="text-sm font-medium text-ink-100">Sync & Update Interface Types</span>
-                  <p className="text-xs text-ink-400">เพิ่มพอร์ตใหม่ + ปรับเปลี่ยน Type (เช่น 1GE -> 10GE) ของพอร์ตเดิมให้ตรง Model</p>
+                  <p className="text-xs text-ink-400">เพิ่มพอร์ตใหม่ + ปรับเปลี่ยน Type (เช่น 1GE -&gt; 10GE) ของพอร์ตเดิมให้ตรง Model</p>
                 </div>
               </label>
 
@@ -284,7 +375,7 @@ export default function SyncInterfacesPage() {
               >
                 {syncing ? (
                   <>
-                    กำลัง Sync ข้อมูลกับ NetBox...
+                    กำลัง Sync... ({syncProgress.current}/{syncProgress.total})
                   </>
                 ) : (
                   <>
@@ -387,27 +478,66 @@ export default function SyncInterfacesPage() {
         {/* Sync Logs Result Section */}
         {syncLogs && (
           <div className="rounded-xl border border-emerald-500/30 bg-base-900 p-6 space-y-4">
-            <h3 className="text-md font-bold text-emerald-400 flex items-center gap-2">
-              ผลลัพธ์การ Sync กับ NetBox (Sync Summary)
-            </h3>
-            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-md font-bold text-emerald-400 flex items-center gap-2">
+                ผลลัพธ์การ Sync กับ NetBox (Sync Summary)
+              </h3>
+              {/* Summary counters */}
+              <div className="flex items-center gap-3 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-emerald-400 font-medium">
+                  ✓ สำเร็จ {syncLogs.filter(l => l.success !== false).length}
+                </span>
+                {syncLogs.filter(l => l.success === false).length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/20 px-2.5 py-1 text-red-400 font-medium">
+                    ✗ ล้มเหลว {syncLogs.filter(l => l.success === false).length}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-2">
               {syncLogs.map((log, idx) => (
-                <div key={idx} className="rounded-lg border border-base-700 bg-base-800/80 p-4 font-mono text-xs">
+                <div key={idx} className={`rounded-lg border p-4 font-mono text-xs ${
+                  log.success === false
+                    ? 'border-red-500/30 bg-red-500/5'
+                    : 'border-base-700 bg-base-800/80'
+                }`}>
                   <div className="flex items-center justify-between border-b border-base-700 pb-2 mb-2">
-                    <span className="font-bold text-ink-100 text-sm">{log.deviceName}</span>
+                    <span className="font-bold text-ink-100 text-sm flex items-center gap-2">
+                      {log.success === false ? (
+                        <span className="inline-block w-2 h-2 rounded-full bg-red-500" />
+                      ) : (
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                      )}
+                      {log.deviceName}
+                    </span>
                     <span className="text-nds">{log.deviceTypeName}</span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div className="text-emerald-400">
-                      เพิ่มใหม่ ({log.added?.length || 0}): {log.added?.join(', ') || 'ไม่มี'}
+
+                  {/* Error message for failed devices */}
+                  {log.success === false && log.error && (
+                    <div className="rounded-md border border-red-500/20 bg-red-500/10 p-3 mb-2 text-red-400 flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5">⚠</span>
+                      <div>
+                        <div className="font-semibold text-red-300 mb-0.5">Sync ล้มเหลว</div>
+                        <div className="text-red-400/90 break-all">{log.error}</div>
+                      </div>
                     </div>
-                    <div className="text-amber-400">
-                      อัปเดตพอร์ต ({log.updated?.length || 0}): {log.updated?.join(', ') || 'ไม่มี'}
+                  )}
+
+                  {/* Success details */}
+                  {log.success !== false && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <div className="text-emerald-400">
+                        เพิ่มใหม่ ({log.added?.length || 0}): {log.added?.join(', ') || 'ไม่มี'}
+                      </div>
+                      <div className="text-amber-400">
+                        อัปเดตพอร์ต ({log.updated?.length || 0}): {log.updated?.join(', ') || 'ไม่มี'}
+                      </div>
+                      <div className="text-ink-400">
+                        ข้าม/ตรงอยู่แล้ว ({log.skipped?.length || 0}) พอร์ต
+                      </div>
                     </div>
-                    <div className="text-ink-400">
-                      ข้าม/ตรงอยู่แล้ว ({log.skipped?.length || 0}) พอร์ต
-                    </div>
-                  </div>
+                  )}
                   {log.deleted && log.deleted.length > 0 && (
                     <div className="mt-2 text-red-400 border-t border-base-700/50 pt-1">
                       ลบออก ({log.deleted.length}): {log.deleted.join(', ')}
