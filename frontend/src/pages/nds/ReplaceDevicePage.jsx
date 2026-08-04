@@ -10,6 +10,8 @@ export default function ReplaceDevicePage() {
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [selectedNewDeviceTypeId, setSelectedNewDeviceTypeId] = useState('');
   const [vlanifOption, setVlanifOption] = useState('vlanif115'); // 'vlanif115' | 'vlanif100' | 'both' | 'none'
+  const [vlanifIpMode, setVlanifIpMode] = useState('existing'); // 'existing' | 'new'
+  const [customVlanifIp, setCustomVlanifIp] = useState('');
   
   // Interfaces
   const [oldInterfaces, setOldInterfaces] = useState([]);
@@ -149,6 +151,10 @@ export default function ReplaceDevicePage() {
       alert('กรุณาเลือกอย่างน้อย 1 Interface ที่ต้องการย้าย');
       return;
     }
+    if (vlanifIpMode === 'new' && (!customVlanifIp || !customVlanifIp.trim())) {
+      alert('กรุณาระบุ IP Address สำหรับ Vlanif ใหม่ (เช่น 10.100.1.1/24)');
+      return;
+    }
 
     const currentDev = devices.find(d => String(d.id) === String(selectedDeviceId));
     const targetDt = deviceTypes.find(dt => String(dt.id) === String(selectedNewDeviceTypeId));
@@ -165,6 +171,8 @@ export default function ReplaceDevicePage() {
         deviceId: selectedDeviceId,
         newDeviceTypeId: selectedNewDeviceTypeId,
         vlanifOption: vlanifOption,
+        vlanifIpMode: vlanifIpMode,
+        customVlanifIp: customVlanifIp,
         interfaceMappings: selectedMappings.map(m => ({
           oldInterfaceId: m.oldInterfaceId,
           newInterfaceName: m.newInterfaceName
@@ -336,9 +344,9 @@ export default function ReplaceDevicePage() {
               </div>
 
               {/* Vlanif Interface Selection */}
-              <div className="pt-2">
-                <span className="block text-ink-200 font-sans font-semibold mb-2">เลือกประเภท Virtual Interface สำหรับ Model ใหม่:</span>
-                <div className="grid grid-cols-2 gap-3 text-xs font-sans">
+              <div className="pt-2 space-y-3 font-sans">
+                <span className="block text-ink-200 font-semibold">เลือกประเภท Virtual Interface สำหรับ Model ใหม่:</span>
+                <div className="grid grid-cols-2 gap-3 text-xs">
                   <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer font-bold text-sm transition ${vlanifOption === 'vlanif100' ? 'border-nds bg-nds/15 text-nds shadow-md' : 'border-base-700 bg-base-950 text-ink-400 hover:border-base-600'}`}>
                     <input
                       type="radio"
@@ -362,6 +370,76 @@ export default function ReplaceDevicePage() {
                     />
                     <span>Vlanif115</span>
                   </label>
+                </div>
+
+                {/* IP Mode Selection (ใช้ IP เดิม vs ระบุ IP ใหม่) */}
+                <div className="pt-2 border-t border-base-700/60 space-y-2">
+                  <span className="block text-xs font-semibold text-ink-200">การตั้งค่า IP Address ของ {vlanifOption === 'vlanif100' ? 'Vlanif100' : 'Vlanif115'}:</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <label className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition ${vlanifIpMode === 'existing' ? 'border-nds/60 bg-nds/10 text-nds font-medium' : 'border-base-700 bg-base-950 text-ink-400 hover:border-base-600'}`}>
+                      <input
+                        type="radio"
+                        name="vlanifIpMode"
+                        value="existing"
+                        checked={vlanifIpMode === 'existing'}
+                        onChange={(e) => setVlanifIpMode(e.target.value)}
+                        className="text-nds focus:ring-nds"
+                      />
+                      <span>ย้าย IP VLAN เดิม</span>
+                    </label>
+
+                    <label className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition ${vlanifIpMode === 'new' ? 'border-nds/60 bg-nds/10 text-nds font-medium' : 'border-base-700 bg-base-950 text-ink-400 hover:border-base-600'}`}>
+                      <input
+                        type="radio"
+                        name="vlanifIpMode"
+                        value="new"
+                        checked={vlanifIpMode === 'new'}
+                        onChange={(e) => setVlanifIpMode(e.target.value)}
+                        className="text-nds focus:ring-nds"
+                      />
+                      <span>ระบุ IP VLAN ใหม่</span>
+                    </label>
+                  </div>
+
+                  {vlanifIpMode === 'existing' && (
+                    <div className="mt-2 p-3 rounded-lg bg-base-950 border border-base-700 space-y-1">
+                      <span className="block text-[11px] font-semibold text-nds font-sans">ข้อมูล IP / Interface VLAN เดิมของอุปกรณ์:</span>
+                      {(() => {
+                        const existingVlanifs = oldInterfaces.filter(i => (i.name || '').toLowerCase().includes('vlan'));
+                        if (existingVlanifs.length === 0) {
+                          return <p className="text-[11px] text-ink-400 font-mono">- ไม่พบ Virtual Interface / Vlanif เดิมบนอุปกรณ์นี้</p>;
+                        }
+                        return (
+                          <div className="space-y-1 font-mono text-[11px]">
+                            {existingVlanifs.map(vif => {
+                              const ipList = vif.ip_addresses?.map(ip => ip.address || ip) || (vif.ip_address ? [vif.ip_address] : []);
+                              const ipStr = ipList.length > 0 ? ipList.join(', ') : 'ไม่มี IP Address ผูกอยู่';
+                              return (
+                                <div key={vif.id || vif.name} className="flex items-center justify-between text-ink-200 bg-base-900 px-2 py-1 rounded border border-base-800">
+                                  <span className="font-bold text-amber-400">{vif.name}</span>
+                                  <span className="text-emerald-400 font-semibold">{ipStr}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {vlanifIpMode === 'new' && (
+                    <div className="mt-2 space-y-1">
+                      <label className="block text-[11px] font-semibold text-emerald-400">กรอก IP Address ใหม่ (พร้อม Subnet Mask / CIDR):</label>
+                      <input
+                        type="text"
+                        placeholder="เช่น 10.120.5.1/24"
+                        value={customVlanifIp}
+                        onChange={(e) => setCustomVlanifIp(e.target.value)}
+                        className="w-full rounded-lg border border-emerald-500/50 bg-base-950 px-3 py-2 text-xs font-mono text-ink-100 placeholder-ink-600 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-ink-400">ระบบจะสร้างและผูก IP ใหม่นี้เข้ากับ {vlanifOption === 'vlanif100' ? 'Vlanif100' : 'Vlanif115'} บน NetBox โดยอัตโนมัติ</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

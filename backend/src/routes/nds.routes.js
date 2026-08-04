@@ -40,6 +40,12 @@ router.get('/virtual-chassises', ndsController.listVirtualChassises);
 router.get('/tags', ndsController.listTags);
 router.get('/vlans', ndsController.listVlans);
 
+// Module Bays & Module Types
+router.get('/module-types', ndsController.listModuleTypes);
+router.get('/devices/:id/module-bays', ndsController.listDeviceModuleBays);
+router.post('/module-bays/install', ndsController.installModuleInBay);
+router.delete('/modules/:moduleId', ndsController.removeModuleFromBay);
+
 // NDS CRUD Routes
 const registerCrud = (path, singular, plural) => {
   router.get(`/${path}`, ndsController[`list${plural}`]);

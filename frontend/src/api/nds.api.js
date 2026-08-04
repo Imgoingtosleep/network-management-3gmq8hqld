@@ -40,6 +40,12 @@ export const ndsApi = {
   getVlans: () => axiosClient.get('/nds/vlans'),
   replaceDevice: (payload) => axiosClient.post('/nds/devices/replace', payload),
 
+  // Module Bays & Module Types
+  getModuleTypes: () => axiosClient.get('/nds/module-types'),
+  getDeviceModuleBays: (deviceId) => axiosClient.get(`/nds/devices/${deviceId}/module-bays`),
+  installModuleInBay: (payload) => axiosClient.post('/nds/module-bays/install', payload),
+  removeModuleFromBay: (moduleId) => axiosClient.delete(`/nds/modules/${moduleId}`),
+
   // CRUD Bindings
   sites: makeCrudApi('sites'),
   pes: makeCrudApi('pes'),

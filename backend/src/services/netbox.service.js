@@ -1358,8 +1358,32 @@ async function getInterfaceTemplates(deviceTypeId) {
 }
 
 async function getDeviceInterfaces(deviceId) {
-  const results = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
-  return results;
+  const [interfaces, ipAddresses] = await Promise.all([
+    fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`),
+    fetchAllPages(`/ipam/ip-addresses/?device_id=${deviceId}`)
+  ]);
+
+  // Create a map of interface_id -> array of IP objects
+  const ipMap = new Map();
+  if (Array.isArray(ipAddresses)) {
+    ipAddresses.forEach(ip => {
+      const ifaceId = ip.assigned_object_id || ip.interface?.id;
+      if (ifaceId) {
+        if (!ipMap.has(ifaceId)) ipMap.set(ifaceId, []);
+        ipMap.get(ifaceId).push(ip);
+      }
+    });
+  }
+
+  // Attach ip_addresses to each interface
+  return interfaces.map(iface => {
+    const boundIps = ipMap.get(iface.id) || [];
+    return {
+      ...iface,
+      ip_addresses: boundIps,
+      ip_address: boundIps.length > 0 ? boundIps[0].address : null
+    };
+  });
 }
 
 /**
@@ -1827,8 +1851,8 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
  * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
  * @returns {Promise<Object>} Summary of replace model actions.
  */
-async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115') {
-  const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [] };
+async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115', vlanifIpMode = 'existing', customVlanifIp = '') {
+  const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [], newIpCreated: null };
 
   // 1. Update Device Type on the device
   try {
@@ -1853,29 +1877,65 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         return nameLower.includes('vlan') && i.id !== targetVlanifId;
       });
 
-      for (const oldVlanif of oldVlanifs) {
-        if (oldVlanif.description) {
-          await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
-        }
-
-        const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
-        for (const ipObj of vlanifIps) {
-          await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+      if (vlanifIpMode === 'new' && customVlanifIp && customVlanifIp.trim()) {
+        // Mode 2: Use new IP address specified by user
+        const ipStr = customVlanifIp.trim();
+        try {
+          const newIpObj = await getOrCreateIPAddress(ipStr, {
             assigned_object_type: 'dcim.interface',
             assigned_object_id: targetVlanifId
           });
+          summary.newIpCreated = newIpObj.address || ipStr;
           summary.migrated.push({
-            oldInterface: oldVlanif.name,
+            oldInterface: 'Custom Input',
             newInterface: targetVlanifName,
             ipsTransferred: 1,
-            ipAddress: ipObj.address
+            ipAddress: newIpObj.address || ipStr
+          });
+        } catch (ipErr) {
+          summary.errors.push({
+            interface: targetVlanifName,
+            error: `ไม่สามารถผูก IP ใหม่ ${ipStr} กับ ${targetVlanifName} ได้: ${ipErr.message}`
           });
         }
 
-        try {
-          await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
-        } catch (delVifErr) {
-          console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+        // Cleanup descriptions / old vlanifs if present
+        for (const oldVlanif of oldVlanifs) {
+          if (oldVlanif.description) {
+            await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
+          }
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
+          } catch (delVifErr) {
+            console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+          }
+        }
+      } else {
+        // Mode 1: Use existing IP address from old Vlanif
+        for (const oldVlanif of oldVlanifs) {
+          if (oldVlanif.description) {
+            await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
+          }
+
+          const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
+          for (const ipObj of vlanifIps) {
+            await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+              assigned_object_type: 'dcim.interface',
+              assigned_object_id: targetVlanifId
+            });
+            summary.migrated.push({
+              oldInterface: oldVlanif.name,
+              newInterface: targetVlanifName,
+              ipsTransferred: 1,
+              ipAddress: ipObj.address
+            });
+          }
+
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
+          } catch (delVifErr) {
+            console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+          }
         }
       }
     } catch (vifErr) {
@@ -2034,8 +2094,47 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
  * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
  * @returns {Promise<Object>} Summary of migration actions.
  */
-async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption) {
-  return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption);
+async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp) {
+  return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp);
+}
+
+/**
+ * Fetch Module Types (available cards/modules)
+ */
+async function getModuleTypes() {
+  return fetchAllPages('/dcim/module-types/');
+}
+
+/**
+ * Fetch Module Bays for a specific device
+ */
+async function getDeviceModuleBays(deviceId) {
+  return fetchAllPages(`/dcim/module-bays/?device_id=${deviceId}`);
+}
+
+/**
+ * Install a Module Type into a Module Bay
+ */
+async function installModuleInBay(moduleBayId, moduleTypeId) {
+  const bay = await getSingle(`/dcim/module-bays/${moduleBayId}/`);
+  if (!bay) throw new Error('ไม่พบข้อมูล Module Bay ที่ระบุ');
+
+  // Create Module object
+  const modulePayload = {
+    device: bay.device.id,
+    module_bay: Number(moduleBayId),
+    module_type: Number(moduleTypeId)
+  };
+
+  const createdModule = await fetchNetboxApi('/dcim/modules/', 'POST', modulePayload);
+  return createdModule;
+}
+
+/**
+ * Remove a Module from a Module Bay
+ */
+async function removeModuleFromBay(moduleId) {
+  return fetchNetboxApi(`/dcim/modules/${moduleId}/`, 'DELETE');
 }
 
 module.exports = {
@@ -2061,14 +2160,12 @@ module.exports = {
   getTenants,
   getLocations,
   getRacks,
-  // Additional new ones
   getPlatforms,
   getConfigTemplates,
   getClusters,
   getTenantGroups,
   getVirtualChassises,
   getTags,
-  // Prefix new ones
   createPrefix,
   deletePrefix,
   getVlans,
@@ -2076,6 +2173,10 @@ module.exports = {
   getDeviceInterfaces,
   updateInterface,
   syncDeviceInterfaces,
+  getModuleTypes,
+  getDeviceModuleBays,
+  installModuleInBay,
+  removeModuleFromBay,
   get: fetchAllPages,
   getSingle,
   createCable,

@@ -281,7 +281,7 @@ async function listInterfaceTypeChoices(req, res, next) {
 
 async function replaceDevice(req, res, next) {
   try {
-    const { deviceId, oldDeviceId, newDeviceId, newDeviceTypeId, interfaceMappings, vlanifOption } = req.body;
+    const { deviceId, oldDeviceId, newDeviceId, newDeviceTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp } = req.body;
     const targetDeviceId = deviceId || oldDeviceId;
     const targetTypeId = newDeviceTypeId || newDeviceId;
 
@@ -294,7 +294,7 @@ async function replaceDevice(req, res, next) {
     if (!interfaceMappings || !Array.isArray(interfaceMappings) || interfaceMappings.length === 0) {
       return res.status(400).json({ success: false, message: 'กรุณาระบุ interfaceMappings อย่างน้อย 1 รายการ' });
     }
-    const data = await ndsService.replaceDevice(targetDeviceId, targetTypeId, interfaceMappings, vlanifOption);
+    const data = await ndsService.replaceDevice(targetDeviceId, targetTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp);
     return ok(res, data, 'เปลี่ยน Model อุปกรณ์และย้ายข้อมูลพอร์ตสำเร็จ');
   } catch (err) { return next(err); }
 }
@@ -391,6 +391,49 @@ module.exports = {
         : `ซิงค์อินเตอร์เฟสกับ NetBox เรียบร้อยแล้ว (${results.length} อุปกรณ์)`;
 
       return ok(res, results, message);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  // Module Bays & Module Types
+  listModuleTypes: async (req, res, next) => {
+    try {
+      const data = await netboxService.getModuleTypes();
+      return ok(res, data, 'ดึงรายการ Module Types เรียบร้อยแล้ว');
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  listDeviceModuleBays: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await netboxService.getDeviceModuleBays(id);
+      return ok(res, data, `ดึงรายการ Module Bays ของ Device ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  installModuleInBay: async (req, res, next) => {
+    try {
+      const { moduleBayId, moduleTypeId } = req.body;
+      if (!moduleBayId || !moduleTypeId) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุ moduleBayId และ moduleTypeId' });
+      }
+      const data = await netboxService.installModuleInBay(moduleBayId, moduleTypeId);
+      return ok(res, data, 'เติม Module ลงใน Module Bay เรียบร้อยแล้ว');
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  removeModuleFromBay: async (req, res, next) => {
+    try {
+      const { moduleId } = req.params;
+      await netboxService.removeModuleFromBay(moduleId);
+      return ok(res, null, 'ถอด Module ออกจาก Module Bay เรียบร้อยแล้ว');
     } catch (err) {
       return next(err);
     }

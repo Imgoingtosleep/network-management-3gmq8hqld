@@ -6,6 +6,7 @@ const menuItems = [
   { label: 'Devices', value: 'devices', path: '/nds/devices' },
   { label: 'Device Types', value: 'device-types', path: '/nds/device-types' },
   { label: 'Sync Interfaces', value: 'sync-interfaces', path: '/nds/sync-interfaces' },
+  { label: 'Module Bays', value: 'module-bays', path: '/nds/module-bays' },
   { label: 'Replace Device', value: 'replace-device', path: '/nds/replace-device' },
   { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
   { label: 'Domains', value: 'domains', path: '/nds/domains' },
