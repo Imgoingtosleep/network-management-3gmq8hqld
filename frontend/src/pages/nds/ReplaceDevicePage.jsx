@@ -140,16 +140,21 @@ export default function ReplaceDevicePage() {
 
   // รวมพอร์ตจาก Device Type และ Module Types ทั้งหมดที่เลือก
   const getAllTargetTemplates = (deviceTemplates, bayModulesMap, modIfacesMap) => {
-    let list = [...deviceTemplates];
+    let list = [...deviceTemplates.map(t => ({ ...t, fromModule: false }))];
     Object.entries(bayModulesMap).forEach(([bId, mTypeId]) => {
+      const bayObj = targetModuleBays.find(b => String(b.id) === String(bId));
+      const modTypeObj = availableModuleTypes.find(m => String(m.id) === String(mTypeId));
       const modIfaces = modIfacesMap[mTypeId] || [];
+
       modIfaces.forEach(iface => {
         list.push({
           id: `mod_${bId}_${iface.id}`,
           name: iface.name,
           label: iface.label,
           type: iface.type,
-          fromModule: true
+          fromModule: true,
+          bayName: bayObj?.name || `Bay #${bId}`,
+          moduleModel: modTypeObj?.model || `Module #${mTypeId}`
         });
       });
     });
@@ -170,10 +175,13 @@ export default function ReplaceDevicePage() {
 
     const mappings = physicalOnly.map((oldIf) => {
       const oldName = oldIf.name;
+      const isFromModule = Boolean(oldIf.module || oldIf.module_bay);
 
       return {
         oldInterfaceId: oldIf.id,
         oldInterfaceName: oldName,
+        isFromModule: isFromModule,
+        moduleName: oldIf.module?.display || oldIf.module?.name || oldIf.module_bay?.name || '',
         newInterfaceName: '', // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ตปลายทาง
         selected: false,      // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ต (ผู้ใช้เลือกเอง)
         description: oldIf.description || '',
@@ -658,8 +666,15 @@ export default function ReplaceDevicePage() {
                             className="rounded border-base-600 bg-base-900 text-nds focus:ring-nds"
                           />
                         </td>
-                        <td className="p-3 font-bold text-ink-100">
-                          {m.oldInterfaceName}
+                        <td className="p-3 font-bold">
+                          <span className={m.isFromModule ? 'text-blue-400 font-mono' : 'text-ink-100'}>
+                            {m.oldInterfaceName}
+                          </span>
+                          {m.isFromModule && (
+                            <span className="ml-1.5 inline-block text-[9px] font-sans px-1.5 py-0.2 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 font-medium">
+                              {m.moduleName ? `Module: ${m.moduleName}` : 'Module Port'}
+                            </span>
+                          )}
                           <span className="block text-[10px] text-ink-600 font-normal">{m.type}</span>
                         </td>
                         <td className="p-3 text-ink-400">
