@@ -1851,8 +1851,25 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
  * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
  * @returns {Promise<Object>} Summary of replace model actions.
  */
-async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115', vlanifIpMode = 'existing', customVlanifIp = '') {
-  const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [], newIpCreated: null };
+async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115', vlanifIpMode = 'existing', customVlanifIp = '', modulesToInstall = []) {
+  const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [], newIpCreated: null, modulesInstalled: [], modulesRemoved: [] };
+
+  // 0. Remove existing modules on the device if new modules are being installed OR device model changes to non-matching
+  try {
+    const existingModules = await fetchAllPages(`/dcim/modules/?device_id=${deviceId}`);
+    if (existingModules && existingModules.length > 0) {
+      for (const mod of existingModules) {
+        try {
+          await fetchNetboxApi(`/dcim/modules/${mod.id}/`, 'DELETE');
+          summary.modulesRemoved.push(mod.display || mod.name || `Module #${mod.id}`);
+        } catch (modDelErr) {
+          console.warn(`Failed to remove old module ${mod.id}:`, modDelErr.message);
+        }
+      }
+    }
+  } catch (modErr) {
+    console.warn('Error fetching existing modules for removal:', modErr.message);
+  }
 
   // 1. Update Device Type on the device
   try {
@@ -1862,6 +1879,23 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     summary.deviceUpdated = true;
   } catch (err) {
     throw new Error(`ไม่สามารถอัปเดต Model อุปกรณ์ได้: ${err.message}`);
+  }
+
+  // 1.5 Install selected new Modules into Module Bays (if specified)
+  if (Array.isArray(modulesToInstall) && modulesToInstall.length > 0) {
+    for (const item of modulesToInstall) {
+      if (item.moduleBayId && item.moduleTypeId) {
+        try {
+          const installedMod = await installModuleInBay(item.moduleBayId, item.moduleTypeId);
+          summary.modulesInstalled.push(installedMod.display || installedMod.name || `ModuleType ${item.moduleTypeId} in Bay ${item.moduleBayId}`);
+        } catch (instErr) {
+          summary.errors.push({
+            interface: `ModuleBay #${item.moduleBayId}`,
+            error: `ไม่สามารถติดตั้ง Module Type ID ${item.moduleTypeId}: ${instErr.message}`
+          });
+        }
+      }
+    }
   }
 
   // Handle Vlanif creation & automatic IP/Config migration from old Vlanif interfaces
@@ -2014,29 +2048,50 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         oldIface.type?.value || oldIface.type || '1000base-t'
       );
 
-      // 2. Transfer full configurations (VLANs, Mode, MTU, Description) & Set custom_fields port_status to USE
+      // 2. Transfer full configurations (Description, Mode, VLANs, MAC, Speed, Duplex, Enabled, Tags, Custom Fields)
+      // Note: Fields 'label' and 'mtu' are kept as-is from the new model / new module interface template
       const updatePayload = {};
       
-      // นำ Description อันเดิมมาใช้ 100%
-      if (oldIface.description !== undefined) {
-        updatePayload.description = oldIface.description;
-      }
-
+      if (oldIface.description !== undefined) updatePayload.description = oldIface.description;
       if (oldIface.enabled !== undefined) updatePayload.enabled = oldIface.enabled;
-      if (oldIface.mtu) updatePayload.mtu = oldIface.mtu;
-      if (oldIface.mode?.value) updatePayload.mode = oldIface.mode.value;
+      if (oldIface.mac_address) updatePayload.mac_address = oldIface.mac_address;
+      if (oldIface.speed !== undefined && oldIface.speed !== null) updatePayload.speed = oldIface.speed;
+      if (oldIface.duplex?.value || oldIface.duplex) updatePayload.duplex = oldIface.duplex?.value || oldIface.duplex;
+      if (oldIface.mode?.value || oldIface.mode) updatePayload.mode = oldIface.mode?.value || oldIface.mode;
       if (oldIface.untagged_vlan?.id) updatePayload.untagged_vlan = oldIface.untagged_vlan.id;
       if (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
         updatePayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
       }
+      if (oldIface.mark_connected !== undefined) updatePayload.mark_connected = oldIface.mark_connected;
+      if (oldIface.tags && oldIface.tags.length > 0) {
+        updatePayload.tags = oldIface.tags.map(t => t.id || t);
+      }
 
-      // เปลี่ยนเฉพาะพอร์ตปลายทางที่มี Interface เดิมถูกเลือกมาตกใส่ ให้ port_status = 'USE'
+      // 4. Transfer all bound IP addresses
+      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
+
+      // Check if port has connection (has Cable, bound IP Addresses, or active VLAN/Description config)
+      const hasConnection = Boolean(
+        oldIface.cable || 
+        (boundIps && boundIps.length > 0) || 
+        oldIface.untagged_vlan || 
+        (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) ||
+        (oldIface.description && oldIface.description.trim() !== '') ||
+        oldIface.mark_connected === true
+      );
+
+      // Copy all custom_fields from old interface & set port_status = 'USE' ONLY if hasConnection
+      const customFieldsPayload = { ...(oldIface.custom_fields || {}) };
       try {
         const availableCFs = await getAvailableCustomFields();
         if (availableCFs.includes('port_status')) {
-          updatePayload.custom_fields = { port_status: 'USE' };
+          customFieldsPayload.port_status = hasConnection ? 'USE' : (customFieldsPayload.port_status || '');
         }
       } catch (cfErr) {}
+
+      if (Object.keys(customFieldsPayload).length > 0) {
+        updatePayload.custom_fields = customFieldsPayload;
+      }
 
       if (Object.keys(updatePayload).length > 0) {
         await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', updatePayload);
@@ -2052,7 +2107,6 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       }
 
       // 4. Transfer all bound IP addresses
-      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
       for (const ip of boundIps) {
         await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
           assigned_object_type: 'dcim.interface',
@@ -2122,8 +2176,8 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
  * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
  * @returns {Promise<Object>} Summary of migration actions.
  */
-async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp) {
-  return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp);
+async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall) {
+  return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall);
 }
 
 /**

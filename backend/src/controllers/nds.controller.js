@@ -281,7 +281,7 @@ async function listInterfaceTypeChoices(req, res, next) {
 
 async function replaceDevice(req, res, next) {
   try {
-    const { deviceId, oldDeviceId, newDeviceId, newDeviceTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp } = req.body;
+    const { deviceId, oldDeviceId, newDeviceId, newDeviceTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall } = req.body;
     const targetDeviceId = deviceId || oldDeviceId;
     const targetTypeId = newDeviceTypeId || newDeviceId;
 
@@ -294,7 +294,7 @@ async function replaceDevice(req, res, next) {
     if (!interfaceMappings || !Array.isArray(interfaceMappings) || interfaceMappings.length === 0) {
       return res.status(400).json({ success: false, message: 'กรุณาระบุ interfaceMappings อย่างน้อย 1 รายการ' });
     }
-    const data = await ndsService.replaceDevice(targetDeviceId, targetTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp);
+    const data = await ndsService.replaceDevice(targetDeviceId, targetTypeId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall);
     return ok(res, data, 'เปลี่ยน Model อุปกรณ์และย้ายข้อมูลพอร์ตสำเร็จ');
   } catch (err) { return next(err); }
 }
