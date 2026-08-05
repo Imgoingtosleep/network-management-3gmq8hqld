@@ -2134,6 +2134,13 @@ async function getModuleTypes() {
 }
 
 /**
+ * Fetch Interface Templates for a specific module type
+ */
+async function getModuleTypeInterfaces(moduleTypeId) {
+  return fetchAllPages(`/dcim/interface-templates/?module_type_id=${moduleTypeId}`);
+}
+
+/**
  * Fetch Module Bays for a specific device
  */
 async function getDeviceModuleBays(deviceId) {
@@ -2202,6 +2209,7 @@ module.exports = {
   updateInterface,
   syncDeviceInterfaces,
   getModuleTypes,
+  getModuleTypeInterfaces,
   getDeviceModuleBays,
   installModuleInBay,
   removeModuleFromBay,

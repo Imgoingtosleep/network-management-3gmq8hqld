@@ -42,6 +42,7 @@ router.get('/vlans', ndsController.listVlans);
 
 // Module Bays & Module Types
 router.get('/module-types', ndsController.listModuleTypes);
+router.get('/module-types/:id/interfaces', ndsController.getModuleTypeInterfaces);
 router.get('/devices/:id/module-bays', ndsController.listDeviceModuleBays);
 router.post('/module-bays/install', ndsController.installModuleInBay);
 router.delete('/modules/:moduleId', ndsController.removeModuleFromBay);

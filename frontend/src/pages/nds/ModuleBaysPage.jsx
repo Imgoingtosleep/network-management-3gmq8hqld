@@ -19,6 +19,32 @@ export default function ModuleBaysPage() {
   const [dragOverBayId, setDragOverBayId] = useState(null);
   const [processingBayId, setProcessingBayId] = useState(null);
 
+  // Detail Modal State
+  const [selectedModuleDetail, setSelectedModuleDetail] = useState(null);
+  const [moduleInterfaces, setModuleInterfaces] = useState([]);
+  const [loadingInterfaces, setLoadingInterfaces] = useState(false);
+
+  const handleOpenDetail = async (mType) => {
+    setSelectedModuleDetail(mType);
+    setLoadingInterfaces(true);
+    setModuleInterfaces([]);
+    try {
+      const res = await ndsApi.getModuleTypeInterfaces(mType.id);
+      const rawIfaces = res.data?.data || res.data || [];
+      setModuleInterfaces(Array.isArray(rawIfaces) ? rawIfaces : []);
+    } catch (err) {
+      console.error('Error fetching module interfaces:', err);
+      setModuleInterfaces([]);
+    } finally {
+      setLoadingInterfaces(false);
+    }
+  };
+
+  const handleCloseDetail = () => {
+    setSelectedModuleDetail(null);
+    setModuleInterfaces([]);
+  };
+
   // Load initial devices & module types
   const loadInitialData = async () => {
     setLoadingDevices(true);
@@ -256,10 +282,10 @@ export default function ModuleBaysPage() {
         <div className="lg:col-span-4 space-y-4">
           <div className="rounded-xl border border-base-700 bg-base-800/40 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-nds uppercase tracking-wider">2. มอดูลที่มีให้เลือก (Drag Me)</h3>
+              <h3 className="text-xs font-semibold text-nds uppercase tracking-wider">2. Select Module (Drag & Drop)</h3>
               <span className="text-[10px] text-ink-400 bg-base-900 px-2 py-0.5 rounded border border-base-700">
-                {filteredModuleTypes.length} มอดูล
-              </span>
+                {filteredModuleTypes.length} Module Types
+              </span> 
             </div>
 
             <input
@@ -289,8 +315,20 @@ export default function ModuleBaysPage() {
                         ผู้ผลิต: {mType.manufacturer?.name || 'Generic'}
                       </div>
                     </div>
-                    <div className="shrink-0 text-xs text-nds bg-nds/10 border border-nds/20 px-2 py-1 rounded font-mono flex items-center gap-1">
-                      <span className="text-sm">≡</span> ลาก
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenDetail(mType);
+                        }}
+                        className="px-2 py-1 text-[11px] font-medium text-ink-200 bg-base-800 hover:bg-base-700 hover:text-white border border-base-700 rounded transition"
+                      >
+                        รายละเอียด
+                      </button>
+                      <div className="text-xs text-nds bg-nds/10 border border-nds/20 px-2 py-1 rounded font-mono flex items-center gap-1">
+                        <span className="text-sm">≡</span> ลาก
+                      </div>
                     </div>
                   </div>
                 ))
@@ -367,7 +405,7 @@ export default function ModuleBaysPage() {
                         <div className="mt-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
                           <div>
                             <div className="text-xs font-bold text-emerald-300 font-mono">
-                              ✓ {bay.installed_module.display || bay.installed_module.name || bay.installed_module.module_type?.model}
+                              [INSTALLED] {bay.installed_module.display || bay.installed_module.name || bay.installed_module.module_type?.model}
                             </div>
                             <div className="text-[10px] text-emerald-400/80 mt-0.5">
                               ID: {bay.installed_module.id} | สภาพ: ติดตั้งพร้อมใช้งาน
@@ -398,6 +436,112 @@ export default function ModuleBaysPage() {
         </div>
 
       </div>
+
+      {/* Module Type Details Modal */}
+      {selectedModuleDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl rounded-xl border border-base-700 bg-base-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-base-800 flex items-center justify-between bg-base-950">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-ink-100 font-mono">
+                    {selectedModuleDetail.model}
+                  </h3>
+                  <span className="text-xs px-2 py-0.5 rounded border border-nds/30 bg-nds/10 text-nds font-mono">
+                    ID: {selectedModuleDetail.id}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-400 mt-0.5">
+                  รายละเอียดข้อมูลและ พอร์ต (Ports / Interfaces) ของมอดูล
+                </p>
+              </div>
+              <button
+                onClick={handleCloseDetail}
+                className="text-ink-400 hover:text-white text-lg font-bold px-2 py-1 rounded bg-base-800 hover:bg-base-700"
+              >
+                X
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Module Metadata Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg border border-base-800 bg-base-950/60 text-xs">
+                <div>
+                  <span className="text-ink-400 block mb-1">Manufacturer (ผู้ผลิต)</span>
+                  <span className="font-semibold text-ink-100">{selectedModuleDetail.manufacturer?.name || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-ink-400 block mb-1">Part Number</span>
+                  <span className="font-semibold text-ink-100 font-mono">{selectedModuleDetail.part_number || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-ink-400 block mb-1">Total Ports</span>
+                  <span className="font-semibold text-nds font-mono">{moduleInterfaces.length} Ports</span>
+                </div>
+                <div className="col-span-1 sm:col-span-3">
+                  <span className="text-ink-400 block mb-1">Description (คำอธิบาย)</span>
+                  <span className="text-ink-200">{selectedModuleDetail.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</span>
+                </div>
+              </div>
+
+              {/* Ports Table */}
+              <div>
+                <h4 className="text-xs font-semibold text-nds uppercase tracking-wider mb-3">
+                  รายการพอร์ตภายในมอดูล (Interface Templates)
+                </h4>
+                {loadingInterfaces ? (
+                  <div className="p-8 text-center text-xs text-ink-400">กำลังโหลดรายการพอร์ต...</div>
+                ) : moduleInterfaces.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-ink-400 border border-dashed border-base-800 rounded-lg">
+                    ไม่พบรายการพอร์ตสำหรับมอดูลนี้
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-base-800 rounded-lg">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-base-950 text-ink-400 border-b border-base-800">
+                        <tr>
+                          <th className="py-2.5 px-3 font-semibold">#</th>
+                          <th className="py-2.5 px-3 font-semibold">Port Name</th>
+                          <th className="py-2.5 px-3 font-semibold">Label</th>
+                          <th className="py-2.5 px-3 font-semibold">Type</th>
+                          <th className="py-2.5 px-3 font-semibold">Description</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-base-800/60 text-ink-200">
+                        {moduleInterfaces.map((iface, idx) => (
+                          <tr key={iface.id || idx} className="hover:bg-base-800/40 font-mono">
+                            <td className="py-2 px-3 text-ink-500">{idx + 1}</td>
+                            <td className="py-2 px-3 text-nds font-bold">{iface.name}</td>
+                            <td className="py-2 px-3 text-ink-300">{iface.label || '-'}</td>
+                            <td className="py-2 px-3 text-ink-100">
+                              <span className="bg-base-800 px-2 py-0.5 rounded border border-base-700 text-[11px]">
+                                {iface.type?.label || iface.type?.value || iface.type || '-'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-ink-400 text-[11px]">{iface.description || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-base-800 bg-base-950 flex justify-end">
+              <button
+                onClick={handleCloseDetail}
+                className="px-4 py-1.5 text-xs font-semibold text-ink-200 bg-base-800 hover:bg-base-700 rounded transition"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

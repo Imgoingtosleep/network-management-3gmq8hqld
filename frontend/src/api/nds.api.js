@@ -42,6 +42,7 @@ export const ndsApi = {
 
   // Module Bays & Module Types
   getModuleTypes: () => axiosClient.get('/nds/module-types'),
+  getModuleTypeInterfaces: (id) => axiosClient.get(`/nds/module-types/${id}/interfaces`),
   getDeviceModuleBays: (deviceId) => axiosClient.get(`/nds/devices/${deviceId}/module-bays`),
   installModuleInBay: (payload) => axiosClient.post('/nds/module-bays/install', payload),
   removeModuleFromBay: (moduleId) => axiosClient.delete(`/nds/modules/${moduleId}`),

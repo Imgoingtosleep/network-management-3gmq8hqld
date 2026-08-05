@@ -406,6 +406,16 @@ module.exports = {
     }
   },
 
+  getModuleTypeInterfaces: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await netboxService.getModuleTypeInterfaces(id);
+      return ok(res, data, `ดึงรายการ Interface Templates ของ Module Type ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
   listDeviceModuleBays: async (req, res, next) => {
     try {
       const { id } = req.params;
