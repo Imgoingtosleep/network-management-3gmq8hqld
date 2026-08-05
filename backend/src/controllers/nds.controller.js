@@ -416,6 +416,16 @@ module.exports = {
     }
   },
 
+  getDeviceTypeModuleBays: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await netboxService.getDeviceTypeModuleBays(id);
+      return ok(res, data, `ดึงรายการ Module Bay Templates ของ Device Type ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
   listDeviceModuleBays: async (req, res, next) => {
     try {
       const { id } = req.params;

@@ -28,20 +28,30 @@ export default function ReplaceDevicePage() {
   const [searchDevice, setSearchDevice] = useState('');
   const [searchDeviceType, setSearchDeviceType] = useState('');
 
+  // Module Types & Selected Bays for target model
+  const [availableModuleTypes, setAvailableModuleTypes] = useState([]);
+  const [targetModuleBays, setTargetModuleBays] = useState([]);
+  const [selectedBayModules, setSelectedBayModules] = useState({}); // { bayId: moduleTypeId }
+  const [moduleInterfacesMap, setModuleInterfacesMap] = useState({}); // { moduleTypeId: [ifaces] }
+  const [loadingModuleData, setLoadingModuleData] = useState(false);
+
   useEffect(() => { loadInitialData(); }, []);
 
   const loadInitialData = async () => {
     setLoading(true);
     setErrorMessage('');
     try {
-      const [devRes, dtRes] = await Promise.all([
+      const [devRes, dtRes, mtRes] = await Promise.all([
         ndsApi.getDevices(),
-        ndsApi.getDeviceTypes()
+        ndsApi.getDeviceTypes(),
+        ndsApi.getModuleTypes()
       ]);
       const rawDevs = devRes.data?.data || devRes.data || [];
       const rawDts = dtRes.data?.data || dtRes.data || [];
+      const rawMts = mtRes.data?.data || mtRes.data || [];
       setDevices(Array.isArray(rawDevs) ? rawDevs : []);
       setDeviceTypes(Array.isArray(rawDts) ? rawDts : []);
+      setAvailableModuleTypes(Array.isArray(rawMts) ? rawMts : []);
     } catch (err) {
       setErrorMessage('ไม่สามารถโหลดข้อมูลอุปกรณ์หรือ Model จากระบบได้');
     } finally {
@@ -60,7 +70,7 @@ export default function ReplaceDevicePage() {
       const ifaces = res.data?.data || res.data || [];
       const parsedIfaces = Array.isArray(ifaces) ? ifaces : [];
       setOldInterfaces(parsedIfaces);
-      generateMappings(parsedIfaces, newDeviceTypeTemplates);
+      generateMappings(parsedIfaces, getAllTargetTemplates(newDeviceTypeTemplates, selectedBayModules, moduleInterfacesMap));
     } catch (err) {
       setErrorMessage('ไม่สามารถโหลดรายการ Interface ของอุปกรณ์เดิมได้');
     } finally {
@@ -74,17 +84,76 @@ export default function ReplaceDevicePage() {
     setLoadingNewTemplates(true);
     setErrorMessage('');
     setResult(null);
+    setSelectedBayModules({});
+    setTargetModuleBays([]);
+    
     try {
-      const res = await ndsApi.getInterfaceTemplates(deviceTypeId);
-      const templates = res.data?.data || res.data || [];
+      const [tplRes, bayRes] = await Promise.all([
+        ndsApi.getInterfaceTemplates(deviceTypeId),
+        ndsApi.getDeviceTypeModuleBays(deviceTypeId).catch(() => ({ data: [] }))
+      ]);
+      
+      const templates = tplRes.data?.data || tplRes.data || [];
       const parsedTemplates = Array.isArray(templates) ? templates : [];
       setNewDeviceTypeTemplates(parsedTemplates);
+
+      const bays = bayRes.data?.data || bayRes.data || [];
+      setTargetModuleBays(Array.isArray(bays) ? bays : []);
+
       generateMappings(oldInterfaces, parsedTemplates);
     } catch (err) {
       setErrorMessage('ไม่สามารถโหลด Port Templates ของ Model ใหม่ได้');
     } finally {
       setLoadingNewTemplates(false);
     }
+  };
+
+  // เลือกการ์ดมอดูลใส่ใน Bay
+  const handleSelectModuleForBay = async (bayId, moduleTypeId) => {
+    const updatedBayModules = { ...selectedBayModules };
+    if (!moduleTypeId) {
+      delete updatedBayModules[bayId];
+    } else {
+      updatedBayModules[bayId] = Number(moduleTypeId);
+    }
+    setSelectedBayModules(updatedBayModules);
+
+    // Fetch module interfaces if not cached
+    let currentMap = { ...moduleInterfacesMap };
+    if (moduleTypeId && !currentMap[moduleTypeId]) {
+      setLoadingModuleData(true);
+      try {
+        const res = await ndsApi.getModuleTypeInterfaces(moduleTypeId);
+        const ifaces = res.data?.data || res.data || [];
+        currentMap[moduleTypeId] = Array.isArray(ifaces) ? ifaces : [];
+        setModuleInterfacesMap(currentMap);
+      } catch (err) {
+        console.error('Error fetching module interfaces:', err);
+      } finally {
+        setLoadingModuleData(false);
+      }
+    }
+
+    const combinedTemplates = getAllTargetTemplates(newDeviceTypeTemplates, updatedBayModules, currentMap);
+    generateMappings(oldInterfaces, combinedTemplates);
+  };
+
+  // รวมพอร์ตจาก Device Type และ Module Types ทั้งหมดที่เลือก
+  const getAllTargetTemplates = (deviceTemplates, bayModulesMap, modIfacesMap) => {
+    let list = [...deviceTemplates];
+    Object.entries(bayModulesMap).forEach(([bId, mTypeId]) => {
+      const modIfaces = modIfacesMap[mTypeId] || [];
+      modIfaces.forEach(iface => {
+        list.push({
+          id: `mod_${bId}_${iface.id}`,
+          name: iface.name,
+          label: iface.label,
+          type: iface.type,
+          fromModule: true
+        });
+      });
+    });
+    return list;
   };
 
   // 3. คำนวณการจับคู่อัตโนมัติ (Smart Auto Match)
@@ -115,7 +184,11 @@ export default function ReplaceDevicePage() {
     setInterfaceMappings(mappings);
   };
 
-  const maxAllowedSelection = newDeviceTypeTemplates.length;
+  const allTargetTemplates = useMemo(() => {
+    return getAllTargetTemplates(newDeviceTypeTemplates, selectedBayModules, moduleInterfacesMap);
+  }, [newDeviceTypeTemplates, selectedBayModules, moduleInterfacesMap]);
+
+  const maxAllowedSelection = allTargetTemplates.length;
 
   const toggleMappingSelection = (index) => {
     const newMappings = [...interfaceMappings];
@@ -124,7 +197,7 @@ export default function ReplaceDevicePage() {
 
     // Check if trying to select a new port while already reaching the limit
     if (!targetItem.selected && maxAllowedSelection > 0 && currentlySelectedCount >= maxAllowedSelection) {
-      alert(`ไม่สามารถเลือกพอร์ตเพิ่มได้: Model ใหม่มีจำนวน Interface สูงสุดเพียง ${maxAllowedSelection} พอร์ต`);
+      alert(`ไม่สามารถเลือกพอร์ตเพิ่มได้: Model และ มอดูลใหม่ มีจำนวน Interface สูงสุดรวม ${maxAllowedSelection} พอร์ต`);
       return;
     }
 
@@ -184,6 +257,11 @@ export default function ReplaceDevicePage() {
     setErrorMessage('');
     setResult(null);
 
+    const modulesPayload = Object.entries(selectedBayModules).map(([bayId, mTypeId]) => ({
+      moduleBayId: Number(bayId),
+      moduleTypeId: Number(mTypeId)
+    }));
+
     try {
       const res = await ndsApi.replaceDevice({
         deviceId: selectedDeviceId,
@@ -191,6 +269,7 @@ export default function ReplaceDevicePage() {
         vlanifOption: vlanifOption,
         vlanifIpMode: vlanifIpMode,
         customVlanifIp: customVlanifIp,
+        modulesToInstall: modulesPayload,
         interfaceMappings: selectedMappings.map(m => ({
           oldInterfaceId: m.oldInterfaceId,
           newInterfaceName: m.newInterfaceName
@@ -360,6 +439,47 @@ export default function ReplaceDevicePage() {
                 <span className="text-ink-400">Port Templates ของ Model ใหม่:</span>
                 <span className="text-green-400 font-bold">{newDeviceTypeTemplates.length} พอร์ต</span>
               </div>
+
+              {/* Module Bays Selection Section */}
+              {targetModuleBays.length > 0 && (
+                <div className="pt-3 border-t border-base-700/80 space-y-2 font-sans">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-nds uppercase tracking-wider">
+                      ช่องเสียบการ์ด (Module Bays ({targetModuleBays.length} ช่อง))
+                    </span>
+                    {loadingModuleData && <span className="text-[10px] text-nds animate-pulse">กำลังโหลดพอร์ตการ์ด...</span>}
+                  </div>
+                  <p className="text-[11px] text-ink-400">
+                    หากอุปกรณ์เป้าหมายมีช่องเสียบมอดูล สามารถเลือกเสียบการ์ดประจำช่องเพื่อให้ระบบสร้างพอร์ตการ์ดขึ้นมารองรับการจับคู่ได้:
+                  </p>
+
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {targetModuleBays.map((bay) => {
+                      const selectedVal = selectedBayModules[bay.id] || '';
+                      return (
+                        <div key={bay.id} className="p-2.5 rounded-lg border border-base-700 bg-base-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="text-xs">
+                            <span className="font-bold text-ink-100 font-mono">{bay.name}</span>
+                            {bay.label && <span className="text-ink-400 text-[11px] ml-1.5">({bay.label})</span>}
+                          </div>
+                          <select
+                            value={selectedVal}
+                            onChange={(e) => handleSelectModuleForBay(bay.id, e.target.value)}
+                            className="rounded border border-base-700 bg-base-900 px-2.5 py-1 text-xs text-ink-100 focus:border-nds focus:outline-none"
+                          >
+                            <option value="">-- ไม่ใส่การ์ด (ช่องว่าง) --</option>
+                            {availableModuleTypes.map(mt => (
+                              <option key={mt.id} value={mt.id}>
+                                {mt.model} ({mt.manufacturer?.name || 'Generic'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Vlanif Interface Selection */}
               <div className="pt-2 space-y-3 font-sans">
@@ -554,10 +674,10 @@ export default function ReplaceDevicePage() {
                             disabled={!m.selected}
                             className="w-full rounded border border-base-600 bg-base-900 px-2 py-1 text-xs text-green-400 focus:border-green-500 focus:outline-none disabled:opacity-50"
                           >
-                            <option value="">-- เลือกพอร์ตของ Model ใหม่ --</option>
-                            {newDeviceTypeTemplates.map(tmpl => (
+                            <option value="">-- เลือกพอร์ตของ Model ใหม่ / Module --</option>
+                            {allTargetTemplates.map(tmpl => (
                               <option key={tmpl.id || tmpl.name} value={tmpl.name}>
-                                {tmpl.name} ({tmpl.type?.label || tmpl.type || 'Port'})
+                                {tmpl.name} ({tmpl.type?.label || tmpl.type || 'Port'}) {tmpl.fromModule ? '[การ์ด Module]' : ''}
                               </option>
                             ))}
                           </select>
