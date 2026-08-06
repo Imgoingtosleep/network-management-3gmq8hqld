@@ -6,6 +6,7 @@ import DevicesPage from '../pages/nds/DevicesPage.jsx';
 import DeviceTypesPage from '../pages/nds/DeviceTypesPage.jsx';
 import SyncInterfacesPage from '../pages/nds/SyncInterfacesPage.jsx';
 import ModuleBaysPage from '../pages/nds/ModuleBaysPage.jsx';
+import ModuleTypesPage from '../pages/nds/ModuleTypesPage.jsx';
 import PrefixesPage from '../pages/nds/PrefixesPage.jsx';
 import DomainsPage from '../pages/nds/DomainsPage.jsx';
 import ReplaceDevicePage from '../pages/nds/ReplaceDevicePage.jsx';
@@ -52,6 +53,7 @@ export default function AppRoutes() {
             <Route path="sites" element={<SitesPage />} />
             <Route path="devices" element={<DevicesPage />} />
             <Route path="device-types" element={<DeviceTypesPage />} />
+            <Route path="module-types" element={<ModuleTypesPage />} />
             <Route path="sync-interfaces" element={<SyncInterfacesPage />} />
             <Route path="module-bays" element={<ModuleBaysPage />} />
             <Route path="replace-device" element={<ReplaceDevicePage />} />

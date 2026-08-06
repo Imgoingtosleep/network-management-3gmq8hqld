@@ -399,7 +399,7 @@ module.exports = {
   // Module Bays & Module Types
   listModuleTypes: async (req, res, next) => {
     try {
-      const data = await netboxService.getModuleTypes();
+      const data = await ndsService.listModuleTypes();
       return ok(res, data, 'ดึงรายการ Module Types เรียบร้อยแล้ว');
     } catch (err) {
       return next(err);
@@ -409,7 +409,7 @@ module.exports = {
   getModuleTypeInterfaces: async (req, res, next) => {
     try {
       const { id } = req.params;
-      const data = await netboxService.getModuleTypeInterfaces(id);
+      const data = await ndsService.getModuleTypeInterfaces(id);
       return ok(res, data, `ดึงรายการ Interface Templates ของ Module Type ID ${id} เรียบร้อยแล้ว`);
     } catch (err) {
       return next(err);
@@ -454,6 +454,66 @@ module.exports = {
       const { moduleId } = req.params;
       await netboxService.removeModuleFromBay(moduleId);
       return ok(res, null, 'ถอด Module ออกจาก Module Bay เรียบร้อยแล้ว');
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  // Module Types Management
+  createModuleType: async (req, res, next) => {
+    try {
+      const data = await ndsService.createModuleType(req.body);
+      return ok(res, data, 'สร้าง Module Type เรียบร้อยแล้ว');
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  updateModuleType: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await ndsService.updateModuleType(id, req.body);
+      return ok(res, data, `อัปเดต Module Type ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  deleteModuleType: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      await ndsService.deleteModuleType(id);
+      return ok(res, null, `ลบ Module Type ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  createModuleTypeInterfaceTemplates: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await ndsService.createModuleTypeInterfaceTemplates(id, req.body);
+      return ok(res, data, `สร้าง Port Templates สำหรับ Module Type ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  updateInterfaceTemplate: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = await ndsService.updateInterfaceTemplate(id, req.body);
+      return ok(res, data, `อัปเดต Interface Template ID ${id} เรียบร้อยแล้ว`);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  deleteInterfaceTemplate: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      await ndsService.deleteInterfaceTemplate(id);
+      return ok(res, null, `ลบ Interface Template ID ${id} เรียบร้อยแล้ว`);
     } catch (err) {
       return next(err);
     }

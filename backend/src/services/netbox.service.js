@@ -2229,7 +2229,8 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     for (const iface of remainingIfaces) {
       const nameLower = (iface.name || '').toLowerCase();
       const typeLower = (iface.type?.value || iface.type || '').toLowerCase();
-      const isVirtual = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+      const isSubInterface = (iface.name || '').includes('.') || Boolean(iface.parent?.id || iface.parent);
+      const isVirtual = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
 
       // If it was an old physical interface from before migration OR an old temp interface -> DELETE IT
       const isOldPhysical = oldPhysicalIfaceIds.has(iface.id);
@@ -2259,20 +2260,270 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
 /**
  * Replaces/migrates interfaces from an old device to a new device.
- * @param {number} oldDeviceId - The source device ID.
- * @param {number} newDeviceId - The target device ID.
- * @param {Array<Object>} interfaceMappings - Array of { oldInterfaceId, newInterfaceName } mappings.
- * @returns {Promise<Object>} Summary of migration actions.
  */
 async function replaceDevice(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall) {
   return replaceDeviceModel(oldDeviceId, newDeviceId, interfaceMappings, vlanifOption, vlanifIpMode, customVlanifIp, modulesToInstall);
 }
 
 /**
+ * Create a new Module Type in NetBox
+ */
+async function createModuleType(data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  let manufacturerId = data.manufacturer;
+  if (typeof data.manufacturer === 'string') {
+    const mfgName = data.manufacturer.trim();
+    const mfgs = await fetchAllPages('/dcim/manufacturers/');
+    const found = mfgs.find(m => m.name.toLowerCase() === mfgName.toLowerCase());
+    if (found) {
+      manufacturerId = found.id;
+    } else {
+      const mfgSlug = slugify(mfgName) || 'generic';
+      const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ name: mfgName, slug: mfgSlug })
+      });
+      if (!mfgRes.ok) {
+        throw new Error(`สร้างผู้ผลิต (Manufacturer) ไม่สำเร็จ: ${await mfgRes.text()}`);
+      }
+      const newMfg = await mfgRes.json();
+      manufacturerId = newMfg.id;
+    }
+  }
+
+  const payload = {
+    manufacturer: Number(manufacturerId),
+    model: data.model,
+    part_number: data.part_number || '',
+    description: data.description || '',
+    comments: data.comments || ''
+  };
+
+  const res = await fetch(`${baseUrl}/dcim/module-types/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    throw new Error(`สร้าง Module Type ไม่สำเร็จ: ${await res.text()}`);
+  }
+
+  const result = await res.json();
+
+  const interfaceTemplates = [];
+  if (data.clone_module_type_id) {
+    try {
+      const templatesToClone = await fetchAllPages(`/dcim/interface-templates/?module_type_id=${data.clone_module_type_id}`);
+      for (const t of templatesToClone) {
+        interfaceTemplates.push({
+          module_type: result.id,
+          name: t.name,
+          type: typeof t.type === 'object' ? t.type.value : t.type || '1000base-t',
+          label: t.label || ''
+        });
+      }
+    } catch (cloneErr) {
+      console.warn('Failed to clone module interface templates:', cloneErr.message);
+    }
+  } else if (data.interface_ranges && data.interface_ranges.length > 0) {
+    for (const range of data.interface_ranges) {
+      const prefix = range.prefix || '{module}/0/';
+      const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 0;
+      const count = parseInt(range.count) || 0;
+      const type = range.type || '1000base-t';
+      const label = range.label || '';
+
+      for (let i = 0; i < count; i++) {
+        const portNum = start + i;
+        interfaceTemplates.push({
+          module_type: result.id,
+          name: `${prefix}${portNum}`,
+          type: type,
+          label: label
+        });
+      }
+    }
+  }
+
+  if (interfaceTemplates.length > 0) {
+    try {
+      await fetch(`${baseUrl}/dcim/interface-templates/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(interfaceTemplates)
+      });
+    } catch (itErr) {
+      console.warn('Error creating module interface templates:', itErr.message);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Update Module Type
+ */
+async function updateModuleType(id, data) {
+  let manufacturerId = data.manufacturer;
+  if (typeof data.manufacturer === 'string') {
+    const mfgName = data.manufacturer.trim();
+    const mfgs = await fetchAllPages('/dcim/manufacturers/');
+    const found = mfgs.find(m => m.name.toLowerCase() === mfgName.toLowerCase());
+    if (found) {
+      manufacturerId = found.id;
+    }
+  }
+
+  const payload = {};
+  if (manufacturerId) payload.manufacturer = Number(manufacturerId);
+  if (data.model) payload.model = data.model;
+  if (data.part_number !== undefined) payload.part_number = data.part_number;
+  if (data.description !== undefined) payload.description = data.description;
+  if (data.comments !== undefined) payload.comments = data.comments;
+
+  return fetchNetboxApi(`/dcim/module-types/${id}/`, 'PATCH', payload);
+}
+
+/**
+ * Delete Module Type
+ */
+async function deleteModuleType(id) {
+  return fetchNetboxApi(`/dcim/module-types/${id}/`, 'DELETE');
+}
+
+/**
+ * Create Interface Templates for Module Type
+ */
+async function createModuleTypeInterfaceTemplates(moduleTypeId, data) {
+  const baseUrl = getSanitizedUrl();
+  const token = process.env.NETBOX_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    throw new Error('กรุณาระบุ NETBOX_API_URL และ NETBOX_API_TOKEN ในไฟล์ .env');
+  }
+
+  const interfaceTemplates = [];
+
+  if (data.interfaces && Array.isArray(data.interfaces)) {
+    for (const it of data.interfaces) {
+      interfaceTemplates.push({
+        module_type: parseInt(moduleTypeId),
+        name: it.name,
+        type: it.type || '1000base-t',
+        label: it.label || ''
+      });
+    }
+  } else {
+    const ranges = data.ranges || [
+      {
+        prefix: data.prefix || '{module}/0/',
+        start: parseInt(data.start) !== undefined && !isNaN(parseInt(data.start)) ? parseInt(data.start) : 0,
+        count: parseInt(data.count) || 0,
+        type: data.type || '1000base-t',
+        label: data.label || ''
+      }
+    ];
+
+    for (const range of ranges) {
+      const prefix = range.prefix || '{module}/0/';
+      const start = parseInt(range.start) !== undefined && !isNaN(parseInt(range.start)) ? parseInt(range.start) : 0;
+      const count = parseInt(range.count) || 0;
+      const type = range.type || '1000base-t';
+      const label = range.label || '';
+
+      for (let i = 0; i < count; i++) {
+        const portNum = start + i;
+        interfaceTemplates.push({
+          module_type: parseInt(moduleTypeId),
+          name: `${prefix}${portNum}`,
+          type: type,
+          label: label
+        });
+      }
+    }
+  }
+
+  if (interfaceTemplates.length === 0) {
+    throw new Error('กรุณาระบุกลุ่มพอร์ตที่ต้องการสร้างอย่างน้อย 1 รายการ');
+  }
+
+  const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(interfaceTemplates)
+  });
+
+  if (!res.ok) {
+    throw new Error(`สร้าง Port Templates สำหรับ Module Type ล้มเหลว: ${await res.text()}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Update Interface Template
+ */
+async function updateInterfaceTemplate(id, data) {
+  return fetchNetboxApi(`/dcim/interface-templates/${id}/`, 'PATCH', data);
+}
+
+/**
+ * Delete Interface Template
+ */
+async function deleteInterfaceTemplate(id) {
+  return fetchNetboxApi(`/dcim/interface-templates/${id}/`, 'DELETE');
+}
+
+/**
  * Fetch Module Types (available cards/modules)
  */
 async function getModuleTypes() {
-  return fetchAllPages('/dcim/module-types/');
+  try {
+    const [moduleTypes, interfaceTemplates] = await Promise.all([
+      fetchAllPages('/dcim/module-types/'),
+      fetchAllPages('/dcim/interface-templates/')
+    ]);
+
+    const countMap = {};
+    if (Array.isArray(interfaceTemplates)) {
+      for (const it of interfaceTemplates) {
+        if (it.module_type?.id) {
+          countMap[it.module_type.id] = (countMap[it.module_type.id] || 0) + 1;
+        }
+      }
+    }
+
+    return moduleTypes.map(mt => ({
+      ...mt,
+      interface_templates_count: countMap[mt.id] || 0
+    }));
+  } catch (err) {
+    return fetchAllPages('/dcim/module-types/');
+  }
 }
 
 /**
@@ -2300,7 +2551,6 @@ async function installModuleInBay(moduleBayId, moduleTypeId) {
   const bay = await getSingle(`/dcim/module-bays/${moduleBayId}/`);
   if (!bay) throw new Error('ไม่พบข้อมูล Module Bay ที่ระบุ');
 
-  // Create Module object
   const modulePayload = {
     device: bay.device.id,
     module_bay: Number(moduleBayId),
@@ -2355,7 +2605,13 @@ module.exports = {
   updateInterface,
   syncDeviceInterfaces,
   getModuleTypes,
+  createModuleType,
+  updateModuleType,
+  deleteModuleType,
   getModuleTypeInterfaces,
+  createModuleTypeInterfaceTemplates,
+  updateInterfaceTemplate,
+  deleteInterfaceTemplate,
   getDeviceTypeModuleBays,
   getDeviceModuleBays,
   installModuleInBay,

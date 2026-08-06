@@ -510,5 +510,29 @@ module.exports = {
   // Port Presets (Templates)
   getPortPresets: async () => ndsModel.findPortPresets(),
   createPortPreset: async (payload) => ndsModel.createPortPreset(payload),
-  getInterfaceTypeChoices: async () => netboxService.getInterfaceTypeChoices()
+  getInterfaceTypeChoices: async () => netboxService.getInterfaceTypeChoices(),
+
+  // Module Types CRUD
+  listModuleTypes: async () => {
+    try {
+      return await netboxService.getModuleTypes();
+    } catch (err) {
+      console.warn('⚠️ Failed to load Module Types from NetBox:', err.message);
+      return [];
+    }
+  },
+  createModuleType: async (payload) => netboxService.createModuleType(payload),
+  updateModuleType: async (id, payload) => netboxService.updateModuleType(id, payload),
+  deleteModuleType: async (id) => netboxService.deleteModuleType(id),
+  getModuleTypeInterfaces: async (id) => {
+    try {
+      return await netboxService.getModuleTypeInterfaces(id);
+    } catch (err) {
+      console.warn(`⚠️ Failed to load Interface Templates for Module Type ${id}:`, err.message);
+      return [];
+    }
+  },
+  createModuleTypeInterfaceTemplates: async (id, payload) => netboxService.createModuleTypeInterfaceTemplates(id, payload),
+  updateInterfaceTemplate: async (id, payload) => netboxService.updateInterfaceTemplate(id, payload),
+  deleteInterfaceTemplate: async (id) => netboxService.deleteInterfaceTemplate(id)
 };

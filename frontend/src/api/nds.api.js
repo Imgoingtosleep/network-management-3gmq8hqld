@@ -42,7 +42,13 @@ export const ndsApi = {
 
   // Module Bays & Module Types
   getModuleTypes: () => axiosClient.get('/nds/module-types'),
+  createModuleType: (payload) => axiosClient.post('/nds/module-types', payload),
+  updateModuleType: (id, payload) => axiosClient.patch(`/nds/module-types/${id}`, payload),
+  deleteModuleType: (id) => axiosClient.delete(`/nds/module-types/${id}`),
   getModuleTypeInterfaces: (id) => axiosClient.get(`/nds/module-types/${id}/interfaces`),
+  createModuleTypeInterfaces: (id, payload) => axiosClient.post(`/nds/module-types/${id}/interfaces`, payload),
+  updateInterfaceTemplate: (id, payload) => axiosClient.patch(`/nds/interface-templates/${id}`, payload),
+  deleteInterfaceTemplate: (id) => axiosClient.delete(`/nds/interface-templates/${id}`),
   getDeviceTypeModuleBays: (deviceTypeId) => axiosClient.get(`/nds/device-types/${deviceTypeId}/module-bays`),
   getDeviceModuleBays: (deviceId) => axiosClient.get(`/nds/devices/${deviceId}/module-bays`),
   installModuleInBay: (payload) => axiosClient.post('/nds/module-bays/install', payload),
