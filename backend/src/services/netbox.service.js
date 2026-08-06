@@ -1858,7 +1858,8 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     initialIfaces.forEach(i => {
       const nameLower = (i.name || '').toLowerCase();
       const typeLower = (i.type?.value || i.type || '').toLowerCase();
-      const isVirt = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+      const isSubInterface = (i.name || '').includes('.') || Boolean(i.parent?.id || i.parent);
+      const isVirt = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
       if (!isVirt) {
         oldPhysicalIfaceIds.add(i.id);
       }
@@ -1934,80 +1935,85 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
   // Handle Vlanif creation & automatic IP/Config migration from old Vlanif interfaces
   if (vlanifOption && vlanifOption !== 'none') {
-    const targetVlanifName = vlanifOption === 'vlanif100' ? 'Vlanif100' : 'Vlanif115';
-    try {
-      const targetVlanifId = await getOrCreateInterface(deviceId, targetVlanifName, 'virtual');
-      summary.vlanifCreated.push(targetVlanifName);
+    const targetVlanifNames = vlanifOption === 'both' 
+      ? ['Vlanif100', 'Vlanif115'] 
+      : [vlanifOption === 'vlanif100' ? 'Vlanif100' : 'Vlanif115'];
 
-      const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
-      const oldVlanifs = allDeviceIfaces.filter(i => {
-        const nameLower = (i.name || '').toLowerCase();
-        return nameLower.includes('vlan') && i.id !== targetVlanifId;
-      });
+    for (const targetVlanifName of targetVlanifNames) {
+      try {
+        const targetVlanifId = await getOrCreateInterface(deviceId, targetVlanifName, 'virtual');
+        summary.vlanifCreated.push(targetVlanifName);
 
-      if (vlanifIpMode === 'new' && customVlanifIp && customVlanifIp.trim()) {
-        // Mode 2: Use new IP address specified by user
-        const ipStr = customVlanifIp.trim();
-        try {
-          const newIpObj = await getOrCreateIPAddress(ipStr, {
-            assigned_object_type: 'dcim.interface',
-            assigned_object_id: targetVlanifId
-          });
-          summary.newIpCreated = newIpObj.address || ipStr;
-          summary.migrated.push({
-            oldInterface: 'Custom Input',
-            newInterface: targetVlanifName,
-            ipsTransferred: 1,
-            ipAddress: newIpObj.address || ipStr
-          });
-        } catch (ipErr) {
-          summary.errors.push({
-            interface: targetVlanifName,
-            error: `ไม่สามารถผูก IP ใหม่ ${ipStr} กับ ${targetVlanifName} ได้: ${ipErr.message}`
-          });
-        }
+        const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+        const oldVlanifs = allDeviceIfaces.filter(i => {
+          const nameLower = (i.name || '').toLowerCase();
+          return nameLower.includes('vlan') && i.id !== targetVlanifId;
+        });
 
-        // Cleanup descriptions / old vlanifs if present
-        for (const oldVlanif of oldVlanifs) {
-          if (oldVlanif.description) {
-            await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
-          }
+        if (vlanifIpMode === 'new' && customVlanifIp && customVlanifIp.trim()) {
+          // Mode 2: Use new IP address specified by user
+          const ipStr = customVlanifIp.trim();
           try {
-            await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
-          } catch (delVifErr) {
-            console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
-          }
-        }
-      } else {
-        // Mode 1: Use existing IP address from old Vlanif
-        for (const oldVlanif of oldVlanifs) {
-          if (oldVlanif.description) {
-            await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
-          }
-
-          const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
-          for (const ipObj of vlanifIps) {
-            await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+            const newIpObj = await getOrCreateIPAddress(ipStr, {
               assigned_object_type: 'dcim.interface',
               assigned_object_id: targetVlanifId
             });
+            summary.newIpCreated = newIpObj.address || ipStr;
             summary.migrated.push({
-              oldInterface: oldVlanif.name,
+              oldInterface: 'Custom Input',
               newInterface: targetVlanifName,
               ipsTransferred: 1,
-              ipAddress: ipObj.address
+              ipAddress: newIpObj.address || ipStr
+            });
+          } catch (ipErr) {
+            summary.errors.push({
+              interface: targetVlanifName,
+              error: `ไม่สามารถผูก IP ใหม่ ${ipStr} กับ ${targetVlanifName} ได้: ${ipErr.message}`
             });
           }
 
-          try {
-            await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
-          } catch (delVifErr) {
-            console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+          // Cleanup descriptions / old vlanifs if present
+          for (const oldVlanif of oldVlanifs) {
+            if (oldVlanif.description) {
+              await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
+            }
+            try {
+              await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
+            } catch (delVifErr) {
+              console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+            }
+          }
+        } else {
+          // Mode 1: Use existing IP address from old Vlanif
+          for (const oldVlanif of oldVlanifs) {
+            if (oldVlanif.description) {
+              await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
+            }
+
+            const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
+            for (const ipObj of vlanifIps) {
+              await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+                assigned_object_type: 'dcim.interface',
+                assigned_object_id: targetVlanifId
+              });
+              summary.migrated.push({
+                oldInterface: oldVlanif.name,
+                newInterface: targetVlanifName,
+                ipsTransferred: 1,
+                ipAddress: ipObj.address
+              });
+            }
+
+            try {
+              await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
+            } catch (delVifErr) {
+              console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+            }
           }
         }
+      } catch (vifErr) {
+        console.warn(`Failed to process Vlanif migration to ${targetVlanifName}:`, vifErr.message);
       }
-    } catch (vifErr) {
-      console.warn(`Failed to process Vlanif migration to ${targetVlanifName}:`, vifErr.message);
     }
   }
 
