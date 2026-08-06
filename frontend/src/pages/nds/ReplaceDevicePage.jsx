@@ -325,7 +325,7 @@ export default function ReplaceDevicePage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-ink-100 flex items-center gap-2">
-              <span className="text-nds">⚙️</span> Device Replace Model (เปลี่ยนรุ่นอุปกรณ์)
+              Device Replace Model (เปลี่ยนรุ่นอุปกรณ์)
             </h2>
             <p className="mt-1 text-sm text-ink-400">
               เปลี่ยนรุ่นอุปกรณ์ (Device Type) บนอุปกรณ์เดิม โดยรักษาชื่อเครื่อง IP Address และการตั้งค่า Interface (VLAN, Description) ให้ย้ายไปอยู่ตามพอร์ตของ Model ใหม่
@@ -343,7 +343,7 @@ export default function ReplaceDevicePage() {
 
       {errorMessage && (
         <div className="rounded-lg bg-red-500/10 p-4 border border-red-500/30">
-          <p className="text-sm text-red-400 font-medium">⚠️ {errorMessage}</p>
+          <p className="text-sm text-red-400 font-medium">{errorMessage}</p>
         </div>
       )}
 
@@ -632,7 +632,6 @@ export default function ReplaceDevicePage() {
 
           {/* Warning Banner for Unselected Ports Data Loss */}
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
-            <span className="text-base shrink-0">⚠️</span>
             <div>
               <span className="font-bold block text-amber-200 mb-0.5">คำเตือนสำคัญเกี่ยวกับข้อมูลพอร์ต:</span>
               <p className="text-amber-300/90 leading-relaxed">
@@ -650,7 +649,7 @@ export default function ReplaceDevicePage() {
                     <th className="p-3 text-center w-10">เลือก</th>
                     <th className="p-3">Physical Interface เดิม</th>
                     <th className="p-3">รายละเอียดเดิม (Description / Config)</th>
-                    <th className="p-3 text-center w-12">➡️</th>
+                    <th className="p-3 text-center w-12">-&gt;</th>
                     <th className="p-3">ตกพอร์ตปลายทางบน Model ใหม่</th>
                   </tr>
                 </thead>

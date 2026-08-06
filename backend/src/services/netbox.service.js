@@ -513,7 +513,7 @@ async function sanitizeDeviceData(data) {
  * @param {string} label - The interface label.
  * @returns {Promise<number>} The interface ID.
  */
-async function getOrCreateInterface(deviceId, name, type = 'virtual', label = '') {
+async function getOrCreateInterface(deviceId, name, type = 'virtual', label = '', parentId = null) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
   
@@ -561,7 +561,8 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
       device: deviceId,
       name: name,
       type: templateType,
-      ...(templateLabel ? { label: templateLabel } : {})
+      ...(templateLabel ? { label: templateLabel } : {}),
+      ...(parentId ? { parent: parentId } : {})
     })
   });
   if (!createRes.ok) {
@@ -1693,12 +1694,8 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
         payload.mgmt_only = Boolean(t.mgmt_only);
       }
       
-      // Preserve label from existing interface (or set template label if existing label is empty)
-      if (existing.label) {
-        payload.label = existing.label;
-      } else if (t.label) {
-        payload.label = t.label;
-      }
+      // Use label from Model Template
+      payload.label = t.label || '';
 
       // Preserve description from existing interface
       if (existing.description) {
@@ -1854,6 +1851,22 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
 async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115', vlanifIpMode = 'existing', customVlanifIp = '', modulesToInstall = []) {
   const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [], newIpCreated: null, modulesInstalled: [], modulesRemoved: [] };
 
+  // Fetch initial interfaces on old device to track old physical interface IDs for cleanup later (Issue 1 Fix)
+  const oldPhysicalIfaceIds = new Set();
+  try {
+    const initialIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+    initialIfaces.forEach(i => {
+      const nameLower = (i.name || '').toLowerCase();
+      const typeLower = (i.type?.value || i.type || '').toLowerCase();
+      const isVirt = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+      if (!isVirt) {
+        oldPhysicalIfaceIds.add(i.id);
+      }
+    });
+  } catch (initErr) {
+    console.warn('Error fetching initial device interfaces:', initErr.message);
+  }
+
   // 0. Remove existing modules on the device if new modules are being installed OR device model changes to non-matching
   try {
     const existingModules = await fetchAllPages(`/dcim/modules/?device_id=${deviceId}`);
@@ -1879,6 +1892,27 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     summary.deviceUpdated = true;
   } catch (err) {
     throw new Error(`ไม่สามารถอัปเดต Model อุปกรณ์ได้: ${err.message}`);
+  }
+
+  // 1.1 Instantiate all Interface Templates of the new DeviceType on the device (Issue 3 Fix)
+  try {
+    const newTemplates = await getInterfaceTemplates(newDeviceTypeId);
+    if (Array.isArray(newTemplates) && newTemplates.length > 0) {
+      for (const tpl of newTemplates) {
+        try {
+          await getOrCreateInterface(
+            deviceId,
+            tpl.name,
+            tpl.type?.value || tpl.type || '1000base-t',
+            tpl.label || ''
+          );
+        } catch (instErr) {
+          console.warn(`Could not instantiate template interface ${tpl.name}:`, instErr.message);
+        }
+      }
+    }
+  } catch (instErr) {
+    console.warn(`Could not fetch interface templates for new device type ${newDeviceTypeId}:`, instErr.message);
   }
 
   // 1.5 Install selected new Modules into Module Bays (if specified)
@@ -2020,15 +2054,19 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   });
 
   // ===== FIX 2: Rename Old Interfaces to avoid Name Collision =====
-  for (const item of fetchedMappings) {
+  for (let idx = 0; idx < fetchedMappings.length; idx++) {
+    const item = fetchedMappings[idx];
     try {
-      const tempName = `${item.ifaceObj.name}_OLD_TEMP_${Date.now()}`;
+      const tempName = `${item.ifaceObj.name}_OLD_TEMP_${Date.now()}_${idx}`;
       await fetchNetboxApi(`/dcim/interfaces/${item.ifaceObj.id}/`, 'PATCH', { name: tempName });
       item.tempName = tempName;
     } catch (renameErr) {
       console.warn(`Could not rename old interface ${item.ifaceObj.name} to temp name:`, renameErr.message);
     }
   }
+
+  // Map to store mapping of old interface ID -> new target interface ID (for parent reference resolution - Issue 2 Fix)
+  const parentNewIdMap = {};
 
   // ===== FIX 3: Transfer Configs & IPs with Safe Fallback & Detailed Logging =====
   for (const item of fetchedMappings) {
@@ -2041,17 +2079,34 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
 
     try {
+      // Determine parent ID if sub-interface (Issue 2 Fix)
+      let parentId = null;
+      if (oldIface.parent?.id && parentNewIdMap[oldIface.parent.id]) {
+        parentId = parentNewIdMap[oldIface.parent.id];
+      } else if (targetName.includes('.')) {
+        const parentName = targetName.split('.')[0];
+        try {
+          const currentIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+          const pIface = currentIfaces.find(i => i.name === parentName);
+          if (pIface) parentId = pIface.id;
+        } catch (pErr) {}
+      }
+
       // 1. Create or Find target interface on device
       const newIfaceId = await getOrCreateInterface(
         deviceId,
         targetName,
-        oldIface.type?.value || oldIface.type || '1000base-t'
+        oldIface.type?.value || oldIface.type || '1000base-t',
+        '',
+        parentId
       );
 
+      // Store in parentNewIdMap for sub-interfaces to reference if this was a parent
+      parentNewIdMap[oldIface.id] = newIfaceId;
+
       // 2. Transfer full configurations (Description, Mode, VLANs, MAC, Speed, Duplex, Enabled, Tags, Custom Fields)
-      // Note: Fields 'label' and 'mtu' are kept as-is from the new model / new module interface template
       const updatePayload = {};
-      
+      if (parentId) updatePayload.parent = parentId;
       if (oldIface.description !== undefined) updatePayload.description = oldIface.description;
       if (oldIface.enabled !== undefined) updatePayload.enabled = oldIface.enabled;
       if (oldIface.mac_address) updatePayload.mac_address = oldIface.mac_address;
@@ -2136,18 +2191,20 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
-  // ===== FIX 5: Delete Unmapped/Unselected Old Physical Interfaces =====
+  // ===== FIX 5: Delete Unmapped/Unselected Old Physical Interfaces (Issue 1 Fix) =====
   try {
     const remainingIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
-    const mappedOldIds = new Set(interfaceMappings.map(m => Number(m.oldInterfaceId)));
 
     for (const iface of remainingIfaces) {
       const nameLower = (iface.name || '').toLowerCase();
       const typeLower = (iface.type?.value || iface.type || '').toLowerCase();
       const isVirtual = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
 
-      // If it's a physical interface or an old temp interface, and it was NOT mapped/selected to a new port -> DELETE IT
-      if (!isVirtual && (mappedOldIds.has(iface.id) || iface.name.includes('_OLD_TEMP_'))) {
+      // If it was an old physical interface from before migration OR an old temp interface -> DELETE IT
+      const isOldPhysical = oldPhysicalIfaceIds.has(iface.id);
+      const isTempName = iface.name.includes('_OLD_TEMP_');
+
+      if (!isVirtual && (isOldPhysical || isTempName)) {
         try {
           if (iface.cable?.id) {
             await fetchNetboxApi(`/dcim/cables/${iface.cable.id}/`, 'DELETE');

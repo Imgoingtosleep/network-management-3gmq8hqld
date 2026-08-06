@@ -542,6 +542,6 @@ export default function ModuleBaysPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
   );
 }
