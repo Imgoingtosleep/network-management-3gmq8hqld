@@ -2169,7 +2169,32 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         });
       }
 
-      // 4. Delete old temporary interface
+      // 4. Migrate sub-interfaces attached to old physical interface (if any)
+      try {
+        const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+        const childSubIfaces = allDeviceIfaces.filter(i => 
+          i.parent?.id === oldIface.id || 
+          (oldIface.name && i.name.startsWith(`${oldIface.name}.`))
+        );
+        for (const sub of childSubIfaces) {
+          const dotIndex = sub.name.indexOf('.');
+          const subSuffix = dotIndex !== -1 ? sub.name.substring(dotIndex) : '';
+          const newSubName = `${targetName}${subSuffix}`;
+          await fetchNetboxApi(`/dcim/interfaces/${sub.id}/`, 'PATCH', {
+            parent: newIfaceId,
+            name: newSubName
+          });
+          summary.migrated.push({
+            oldInterface: sub.name,
+            newInterface: newSubName,
+            status: 'Migrated sub-interface under parent physical port'
+          });
+        }
+      } catch (subErr) {
+        console.warn(`Failed to migrate sub-interfaces for ${oldIface.name}:`, subErr.message);
+      }
+
+      // 5. Delete old temporary interface
       try {
         await fetchNetboxApi(`/dcim/interfaces/${oldIface.id}/`, 'DELETE');
       } catch (delErr) {

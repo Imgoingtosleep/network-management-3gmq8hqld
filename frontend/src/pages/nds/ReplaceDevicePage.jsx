@@ -165,11 +165,12 @@ export default function ReplaceDevicePage() {
   const generateMappings = (oldIfaces, targetTemplates) => {
     if (!oldIfaces.length) return;
     
-    // กรองพวก Virtual Interface ออก
+    // กรองพวก Virtual Interface และ Sub-Interface ออก (Sub-interface จะย้ายตาม Physical Port หลักให้อัตโนมัติ ไม่สามารถติ๊กเลือกแยกได้)
     const physicalOnly = oldIfaces.filter(oldIf => {
       const nameLower = (oldIf.name || '').toLowerCase();
       const typeLower = (oldIf.type?.value || oldIf.type?.label || oldIf.type || '').toLowerCase();
-      const isVirtual = ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+      const isSubInterface = (oldIf.name || '').includes('.') || Boolean(oldIf.parent?.id || oldIf.parent);
+      const isVirtual = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
       return !isVirtual;
     });
 
@@ -599,7 +600,7 @@ export default function ReplaceDevicePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-base-700 pb-4">
             <div>
               <h3 className="text-base font-bold text-ink-100 flex items-center gap-2">
-                <span>🔀</span> จับคู่การย้าย Interface 
+                จับคู่การย้าย Interface 
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold ${
                   selectedCount === maxAllowedSelection 
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -639,6 +640,24 @@ export default function ReplaceDevicePage() {
               </p>
             </div>
           </div>
+
+          {/* Sub-interface Auto Migration Info Box */}
+          {(() => {
+            const subIfaces = oldInterfaces.filter(i => (i.name || '').includes('.') || Boolean(i.parent?.id));
+            if (subIfaces.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-blue-500/40 bg-blue-500/10 p-3.5 text-xs text-blue-300 flex items-start gap-2.5">
+                <div>
+                  <span className="font-bold block text-blue-200 mb-0.5">
+                    ตรวจพบ Sub-interface บนอุปกรณ์นี้ ({subIfaces.length} รายการ):
+                  </span>
+                  <p className="text-blue-300/90 leading-relaxed font-sans">
+                    Sub-interface (เช่น <code className="font-mono bg-blue-950 px-1.5 py-0.5 rounded text-blue-200">{subIfaces.slice(0, 3).map(s => s.name).join(', ')}{subIfaces.length > 3 ? '...' : ''}</code>) จะถูก **ย้ายและอัปเดตไปที่พอร์ตปลายทางให้อัตโนมัติ** ตามพอร์ตหลัก (Physical Port) ที่คุณเลือกจับคู่ คุณไม่จำเป็นต้องจับคู่ Sub-interface เอง
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Physical Interfaces Table */}
           <div className="space-y-2">
@@ -724,7 +743,7 @@ export default function ReplaceDevicePage() {
       {result && (
         <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-6 space-y-4">
           <h3 className="text-base font-bold text-green-400 flex items-center gap-2">
-            <span>✅</span> เปลี่ยน Model อุปกรณ์สำเร็จ! (Replace Model Completed)
+            เปลี่ยน Model อุปกรณ์สำเร็จ! (Replace Model Completed)
           </h3>
           <div className="space-y-2 text-xs font-mono">
             {result.migrated?.map((item, idx) => (
