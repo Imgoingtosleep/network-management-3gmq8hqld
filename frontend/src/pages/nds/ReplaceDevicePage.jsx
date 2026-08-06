@@ -146,10 +146,17 @@ export default function ReplaceDevicePage() {
       const modTypeObj = availableModuleTypes.find(m => String(m.id) === String(mTypeId));
       const modIfaces = modIfacesMap[mTypeId] || [];
 
+      // คำนวณเลข Bay/Slot (เช่น "1", "2") เพื่อนำไปแทนที่ {module} ใน Template Name
+      const bayNum = bayObj?.position != null 
+        ? String(bayObj.position) 
+        : (bayObj?.name ? String(bayObj.name).replace(/\D/g, '') || String(bayObj.name) : String(bId));
+
       modIfaces.forEach(iface => {
+        const expandedName = (iface.name || '').replace(/\{module\}/gi, bayNum);
         list.push({
           id: `mod_${bId}_${iface.id}`,
-          name: iface.name,
+          name: expandedName,
+          rawName: iface.name,
           label: iface.label,
           type: iface.type,
           fromModule: true,
