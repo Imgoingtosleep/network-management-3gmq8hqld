@@ -1851,6 +1851,9 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
 async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, vlanifOption = 'vlanif115', vlanifIpMode = 'existing', customVlanifIp = '', modulesToInstall = []) {
   const summary = { migrated: [], skipped: [], errors: [], deviceUpdated: false, vlanifCreated: [], newIpCreated: null, modulesInstalled: [], modulesRemoved: [] };
 
+  // 0. Capture Before Snapshot for Rollback & Comparison
+  const beforeSnapshot = await captureDeviceSnapshot(deviceId);
+
   // Fetch initial interfaces on old device to track old physical interface IDs for cleanup later (Issue 1 Fix)
   const oldPhysicalIfaceIds = new Set();
   try {
@@ -2272,9 +2275,135 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     console.warn('Failed to cleanup unmapped old interfaces:', cleanErr.message);
   }
 
+  // Capture After Snapshot for Rollback & Comparison
+  const afterSnapshot = await captureDeviceSnapshot(deviceId);
+
+  const snapshotId = `snap_${deviceId}_${Date.now()}`;
+  const snapshotData = {
+    id: snapshotId,
+    deviceId: parseInt(deviceId),
+    before: beforeSnapshot,
+    after: afterSnapshot,
+    summary: summary,
+    createdAt: new Date().toISOString()
+  };
+
+  deviceSnapshots[snapshotId] = snapshotData;
+
   // Clear memory cache after operations
   memoryCache.devices.data = null;
-  return summary;
+
+  return {
+    summary,
+    snapshotId,
+    beforeSnapshot,
+    afterSnapshot
+  };
+}
+
+async function rollbackDevice(snapshotId) {
+  const snapshot = deviceSnapshots[snapshotId];
+  if (!snapshot || !snapshot.before) {
+    throw new Error(`ไม่พบข้อมูล Snapshot (${snapshotId}) สำหรับทำการ Rollback`);
+  }
+
+  const { deviceId, before } = snapshot;
+  const targetDeviceTypeId = before.device?.device_type?.id;
+
+  if (!targetDeviceTypeId) {
+    throw new Error('ข้อมูล Snapshot ไม่สมบูรณ์ ไม่สามารถค้นหารุ่นอุปกรณ์เดิมได้');
+  }
+
+  // 1. Restore Device Type
+  await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
+    device_type: parseInt(targetDeviceTypeId)
+  });
+
+  // 2. Clear current modules & reinstall original modules if any
+  try {
+    const currentModules = await fetchAllPages(`/dcim/modules/?device_id=${deviceId}`);
+    for (const mod of currentModules) {
+      try {
+        await fetchNetboxApi(`/dcim/modules/${mod.id}/`, 'DELETE');
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  if (Array.isArray(before.modules) && before.modules.length > 0) {
+    for (const mod of before.modules) {
+      if (mod.module_bay && mod.module_type) {
+        try {
+          await installModuleInBay(mod.module_bay, mod.module_type);
+        } catch (e) {}
+      }
+    }
+  }
+
+  // 3. Restore interfaces from before.interfaces snapshot
+  const currentIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+  const currentIfaceMap = {};
+  currentIfaces.forEach(i => { currentIfaceMap[i.name] = i; });
+
+  const parentIdMap = {};
+  
+  const sortedBeforeIfaces = [...before.interfaces].sort((a, b) => {
+    return (a.parent ? 1 : 0) - (b.parent ? 1 : 0);
+  });
+
+  for (const bIface of sortedBeforeIfaces) {
+    let parentId = null;
+    if (bIface.parent && parentIdMap[bIface.parent.id]) {
+      parentId = parentIdMap[bIface.parent.id];
+    }
+
+    const ifaceId = await getOrCreateInterface(
+      deviceId,
+      bIface.name,
+      bIface.type,
+      bIface.description,
+      parentId
+    );
+    parentIdMap[bIface.id] = ifaceId;
+
+    const patchPayload = {
+      description: bIface.description,
+      enabled: bIface.enabled,
+      mode: bIface.mode
+    };
+    if (bIface.mac_address) patchPayload.mac_address = bIface.mac_address;
+    if (bIface.untagged_vlan?.id) patchPayload.untagged_vlan = bIface.untagged_vlan.id;
+    if (bIface.mode !== 'access' && Array.isArray(bIface.tagged_vlans) && bIface.tagged_vlans.length > 0) {
+      patchPayload.tagged_vlans = bIface.tagged_vlans.map(v => v.id);
+    }
+    if (bIface.custom_fields) patchPayload.custom_fields = bIface.custom_fields;
+
+    try {
+      await fetchNetboxApi(`/dcim/interfaces/${ifaceId}/`, 'PATCH', patchPayload);
+    } catch (e) {}
+
+    if (Array.isArray(bIface.ips)) {
+      for (const ipObj of bIface.ips) {
+        try {
+          await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
+            assigned_object_type: 'dcim.interface',
+            assigned_object_id: ifaceId
+          });
+        } catch (e) {}
+      }
+    }
+  }
+
+  memoryCache.devices.data = null;
+
+  return {
+    success: true,
+    message: `Rollback อุปกรณ์ ${before.device.name} กลับสู่สถานะเดิมเรียบร้อยแล้ว`,
+    snapshot
+  };
+}
+
+function getDeviceSnapshot(snapshotId) {
+  return deviceSnapshots[snapshotId] || null;
 }
 
 /**
@@ -2635,6 +2764,8 @@ module.exports = {
   getDeviceModuleBays,
   installModuleInBay,
   removeModuleFromBay,
+  rollbackDevice,
+  getDeviceSnapshot,
   get: fetchAllPages,
   getSingle,
   createCable,

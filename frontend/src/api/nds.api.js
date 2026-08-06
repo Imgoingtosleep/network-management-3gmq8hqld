@@ -39,6 +39,8 @@ export const ndsApi = {
   getTags: () => axiosClient.get('/nds/tags'),
   getVlans: () => axiosClient.get('/nds/vlans'),
   replaceDevice: (payload) => axiosClient.post('/nds/devices/replace', payload),
+  rollbackDevice: (payload) => axiosClient.post('/nds/devices/rollback', payload),
+  getDeviceSnapshot: (snapshotId) => axiosClient.get(`/nds/devices/snapshots/${snapshotId}`),
 
   // Module Bays & Module Types
   getModuleTypes: () => axiosClient.get('/nds/module-types'),

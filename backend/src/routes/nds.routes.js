@@ -12,6 +12,8 @@ router.post('/projects', ndsController.createProject);
 router.get('/devices', ndsController.listDevices);
 router.post('/devices/sync-interfaces', ndsController.syncDeviceInterfaces);
 router.post('/devices/replace', ndsController.replaceDevice);
+router.post('/devices/rollback', ndsController.rollbackDevice);
+router.get('/devices/snapshots/:snapshotId', ndsController.getDeviceSnapshot);
 router.get('/devices/:id/interfaces', ndsController.listDeviceInterfaces);
 router.patch('/interfaces/:interfaceId', ndsController.updateDeviceInterface);
 router.post('/devices', ndsController.createDevice);

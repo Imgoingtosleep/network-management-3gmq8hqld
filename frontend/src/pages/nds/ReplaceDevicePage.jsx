@@ -23,7 +23,33 @@ export default function ReplaceDevicePage() {
   
   const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState(null);
+  const [snapshotResult, setSnapshotResult] = useState(null);
+  const [rollingBack, setRollingBack] = useState(false);
+  const [rollbackSuccessMessage, setRollbackSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  const handleRollback = async () => {
+    if (!snapshotResult?.snapshotId) return;
+    const currentDev = devices.find(d => String(d.id) === String(selectedDeviceId));
+    const confirmMsg = `ยืนยันการ Rollback ย้อนคืนค่าอุปกรณ์ "${currentDev?.name || selectedDeviceId}" กลับสู่โครงสร้างและข้อมูลเดิมล่วงหน้า (Before State)?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setRollingBack(true);
+    setErrorMessage('');
+    setRollbackSuccessMessage('');
+
+    try {
+      await ndsApi.rollbackDevice({ snapshotId: snapshotResult.snapshotId });
+      setRollbackSuccessMessage(`Rollback อุปกรณ์ "${currentDev?.name || selectedDeviceId}" กลับสู่โครงสร้างและพอร์ตเดิมเรียบร้อยแล้ว!`);
+      setSnapshotResult(null);
+      setResult(null);
+      handleSelectDevice(selectedDeviceId);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการ Rollback');
+    } finally {
+      setRollingBack(false);
+    }
+  };
   
   const [searchDevice, setSearchDevice] = useState('');
   const [searchDeviceType, setSearchDeviceType] = useState('');
@@ -291,7 +317,9 @@ export default function ReplaceDevicePage() {
           newInterfaceName: m.newInterfaceName
         }))
       });
-      setResult(res.data?.data || res.data || { success: true, message: 'เปลี่ยน Model เรียบร้อยแล้ว' });
+      const resData = res.data?.data || res.data || {};
+      setResult(resData.summary || resData);
+      setSnapshotResult(resData);
     } catch (err) {
       setErrorMessage(err.response?.data?.message || 'เกิดข้อผิดพลาดในการเปลี่ยน Model อุปกรณ์');
     } finally {
@@ -746,19 +774,116 @@ export default function ReplaceDevicePage() {
         </div>
       )}
 
-      {/* Migration Results Banner */}
-      {result && (
-        <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-6 space-y-4">
-          <h3 className="text-base font-bold text-green-400 flex items-center gap-2">
-            เปลี่ยน Model อุปกรณ์สำเร็จ! (Replace Model Completed)
-          </h3>
-          <div className="space-y-2 text-xs font-mono">
-            {result.migrated?.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between rounded bg-base-900/60 p-2 text-ink-200">
-                <span>ย้ายพอร์ต <strong className="text-ink-100">{item.oldInterface}</strong> ➔ <strong className="text-green-400">{item.newInterface}</strong></span>
-                <span className="text-ink-400">IPs: {item.ipsTransferred} | Config: {item.propertiesCopied?.length || 0} รายการ</span>
+      {/* Rollback Success Notification Banner */}
+      {rollbackSuccessMessage && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-mono text-emerald-300 flex items-center justify-between animate-in fade-in duration-200">
+          <span>{rollbackSuccessMessage}</span>
+          <button onClick={() => setRollbackSuccessMessage('')} className="text-emerald-400 hover:underline text-xs">ปิด</button>
+        </div>
+      )}
+
+      {/* Migration Results & Before vs After Side-by-Side Comparison Area */}
+      {snapshotResult && (
+        <div className="rounded-xl border border-nds/40 bg-base-900/90 p-6 space-y-6 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-base-700 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-ink-100 flex items-center gap-2">
+                ตารางเปรียบเทียบผลลัพธ์การเปลี่ยนอุปกรณ์ (Before vs After Comparison)
+              </h3>
+              <p className="text-xs text-ink-400 mt-0.5">
+                เปรียบเทียบโครงสร้างอุปกรณ์ พอร์ต และ IP Address ก่อนหน้า (ซ้าย) และหลังเปลี่ยน (ขวา)
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleRollback}
+                disabled={rollingBack}
+                className="rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 px-4 py-2 text-xs font-semibold hover:bg-red-500/30 disabled:opacity-50 transition shadow-md"
+              >
+                {rollingBack ? 'กำลังย้อนคืนค่าเดิม (Rolling back...)' : 'Rollback ย้อนคืนค่าเดิม'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSnapshotResult(null)}
+                className="rounded-lg bg-nds text-base-950 px-4 py-2 text-xs font-semibold hover:bg-nds-hover transition shadow-md"
+              >
+                ยืนยันใช้งานโครงสร้างใหม่
+              </button>
+            </div>
+          </div>
+
+          {/* Dual Pane Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-left">
+            {/* Left Pane: BEFORE */}
+            <div className="rounded-xl border border-amber-500/30 bg-base-950 p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                <span className="text-xs font-bold text-amber-400 font-mono">
+                  [ BEFORE ] โครงสร้างเดิมก่อนเปลี่ยน
+                </span>
+                <span className="text-[11px] text-ink-400 font-mono">
+                  Model: {snapshotResult.beforeSnapshot?.device?.device_type?.model || '-'}
+                </span>
               </div>
-            ))}
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                <div className="text-[11px] font-mono text-ink-400">
+                  รายการพอร์ตเดิม ({snapshotResult.beforeSnapshot?.interfaces?.length || 0} พอร์ต):
+                </div>
+                <div className="divide-y divide-base-800 border border-base-800 rounded-lg overflow-hidden font-mono text-xs">
+                  {snapshotResult.beforeSnapshot?.interfaces?.map(iface => (
+                    <div key={iface.id || iface.name} className="p-2.5 flex items-center justify-between bg-base-900/40 hover:bg-base-900">
+                      <div>
+                        <span className="font-semibold text-ink-100">{iface.name}</span>
+                        {iface.description && <span className="ml-2 text-[11px] text-ink-400">({iface.description})</span>}
+                      </div>
+                      <div className="text-[11px] text-right">
+                        {iface.ips && iface.ips.length > 0 ? (
+                          <span className="text-emerald-400 font-semibold">{iface.ips.map(ip => ip.address).join(', ')}</span>
+                        ) : (
+                          <span className="text-ink-600">-</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Pane: AFTER */}
+            <div className="rounded-xl border border-green-500/30 bg-base-950 p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-green-500/20 pb-2">
+                <span className="text-xs font-bold text-green-400 font-mono">
+                  [ AFTER ] โครงสร้างใหม่หลังเปลี่ยนสำเร็จ
+                </span>
+                <span className="text-[11px] text-ink-400 font-mono">
+                  Model: {snapshotResult.afterSnapshot?.device?.device_type?.model || '-'}
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                <div className="text-[11px] font-mono text-ink-400">
+                  รายการพอร์ตใหม่ ({snapshotResult.afterSnapshot?.interfaces?.length || 0} พอร์ต):
+                </div>
+                <div className="divide-y divide-base-800 border border-base-800 rounded-lg overflow-hidden font-mono text-xs">
+                  {snapshotResult.afterSnapshot?.interfaces?.map(iface => (
+                    <div key={iface.id || iface.name} className="p-2.5 flex items-center justify-between bg-green-950/20 hover:bg-green-950/30 border-l-2 border-green-500">
+                      <div>
+                        <span className="font-semibold text-green-300">{iface.name}</span>
+                        {iface.description && <span className="ml-2 text-[11px] text-ink-400">({iface.description})</span>}
+                      </div>
+                      <div className="text-[11px] text-right">
+                        {iface.ips && iface.ips.length > 0 ? (
+                          <span className="text-emerald-400 font-semibold">{iface.ips.map(ip => ip.address).join(', ')}</span>
+                        ) : (
+                          <span className="text-ink-600">-</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

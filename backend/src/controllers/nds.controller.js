@@ -299,8 +299,32 @@ async function replaceDevice(req, res, next) {
   } catch (err) { return next(err); }
 }
 
+async function rollbackDevice(req, res, next) {
+  try {
+    const { snapshotId } = req.body;
+    if (!snapshotId) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุ snapshotId ที่ต้องการ Rollback' });
+    }
+    const data = await ndsService.rollbackDevice(snapshotId);
+    return ok(res, data, 'Rollback อุปกรณ์กลับสู่สถานะเดิมเรียบร้อยแล้ว');
+  } catch (err) { return next(err); }
+}
+
+async function getDeviceSnapshot(req, res, next) {
+  try {
+    const { snapshotId } = req.params;
+    const data = await ndsService.getDeviceSnapshot(snapshotId);
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล Snapshot' });
+    }
+    return ok(res, data, 'ดึงข้อมูล Snapshot เรียบร้อยแล้ว');
+  } catch (err) { return next(err); }
+}
+
 module.exports = {
   replaceDevice,
+  rollbackDevice,
+  getDeviceSnapshot,
   listProjects,
   getProject,
   createProject,

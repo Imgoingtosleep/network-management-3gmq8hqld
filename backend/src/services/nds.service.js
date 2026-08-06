@@ -534,5 +534,8 @@ module.exports = {
   },
   createModuleTypeInterfaceTemplates: async (id, payload) => netboxService.createModuleTypeInterfaceTemplates(id, payload),
   updateInterfaceTemplate: async (id, payload) => netboxService.updateInterfaceTemplate(id, payload),
-  deleteInterfaceTemplate: async (id) => netboxService.deleteInterfaceTemplate(id)
+  deleteInterfaceTemplate: async (id) => netboxService.deleteInterfaceTemplate(id),
+
+  rollbackDevice: async (snapshotId) => netboxService.rollbackDevice(snapshotId),
+  getDeviceSnapshot: async (snapshotId) => netboxService.getDeviceSnapshot(snapshotId)
 };
