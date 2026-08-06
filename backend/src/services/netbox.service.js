@@ -2118,9 +2118,12 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       if (oldIface.mac_address) updatePayload.mac_address = oldIface.mac_address;
       if (oldIface.speed !== undefined && oldIface.speed !== null) updatePayload.speed = oldIface.speed;
       if (oldIface.duplex?.value || oldIface.duplex) updatePayload.duplex = oldIface.duplex?.value || oldIface.duplex;
-      if (oldIface.mode?.value || oldIface.mode) updatePayload.mode = oldIface.mode?.value || oldIface.mode;
+      
+      const modeVal = oldIface.mode?.value || oldIface.mode;
+      if (modeVal) updatePayload.mode = modeVal;
       if (oldIface.untagged_vlan?.id) updatePayload.untagged_vlan = oldIface.untagged_vlan.id;
-      if (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
+      // NetBox REST API returns 400 if tagged_vlans is sent on access mode interfaces
+      if (modeVal !== 'access' && oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
         updatePayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
       }
       if (oldIface.mark_connected !== undefined) updatePayload.mark_connected = oldIface.mark_connected;
@@ -2155,7 +2158,23 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       }
 
       if (Object.keys(updatePayload).length > 0) {
-        await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', updatePayload);
+        try {
+          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', updatePayload);
+        } catch (patchErr) {
+          console.warn(`Full PATCH failed for ${targetName}, retrying with safe fallback payload:`, patchErr.message);
+          // Fallback: Retry with essential non-conflicting fields if NetBox returns 400 (e.g. MAC collision or VLAN mode error)
+          const safePayload = {};
+          if (updatePayload.description !== undefined) safePayload.description = updatePayload.description;
+          if (updatePayload.enabled !== undefined) safePayload.enabled = updatePayload.enabled;
+          if (updatePayload.mode) safePayload.mode = updatePayload.mode;
+          if (updatePayload.untagged_vlan) safePayload.untagged_vlan = updatePayload.untagged_vlan;
+          if (updatePayload.custom_fields) safePayload.custom_fields = updatePayload.custom_fields;
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', safePayload);
+          } catch (fallbackErr) {
+            console.warn(`Fallback PATCH for ${targetName} also failed:`, fallbackErr.message);
+          }
+        }
       }
 
       // 3. Disconnect cable if attached on old interface to avoid NetBox cable lock errors

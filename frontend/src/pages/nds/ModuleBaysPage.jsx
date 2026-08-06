@@ -156,7 +156,7 @@ export default function ModuleBaysPage() {
   // Remove Module Handler
   const handleRemoveModule = async (bay) => {
     if (!bay.installed_module) return;
-    const confirmMsg = `ยืนยันการถอดมอดูล ${bay.installed_module.display || bay.installed_module.name || ''} ออกจากช่อง ${bay.name}?`;
+    const confirmMsg = `ยืนยันการถอดModule ${bay.installed_module.display || bay.installed_module.name || ''} ออกจากช่อง ${bay.name}?`;
     if (!window.confirm(confirmMsg)) return;
 
     setProcessingBayId(bay.id);
@@ -165,11 +165,11 @@ export default function ModuleBaysPage() {
 
     try {
       await ndsApi.removeModuleFromBay(bay.installed_module.id);
-      setActionSuccess(`ถอดมอดูลออกจากช่อง ${bay.name} เรียบร้อยแล้ว`);
+      setActionSuccess(`ถอดModuleออกจากช่อง ${bay.name} เรียบร้อยแล้ว`);
       await handleSelectDevice(selectedDevice);
     } catch (err) {
       console.error('Error removing module:', err);
-      setErrorMessage(err.response?.data?.message || 'เกิดข้อผิดพลาดในการถอดมอดูล');
+      setErrorMessage(err.response?.data?.message || 'เกิดข้อผิดพลาดในการถอดModule');
     } finally {
       setProcessingBayId(null);
     }
@@ -201,10 +201,10 @@ export default function ModuleBaysPage() {
           <div>
             <h2 className="text-xl font-bold text-ink-100 flex items-center gap-2">
               <span className="inline-block w-3 h-3 rounded-full bg-nds animate-pulse" />
-              Module Bay Provisioning (เติมการ์ด/มอดูลแบบ Drag & Drop)
+              Module Bay Provisioning (เติมการ์ด/Moduleแบบ Drag & Drop)
             </h2>
             <p className="mt-1 text-sm text-ink-400">
-              เลือกลากการ์ด/มอดูล (Module Types) จากฝั่งซ้าย มาวางใส่ช่องเสียบ (Module Bays) ของอุปกรณ์จริงทางฝั่งขวาเพื่อติดตั้งมอดูลเข้ากับ NetBox
+              เลือกลากการ์ด/Module (Module Types) จากฝั่งซ้าย มาวางใส่ช่องเสียบ (Module Bays) ของอุปกรณ์จริงทางฝั่งขวาเพื่อติดตั้งModuleเข้ากับ NetBox
             </p>
           </div>
           <button
@@ -399,7 +399,7 @@ export default function ModuleBaysPage() {
                       {/* Slot Inner Content */}
                       {isProcessing ? (
                         <div className="p-3 text-center text-xs text-nds animate-pulse font-mono">
-                          กำลังประมวลผลการเติมมอดูล...
+                          กำลังประมวลผลการเติม Module...
                         </div>
                       ) : hasModule ? (
                         <div className="mt-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
@@ -424,7 +424,7 @@ export default function ModuleBaysPage() {
                             ? 'border-nds bg-nds/10 text-nds font-bold' 
                             : 'border-base-700 bg-base-950/40 text-ink-500'
                         }`}>
-                          {isHovered ? 'วางการ์ดลงที่นี่เพื่อเสียบมอดูล!' : 'ช่องเสียบว่าง (ลากมอดูลมาวางเพื่อติดตั้ง)'}
+                          {isHovered ? 'วางการ์ดลงที่นี่เพื่อเสียบ Module!' : 'ช่องเสียบว่าง (ลากModuleมาวางเพื่อติดตั้ง)'}
                         </div>
                       )}
                     </div>
@@ -453,7 +453,7 @@ export default function ModuleBaysPage() {
                   </span>
                 </div>
                 <p className="text-xs text-ink-400 mt-0.5">
-                  รายละเอียดข้อมูลและ พอร์ต (Ports / Interfaces) ของมอดูล
+                  รายละเอียดข้อมูลและ พอร์ต (Ports / Interfaces) ของModule
                 </p>
               </div>
               <button
@@ -489,13 +489,13 @@ export default function ModuleBaysPage() {
               {/* Ports Table */}
               <div>
                 <h4 className="text-xs font-semibold text-nds uppercase tracking-wider mb-3">
-                  รายการพอร์ตภายในมอดูล (Interface Templates)
+                  รายการพอร์ตภายในModule (Interface Templates)
                 </h4>
                 {loadingInterfaces ? (
                   <div className="p-8 text-center text-xs text-ink-400">กำลังโหลดรายการพอร์ต...</div>
                 ) : moduleInterfaces.length === 0 ? (
                   <div className="p-8 text-center text-xs text-ink-400 border border-dashed border-base-800 rounded-lg">
-                    ไม่พบรายการพอร์ตสำหรับมอดูลนี้
+                    ไม่พบรายการพอร์ตสำหรับModuleนี้
                   </div>
                 ) : (
                   <div className="overflow-x-auto border border-base-800 rounded-lg">
