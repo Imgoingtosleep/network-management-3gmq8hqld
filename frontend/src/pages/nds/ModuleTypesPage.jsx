@@ -237,7 +237,10 @@ export default function ModuleTypesPage() {
     }
   };
 
+  const [editingModuleType, setEditingModuleType] = useState(null);
+
   const handleCreateClick = () => {
+    setEditingModuleType(null);
     setModuleTypeFormData({
       manufacturer: '',
       model: '',
@@ -250,7 +253,7 @@ export default function ModuleTypesPage() {
     setIsCreateModalOpen(true);
   };
 
-  const handlePortClick = () => {
+  const handlePortClick = async () => {
     if (selectedModuleTypes.length === 1) {
       setSelectedModuleTypeId(selectedModuleTypes[0].id.toString());
     } else {
@@ -264,6 +267,12 @@ export default function ModuleTypesPage() {
       { prefix: '{module}/0/', start: 0, count: 4, type: '10gbase-x-sfpp', label: 'fiber' }
     ]);
     setSaveError(null);
+    try {
+      const res = await ndsApi.getModuleTypes();
+      setModuleTypesList(res.data?.data || res.data || []);
+    } catch (err) {
+      console.error('Failed to load module types list:', err);
+    }
     setIsPortModalOpen(true);
   };
 
@@ -278,6 +287,31 @@ export default function ModuleTypesPage() {
     setIsPresetModalOpen(true);
   };
 
+  const handleEditClick = (mt) => {
+    setEditingModuleType(mt);
+    const mfgName = typeof mt.manufacturer === 'object' ? mt.manufacturer?.name : mt.manufacturer;
+    setModuleTypeFormData({
+      manufacturer: mfgName || '',
+      model: mt.model || '',
+      part_number: mt.part_number || '',
+      description: mt.description || '',
+      comments: mt.comments || '',
+      selectedPresetId: ''
+    });
+    setSaveError(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleDeleteModuleType = async (mt) => {
+    if (!window.confirm(`ยืนยันการลบรุ่นมอดูล "${mt.model}" ออกจากระบบ?`)) return;
+    try {
+      await ndsApi.deleteModuleType(mt.id);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      alert(err.response?.data?.message || 'ไม่สามารถลบ Module Type ได้เนื่องจากมีการเชื่อมโยงใช้งานอยู่ในระบบ');
+    }
+  };
+
   const handleSaveModuleType = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -289,11 +323,16 @@ export default function ModuleTypesPage() {
         model: moduleTypeFormData.model,
         part_number: moduleTypeFormData.part_number,
         description: moduleTypeFormData.description,
-        comments: moduleTypeFormData.comments,
-        clone_module_type_id: moduleTypeFormData.selectedPresetId || undefined
+        comments: moduleTypeFormData.comments
       };
 
-      await ndsApi.createModuleType(payload);
+      if (editingModuleType) {
+        await ndsApi.updateModuleType(editingModuleType.id, payload);
+      } else {
+        payload.clone_module_type_id = moduleTypeFormData.selectedPresetId || undefined;
+        await ndsApi.createModuleType(payload);
+      }
+
       setIsCreateModalOpen(false);
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
@@ -439,8 +478,9 @@ export default function ModuleTypesPage() {
     });
   };
 
-  const renderModuleTypesTable = (list) => {
-    const isAllSelected = list.length > 0 && selectedModuleTypes.length === list.length;
+  const renderModuleTypesTable = (list = []) => {
+    const safeList = Array.isArray(list) ? list : [];
+    const isAllSelected = safeList.length > 0 && selectedModuleTypes.length === safeList.length;
 
     return (
       <table className="w-full text-left text-xs font-sans">
@@ -450,7 +490,7 @@ export default function ModuleTypesPage() {
               <input
                 type="checkbox"
                 checked={isAllSelected}
-                onChange={() => toggleSelectAll(list)}
+                onChange={() => toggleSelectAll(safeList)}
                 className="rounded border-base-600 text-nds focus:ring-nds focus:ring-opacity-25 bg-base-950 w-4 h-4 cursor-pointer"
               />
             </th>
@@ -459,10 +499,11 @@ export default function ModuleTypesPage() {
             <th className="px-5 py-3.5">Part Number</th>
             <th className="px-5 py-3.5">คำอธิบาย</th>
             <th className="px-5 py-3.5 text-center">Port Templates</th>
+            <th className="px-5 py-3.5 text-right">จัดการ (Actions)</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-base-600/20">
-          {list.map((item) => {
+          {safeList.map((item) => {
             const isSelected = selectedModuleTypes.some(i => i.id === item.id);
             const mfgName = typeof item.manufacturer === 'object' ? item.manufacturer?.name : item.manufacturer;
             return (
@@ -508,12 +549,28 @@ export default function ModuleTypesPage() {
                     </button>
                   )}
                 </td>
+                <td className="px-5 py-4 text-right font-sans space-x-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => handleEditClick(item)}
+                    className="rounded bg-base-800 px-2.5 py-1 text-xs text-ink-200 hover:bg-base-700 transition"
+                  >
+                    แก้ไข
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteModuleType(item)}
+                    className="rounded bg-red-500/10 px-2.5 py-1 text-xs text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+                  >
+                    ลบ
+                  </button>
+                </td>
               </tr>
             );
           })}
-          {list.length === 0 && (
+          {safeList.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">
+              <td colSpan={7} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">
                 ไม่พบข้อมูล Module Types ในระบบ
               </td>
             </tr>
@@ -521,13 +578,6 @@ export default function ModuleTypesPage() {
         </tbody>
       </table>
     );
-  };
-
-  const fetchModuleTypes = async () => {
-    const res = await ndsApi.getModuleTypes();
-    const data = res.data?.data || res.data || [];
-    setModuleTypesList(data);
-    return data;
   };
 
   return (
@@ -571,7 +621,7 @@ export default function ModuleTypesPage() {
 
       {/* Main Table */}
       <NDSPageContainer
-        fetchData={fetchModuleTypes}
+        fetchData={() => ndsApi.getModuleTypes()}
         onDataLoaded={(data) => setModuleTypesList(data)}
         refreshTrigger={refreshTrigger}
         renderTable={renderModuleTypesTable}
