@@ -12,7 +12,7 @@ const config = {
   port: Number(process.env.PORT) || 4000,
 
   cors: {
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(','),
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:2000,http://localhost:3000').split(','),
   },
 
   db: {
@@ -24,8 +24,35 @@ const config = {
   },
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'dev_secret_change_me',
+    secret: process.env.JWT_SECRET || 'network_portal_default_secret_key_2026',
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
+  },
+
+  // ข้อมูลบัญชีผู้ใช้ที่กำหนดไว้ใน .env สำหรับแต่ละทีม
+  auth: {
+    users: [
+      {
+        username: (process.env.AUTH_NDS_USERNAME || 'nds').trim(),
+        password: (process.env.AUTH_NDS_PASSWORD || 'nds_password').trim(),
+        name: 'NDS Team',
+        role: 'nds',
+        allowedTeams: ['nds'],
+      },
+      {
+        username: (process.env.AUTH_CDS_USERNAME || 'cds').trim(),
+        password: (process.env.AUTH_CDS_PASSWORD || 'cds_password').trim(),
+        name: 'CDS Team',
+        role: 'cds',
+        allowedTeams: ['cds'],
+      },
+      {
+        username: (process.env.AUTH_ADMIN_USERNAME || 'admin').trim(),
+        password: (process.env.AUTH_ADMIN_PASSWORD || 'admin_password').trim(),
+        name: 'Administrator (All Teams)',
+        role: 'admin',
+        allowedTeams: ['nds', 'cds'],
+      },
+    ],
   },
 
   teams: {

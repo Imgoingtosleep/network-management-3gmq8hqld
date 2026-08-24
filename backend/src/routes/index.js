@@ -1,6 +1,8 @@
 const express = require('express');
+const authRoutes = require('./auth.routes');
 const ndsRoutes = require('./nds.routes');
 const cdsRoutes = require('./cds.routes');
+const { verifyToken, requireTeam } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
@@ -9,14 +11,16 @@ router.get('/health', (req, res) => {
   res.json({ success: true, message: 'network-portal API is healthy', timestamp: new Date().toISOString() });
 });
 
-// แยก path ตามทีมตั้งแต่ระดับ router
-// => /api/nds/*
-// => /api/cds/*
-router.use('/nds', ndsRoutes);
-router.use('/cds', cdsRoutes);
+// Authentication routes (Login / Me)
+// => /api/auth/login
+// => /api/auth/me
+// => /api/auth/info
+router.use('/auth', authRoutes);
 
-// TODO (ต่อยอด): เมื่อมีทีมใหม่ ให้เพิ่มบรรทัดแบบนี้
-// const newTeamRoutes = require('./new-team.routes');
-// router.use('/new-team', newTeamRoutes);
+// แยก path ตามทีมตั้งแต่ระดับ router พร้อมการตรวจสิทธิ์
+// => /api/nds/* (ต้องมีสิทธิ์ทีม NDS หรือ Admin)
+// => /api/cds/* (ต้องมีสิทธิ์ทีม CDS หรือ Admin)
+router.use('/nds', verifyToken, requireTeam('nds'), ndsRoutes);
+router.use('/cds', verifyToken, requireTeam('cds'), cdsRoutes);
 
 module.exports = router;

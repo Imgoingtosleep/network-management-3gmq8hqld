@@ -47,8 +47,15 @@ export default function AppRoutes() {
 
         {/* หน้าอื่นๆ ที่มีเมนูนำทางและฟุตเตอร์ปกติ */}
         <Route element={<MainLayout><Outlet /></MainLayout>}>
-          {/* ทีม NDS */}
-          <Route path="/nds" element={<NDSLayout />}>
+          {/* ทีม NDS - เฉพาะผู้ใช้ที่มีสิทธิ์ NDS หรือ Admin */}
+          <Route
+            path="/nds"
+            element={
+              <ProtectedRoute allowedTeam="nds">
+                <NDSLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Navigate to="/nds/sites" replace />} />
             <Route path="sites" element={<SitesPage />} />
             <Route path="devices" element={<DevicesPage />} />
@@ -62,8 +69,15 @@ export default function AppRoutes() {
             <Route path="vlans" element={<NDSVlansPage />} />
           </Route>
 
-          {/* ทีม CDS */}
-          <Route path="/cds" element={<CDSLayout />}>
+          {/* ทีม CDS - เฉพาะผู้ใช้ที่มีสิทธิ์ CDS หรือ Admin */}
+          <Route
+            path="/cds"
+            element={
+              <ProtectedRoute allowedTeam="cds">
+                <CDSLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Navigate to="/cds/dashboard" replace />} />
             <Route path="dashboard" element={<CDSDashboardPage />} />
             <Route path="search-reserve" element={<CDSSearchReservePage />} />
@@ -84,4 +98,3 @@ export default function AppRoutes() {
     </Routes>
   );
 }
-
