@@ -1,342 +1,411 @@
-# 🌐 Network Portal — NDS / CDS
+# Network Management Portal — NDS / CDS on NetBox
 
-เว็บพอร์ทัลกลางสำหรับทีม **NDS (Network Design Services)** และ **CDS (Customer Design Service)** งานด้าน Network โดยแยกหน้าการทำงานของแต่ละทีมออกจากกันตั้งแต่ต้น แต่ใช้ Backend และ Component กลางร่วมกัน เพื่อให้ต่อยอด (เพิ่มทีมใหม่ / เพิ่มฟีเจอร์ใหม่) ได้ง่ายในอนาคต
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3-06B6D4?style=flat&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-22-339933?style=flat&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4-000000?style=flat&logo=express&logoColor=white)](https://expressjs.com/)
+[![NetBox](https://img.shields.io/badge/NetBox-DCIM%20%2F%20IPAM-2D9CDB?style=flat)](https://netbox.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 
----
+**เว็บพอร์ทัลกลางของทีม NDS (Network Design Services) และ CDS (Customer Design Service) ที่ใช้ NetBox เป็น Source of Truth — จัดการ Site, Device, Device/Module Type, IP Prefix, VRF, VLAN, เปลี่ยนรุ่นอุปกรณ์พร้อมย้าย Interface/IP แบบมี Rollback, จองพอร์ตให้ลูกค้า และ Trace เส้นทาง PE ↔ AGG ↔ LSW จาก IP เดียว**
 
-## 📑 สารบัญ
+ปัญหาที่แก้: งานออกแบบเครือข่ายใน NetBox ต้องคลิกหลายหน้า (สร้างอุปกรณ์ → สร้าง Interface → ผูก IP → ลากสาย → ตั้ง VLAN → ติดสถานะพอร์ต) และทำซ้ำทุกครั้งที่เปลี่ยนรุ่นอุปกรณ์หรือจองพอร์ตให้ลูกค้า — พอร์ทัลนี้รวมขั้นตอนเหล่านั้นเป็น workflow เดียวต่อทีม ผ่าน NetBox REST API โดยแยกสิทธิ์ NDS / CDS
 
-- [สถาปัตยกรรม](#-สถาปัตยกรรม)
-- [Tech Stack](#-tech-stack)
-- [โครงสร้างโปรเจกต์](#-โครงสร้างโปรเจกต์)
-- [เริ่มต้นใช้งาน](#-เริ่มต้นใช้งาน)
-- [Environment Variables](#-environment-variables)
-- [Backend API Routes](#-backend-api-routes)
-- [Frontend Pages](#-frontend-pages)
-- [CDS Reserve Flow](#-cds-reserve-flow)
-- [การ Deploy ด้วย Docker](#-การ-deploy-ด้วย-docker)
-- [แนวทางการต่อยอด](#-แนวทางการต่อยอด)
+![Path Trace](docs/screenshots/22-cds-topology-map.png)
 
 ---
 
-## 🏗 สถาปัตยกรรม
+## สารบัญ
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                     Frontend (React)                     │
-│              Vite + TailwindCSS + React Router           │
-│                    Port: 2000 (Docker)                   │
-├────────────────────────┬─────────────────────────────────┤
-│      NDS Pages         │          CDS Pages              │
-│  (Devices, PEs, AGGs,  │  (Dashboard, Search & Reserve,  │
-│   Prefixes, Domains,   │   Topology Map, Devices,        │
-│   Rings, Sites, VLANs) │   VLANs, Domain IP, Site Code)  │
-└────────────┬───────────┴──────────────┬──────────────────┘
-             │          REST API        │
-             ▼                          ▼
-┌────────────────────────────────────────────────────────────┐
-│                   Backend (Express.js)                     │
-│                    Port: 2500 (Docker)                     │
-├────────────────────────┬──────────────────────────────────┤
-│   /api/nds/*           │        /api/cds/*                │
-│   nds.controller.js    │        cds.controller.js         │
-│   nds.service.js       │        cds.service.js            │
-│   nds.model.js         │        cds.model.js              │
-└────────────┬───────────┴──────────────┬──────────────────┘
-             │       NetBox REST API    │
-             ▼                          ▼
-┌────────────────────────────────────────────────────────────┐
-│                    NetBox (DCIM/IPAM)                      │
-│              netbox.service.js (Shared Service)            │
-└────────────────────────────────────────────────────────────┘
-```
+1. [Architecture & Network Topology](#1-architecture--network-topology)
+2. [Key Features](#2-key-features)
+3. [Tech Stack](#3-tech-stack)
+4. [Getting Started](#4-getting-started)
+5. [Usage](#5-usage)
+6. [Demo / Output](#6-demo--output)
+7. [API Reference](#7-api-reference)
+8. [Project Structure](#8-project-structure)
+9. [Extending the Portal](#9-extending-the-portal)
+10. [Known Issues & Security Notes](#10-known-issues--security-notes)
 
 ---
 
-## 🛠 Tech Stack
+## 1. Architecture & Network Topology
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 18, Vite 5, TailwindCSS 3, React Router 6, Axios |
-| **Backend** | Node.js, Express 4, Helmet, Morgan, CORS |
-| **Data Source** | NetBox REST API (DCIM / IPAM) |
-| **Deployment** | Docker Compose |
-| **Dev Tools** | Nodemon, PostCSS, Autoprefixer |
+### 1.1 System Architecture
 
----
+```mermaid
+flowchart LR
+    subgraph Users["ผู้ใช้"]
+        NDSU["ทีม NDS"]
+        CDSU["ทีม CDS"]
+        ADM["Admin (ทั้ง 2 ทีม)"]
+    end
 
-## 📂 โครงสร้างโปรเจกต์
+    subgraph Docker["Docker Compose (netops-network)"]
+        FE["netops-portal-frontend<br/>React + Vite<br/>:2000"]
+        BE["netops-portal-backend<br/>Express<br/>host :2500 → :4000"]
+        CACHE[("In-memory<br/>cache 5 นาที<br/>+ snapshots<br/>+ CDS dashboard")]
+    end
 
-```
-network-management/
-├── .env.example              # ตัวอย่าง Environment Variables
-├── docker-compose.yml        # Docker Compose สำหรับ Deploy
-├── rebuild.sh                # Script สำหรับ Rebuild Docker
-├── update.sh                 # Script สำหรับ Update
-│
-├── backend/
-│   └── src/
-│       ├── app.js            # Express App Setup
-│       ├── server.js         # Server Entry Point
-│       ├── config/           # App Configuration
-│       ├── middlewares/       # Error Handler, Not Found
-│       ├── routes/
-│       │   ├── index.js      # Route Mapping (/api/nds, /api/cds)
-│       │   ├── nds.routes.js # NDS API Routes
-│       │   └── cds.routes.js # CDS API Routes
-│       ├── controllers/
-│       │   ├── nds.controller.js
-│       │   └── cds.controller.js
-│       ├── services/
-│       │   ├── netbox.service.js  # NetBox API Integration (Shared)
-│       │   ├── nds.service.js     # NDS Business Logic
-│       │   └── cds.service.js     # CDS Business Logic + Reserve Flow
-│       └── models/
-│           ├── nds.model.js       # NDS In-Memory Data
-│           └── cds.model.js       # CDS In-Memory Data (Dashboard)
-│
-└── frontend/
-    └── src/
-        ├── App.jsx           # Root Component
-        ├── main.jsx          # Entry Point
-        ├── index.css         # Global Styles
-        ├── api/              # Axios API Clients
-        ├── components/       # Shared UI Components
-        ├── layouts/          # Layout Wrappers
-        ├── routes/           # React Router Config
-        └── pages/
-            ├── HomePage.jsx
-            ├── LoginPage.jsx
-            ├── NotFoundPage.jsx
-            ├── nds/          # NDS Team Pages (12 files)
-            └── cds/          # CDS Team Pages (12 files)
+    NB[("NetBox<br/>DCIM / IPAM<br/>REST API")]
+
+    NDSU & CDSU & ADM -->|HTTP :2000| FE
+    FE -->|"REST /api + Bearer JWT"| BE
+    BE --- CACHE
+    BE -->|"Authorization: Token ..."| NB
 ```
 
+| Service | Container | Port |
+| :--- | :--- | :--- |
+| Frontend | `netops-portal-frontend` | 2000 |
+| Backend | `netops-portal-backend` | 2500 (host) → 4000 (container) |
+| NetBox | ภายนอก (`NETBOX_API_URL`) | — |
+
+### 1.2 Network Hierarchy ที่ระบบจัดการ
+
+ระบบออกแบบให้ตรงกับโครงสร้างเครือข่าย Metro/Access: **PE → AGG → LSW Network → LSW Access** และใช้ NetBox role, cable, interface, IP และ VLAN แทนเส้นทางจริง
+
+```mermaid
+flowchart TB
+    PE1["PE-BKK-CORE-01<br/>Provider Edge<br/>Loopback 10.0.0.1"] -->|"Gi0/1/1 ↔ 10GE1/0/1"| AGG1["AGG-BKK-LPR-01<br/>Aggregation"]
+    PE2["PE-BKK-CORE-02<br/>Provider Edge"] --> AGG2["AGG-NBI-01<br/>Aggregation"]
+    AGG1 -->|"10GE1/0/2 ↔ XGE0/0/1"| NW1["LSW-NW-LPR-01<br/>LSW_Network"]
+    AGG2 --> NW2["LSW-NW-NBI-01<br/>LSW_Network"]
+    NW1 -->|"Downlink main / backup<br/>(reserve)"| AC1["LSW-AC-LPR-0101<br/>LSW Access<br/>Vlanif100 10.10.1.11/24"]
+    NW2 --> AC2["LSW-AC-NBI-0201<br/>LSW Access"]
+    AC1 -.-> CUST["ลูกค้า<br/>VLAN access / untagged"]
+```
+
+### 1.3 CDS Search & Reserve Flow
+
+```mermaid
+sequenceDiagram
+    participant U as CDS User
+    participant FE as Search & Reserve
+    participant BE as cds.service.js
+    participant NB as NetBox
+
+    U->>FE: เลือก LSW Network + กรอก Node / พอร์ต / Prefix / VLAN
+    FE->>BE: POST /api/cds/dashboard
+    BE->>NB: 1. สร้าง/หา Device LSW Access (type, role, site)
+    BE->>NB: 1.5 สร้าง Vlanif + ผูก Primary IP
+    BE->>NB: 2. Uplink main/backup ของ Access → label Fiber, "In Reserve"
+    BE->>NB: 3. Downlink main/backup ของ LSW Network → reserve
+    BE->>NB: 4. สร้าง Cable main/backup + ตั้ง VLAN access (untagged)
+    BE->>NB: 5. PE port → reserve (ถ้ามี)
+    BE-->>FE: บันทึกลง Dashboard
+```
+
+### 1.4 NDS Replace Device Flow
+
+```mermaid
+flowchart LR
+    A["เลือกอุปกรณ์เดิม"] --> B["เลือก Device Type ใหม่"]
+    B --> C["Map interface เก่า → ใหม่<br/>(VLAN, description, cable, IP)"]
+    C --> D["เลือก Vlanif / IP mode<br/>+ โมดูลที่จะติดตั้ง"]
+    D --> E["Snapshot ก่อนเปลี่ยน"]
+    E --> F["ถอดโมดูลเดิม → เปลี่ยน type<br/>→ ย้าย config → ติดตั้งโมดูล"]
+    F --> G{"ผลถูกต้อง?"}
+    G -->|ใช่| H["เสร็จ"]
+    G -->|ไม่| R["Rollback จาก snapshot"]
+```
+
 ---
 
-## 🚀 เริ่มต้นใช้งาน
+## 2. Key Features
 
-### Prerequisites
+### Portal & Access Control
+- Login แยกบัญชี **NDS / CDS / Admin** → JWT (HMAC-SHA256) หมดอายุตาม `JWT_EXPIRES_IN`
+- Backend บังคับสิทธิ์ทีมที่ router (`/api/nds/*`, `/api/cds/*`) และ frontend มี `ProtectedRoute` ต่อทีม
+- Hub หน้าแรกเลือกเข้า NDS หรือ CDS
 
-- Node.js >= 18
-- npm >= 9
-- NetBox instance + API Token
+### NDS — Network Design Services
+| หน้า | ความสามารถ |
+| :--- | :--- |
+| **Site Management** | CRUD Site พร้อม region, ชื่อไทย/อังกฤษ (custom fields) |
+| **Devices** | CRUD อุปกรณ์, กรองตาม role, ผูก Primary/OOB IP อัตโนมัติ |
+| **Device Types** | สร้าง Device Type + Port Template / เพิ่มพอร์ตเป็นชุด |
+| **Module Types** | สร้าง Module Type และ interface template ของโมดูล |
+| **Sync Interfaces** | Bulk sync interface ของอุปกรณ์ให้ตรงกับ template ของ Device/Module Type (Add missing / Sync & update) |
+| **Module Bays** | ลากโมดูลใส่ Module Bay ของอุปกรณ์ (Drag & Drop) |
+| **Replace Device** | เปลี่ยนรุ่นอุปกรณ์: map interface เก่า→ใหม่, ย้าย VLAN/IP/cable, เลือก Vlanif, ติดตั้งโมดูล, **snapshot + rollback** |
+| **IP Management** | Prefix พร้อม VRF, ring name, VLAN, utilization |
+| **Domains** | VRF list + prefix/IP ในแต่ละ VRF |
+| **VLANs** | รายการ VLAN / VLAN group |
+
+### CDS — Customer Design Service
+| หน้า | ความสามารถ |
+| :--- | :--- |
+| **Dashboard** | รายการที่จองแล้ว (Node / VLAN) + Export CSV |
+| **Search & Reserve** | 2 ขั้นตอน: เลือก LSW Network → จองพอร์ต (สร้าง device, IP, cable, VLAN ใน NetBox ให้อัตโนมัติ) |
+| **Topology Map** | **Path Trace** จาก IP/Node ID → แสดง Subnet, gateway, VLAN, อุปกรณ์และพอร์ตเชื่อมต่อทีละชั้น · **Site Topology** จาก Site Code |
+| **Bulk Import** | นำเข้า CSV (LSW Network, IP Prefix, IP Address, PE Port Map) |
+| **Domain** | Domain → Aggregation devices → IP network → IP address |
+| **VLANs / VLAN Assign** | สร้าง VLAN, ดู VLAN group/prefix, assign VLAN ให้ลูกค้าที่จองแล้ว |
+| **Devices / Models / Site Code** | ค้นหาอุปกรณ์, รายละเอียดรุ่นและจำนวน interface, รายการ Site Code |
 
 ### Backend
+- `netbox.service.js` เป็น shared service ของทุกทีม: pagination อัตโนมัติ, cache 5 นาที, ตรวจ custom field ที่มีจริงก่อนส่ง
+- Helmet, CORS whitelist, Morgan request log, error handler กลาง, format response `{ success, message, data }`
+
+---
+
+## 3. Tech Stack
+
+| Layer | เครื่องมือ |
+| :--- | :--- |
+| Frontend | **React 18**, **Vite 5**, **Tailwind CSS 3**, React Router 6, Axios |
+| Backend | **Node.js 22**, **Express 4**, Helmet, Morgan, CORS, JWT (เขียนเองด้วย `crypto`) |
+| Source of Truth | **NetBox REST API** — DCIM (sites, devices, types, modules, interfaces, cables) + IPAM (prefixes, IPs, VRFs, VLANs) |
+| Infra | **Docker Compose**, Nginx (production frontend image) |
+| Scripts | `update.sh` (auto update), `rebuild.sh`, `sync-code.sh` |
+
+---
+
+## 4. Getting Started
+
+### 4.1 Prerequisites
+
+| รายการ | รายละเอียด |
+| :--- | :--- |
+| Docker + Compose | Docker 24+ |
+| NetBox | 4.x ที่เข้าถึงได้จาก backend + **API token แบบ v1** (`Authorization: Token <key>`) ที่มีสิทธิ์เขียน |
+| NetBox data model | device role ชื่อ `Provider Edge`, `Aggregation`, `LSW_Network`, `LSW Access` · custom fields ที่รองรับ: `name_thai`, `site_name` (site), `nodeid` (device), `ringname` (prefix), `owner_group`, `owner`, `port_status` |
+| Port ว่าง | 2000, 2500 |
+| (ไม่ใช้ Docker) | Node.js 18+ |
+
+### 4.2 Clone & Environment
 
 ```bash
-cd backend
-cp .env.example .env          # แก้ไขค่า NETBOX_API_URL, NETBOX_API_TOKEN
-npm install
-npm run dev                   # http://localhost:4000
+git clone git@github.com:Imgoingtosleep/network-management.git
+cd network-management
+cp .env.example .env
 ```
 
-### Frontend
+```ini
+PORT=4000
+CORS_ORIGIN=http://localhost:2000
+VITE_API_BASE_URL=http://localhost:2500/api
+
+JWT_SECRET=change-me-long-random
+JWT_EXPIRES_IN=1d
+
+AUTH_NDS_USERNAME=nds
+AUTH_NDS_PASSWORD=change-me
+AUTH_CDS_USERNAME=cds
+AUTH_CDS_PASSWORD=change-me
+AUTH_ADMIN_USERNAME=admin
+AUTH_ADMIN_PASSWORD=change-me
+
+NETBOX_API_URL=https://netbox.example.com/api
+NETBOX_API_TOKEN=<40-char v1 token>
+```
+
+### 4.3 Run
 
 ```bash
-cd frontend
-cp .env.example .env          # แก้ไขค่า VITE_API_BASE_URL
-npm install
-npm run dev                   # http://localhost:5173
+docker compose up -d --build
+curl http://localhost:2500/api/health
+# {"success":true,"message":"network-portal API is healthy","timestamp":"..."}
 ```
 
----
+เปิด **http://localhost:2000** แล้ว login ด้วยบัญชีใน `.env`
 
-## 🔑 Environment Variables
+อัปเดตโค้ดบน server: `./update.sh`
 
-| ตัวแปร | คำอธิบาย | ค่าเริ่มต้น |
-|--------|---------|------------|
-| `PORT` | พอร์ตของ Backend Server | `4000` |
-| `NODE_ENV` | Environment Mode | `development` |
-| `CORS_ORIGIN` | URL ที่อนุญาตให้เข้าถึง API | `http://localhost:2000` |
-| `VITE_API_BASE_URL` | Base URL ของ API สำหรับ Frontend | `http://localhost:2500/api` |
-| `NETBOX_API_URL` | URL ของ NetBox API | `https://demo.netbox.dev/api` |
-| `NETBOX_API_TOKEN` | API Token สำหรับ NetBox | - |
-| `DB_*` | Database Config (สำหรับอนาคต) | - |
-| `JWT_*` | Auth Config (สำหรับอนาคต) | - |
-
----
-
-## 📡 Backend API Routes
-
-### NDS Routes (`/api/nds`)
-
-| Method | Endpoint | คำอธิบาย |
-|--------|----------|---------|
-| GET | `/projects` | ดึงรายการโปรเจกต์ NDS |
-| GET | `/devices` | ดึงอุปกรณ์ทั้งหมดจาก NetBox |
-| GET | `/devices/:id/interfaces` | ดึง Interface ของอุปกรณ์ |
-| GET | `/interface-templates/:deviceTypeId` | ดึง Interface Templates ตาม Device Type |
-| GET | `/device-types` | ดึงประเภทอุปกรณ์ |
-| GET | `/device-roles` | ดึง Device Roles |
-| GET | `/sites` | ดึงข้อมูล Sites |
-| GET | `/prefixes` | ดึง IP Prefixes |
-| GET | `/pes` | ดึงอุปกรณ์ PE ทั้งหมด |
-| GET | `/aggs` | ดึงอุปกรณ์ AGG ทั้งหมด |
-| GET | `/lsw_nts` | ดึง LSW Network ทั้งหมด |
-| GET | `/vlans` | ดึง VLANs |
-| GET | `/domains` | ดึง Domains |
-| GET | `/rings` | ดึง Rings |
-| POST/PATCH/DELETE | `/sites/:id`, `/prefixes/:id`, `/devices/:id` | CRUD Operations |
-
-### CDS Routes (`/api/cds`)
-
-| Method | Endpoint | คำอธิบาย |
-|--------|----------|---------|
-| GET | `/projects` | ดึงรายการโปรเจกต์ CDS |
-| GET | `/dashboard` | ดึงข้อมูล Dashboard (ข้อมูลที่ Reserve แล้ว) |
-| POST | `/dashboard` | บันทึกข้อมูล Reserve ใหม่ + สร้าง Device ใน NetBox |
-| GET | `/topology/:siteCode` | ดึง Site Topology |
-| GET | `/path-trace/:ip` | Trace Path จาก IP ไปยัง PE Router |
-| GET | `/device-details/:id` | ดึงรายละเอียดอุปกรณ์ |
-| GET | `/available-ips/:prefix` | ดึง IP ที่ว่างใน Prefix |
-
----
-
-## 🖥 Frontend Pages
-
-### CDS Pages
-
-| หน้า | ไฟล์ | คำอธิบาย |
-|------|------|---------|
-| **Dashboard** | `CDSDashboardPage.jsx` | ตารางแสดงข้อมูลที่ Reserve แล้ว (Node + VLAN tabs) |
-| **Search & Reserve** | `CDSSearchReservePage.jsx` | ฟอร์มค้นหา/สร้าง Node + จองพอร์ต (2 Steps) |
-| **Topology Map** | `CDSTopologyMapPage.jsx` | แผนผัง Network Topology แบบ Interactive |
-| **Devices** | `CDSDevicesPage.jsx` | จัดการอุปกรณ์ใน NetBox |
-| **VLANs** | `CDSVlansPage.jsx` | จัดการ VLANs |
-| **Domain IP** | `CDSDomainIPPage.jsx` | จัดการ Domain IP |
-| **Site Code** | `CDSSiteCodePage.jsx` | จัดการ Site Code |
-| **Models** | `CDSModelsPage.jsx` | จัดการ Device Models |
-| **Bulk Import** | `CDSBulkImportPage.jsx` | นำเข้าข้อมูลจำนวนมาก |
-
-### NDS Pages
-
-| หน้า | ไฟล์ | คำอธิบาย |
-|------|------|---------|
-| **Devices** | `DevicesPage.jsx` | จัดการอุปกรณ์ Network |
-| **PEs** | `PEsPage.jsx` | จัดการ Provider Edge Routers |
-| **AGGs** | `AggsPage.jsx` | จัดการ Aggregation Switches |
-| **LSW Networks** | `LswNtsPage.jsx` | จัดการ LSW Network Switches |
-| **Prefixes** | `PrefixesPage.jsx` | จัดการ IP Prefixes |
-| **Sites** | `SitesPage.jsx` | จัดการ Sites |
-| **Domains** | `DomainsPage.jsx` | จัดการ Domains |
-| **Rings** | `RingsPage.jsx` | จัดการ Ring Networks |
-| **VLANs** | `NDSVlansPage.jsx` | จัดการ VLANs |
-
----
-
-## 🔄 CDS Reserve Flow
-
-ขั้นตอนการทำงานเมื่อผู้ใช้กด **Reserve** ในหน้า Search & Reserve:
-
-```
-Frontend (CDSSearchReservePage.jsx)
-  │
-  ├─ 1. สร้าง Payload จากข้อมูลในฟอร์ม
-  ├─ 2. บันทึกลง LocalStorage
-  └─ 3. ส่ง POST /api/cds/dashboard
-         │
-         ▼
-Backend (cds.service.js → addDashboardData)
-  │
-  ├─ Step 1:   สร้าง Device (LSW Access) ใน NetBox
-  │             → resolveDeviceTypeId() → resolveRoleId() → resolveSiteId()
-  │             → createOrGetDevice()
-  │
-  ├─ Step 1.5: สร้าง Vlanif Interface + ผูก Primary IP
-  │             → setupVlanifAndPrimaryIp()
-  │
-  ├─ Step 2:   อัปเดต Port Uplink บน LSW Access → reserve
-  │             → reservePorts(accessDeviceId, [uplink, uplink_backup])
-  │             → label='Fiber', description='In Reserve', port_status='reserve'
-  │
-  ├─ Step 3:   อัปเดต Port Downlink บน LSW Network → reserve
-  │             → findDeviceByNameOrNodeId() → reservePorts()
-  │             → label='Fiber', description='In Reserve', port_status='reserve'
-  │
-  ├─ Step 4:   สร้าง Cable Links + ตั้งค่า VLAN
-  │             → setupCablingAndVlan()
-  │             → Main Cable: Access Uplink ↔ Network Downlink
-  │             → Backup Cable: Access Uplink Backup ↔ Network Downlink Backup
-  │             → VLAN mode=access, untagged_vlan
-  │
-  ├─ Step 5:   อัปเดต PE Port → reserve (ถ้ามี)
-  │             → reservePePort()
-  │
-  └─ Final:    บันทึกลง In-Memory Model
-```
-
-### Dashboard Field Mapping
-
-| Dashboard Header | Payload Key | แหล่งข้อมูล |
-|-----------------|-------------|-------------|
-| PE Name | `pe_name` | PE Router ที่เชื่อมต่อ |
-| IP Loopback | `ip_loopback` | IP ของ PE |
-| Port Downlink Main (NW LSW) | `nw_lsw_port` | พอร์ตฝั่ง LSW Network |
-| Port Downlink Backup (NW LSW) | `nw_lsw_port_backup` | พอร์ตสำรอง LSW Network |
-| Port Uplink Main | `access_lsw_port_uplink` | พอร์ตขาขึ้น LSW Access |
-| Port Uplink Backup | `access_lsw_port_uplink_backup` | พอร์ตสำรองขาขึ้น LSW Access |
-| IP Network | `agg_ip_network` | Prefix ที่เลือก |
-| VLAN | `agg_vlan` | VLAN ID ที่เลือก |
-
----
-
-## 🐳 การ Deploy ด้วย Docker
+### 4.4 Run แบบไม่ใช้ Docker
 
 ```bash
-# Build & Start ทั้ง Frontend + Backend
-docker-compose up -d --build
-
-# ดู Logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
+cd backend && npm install && npm run dev      # :4000
+cd frontend && npm install && npm run dev     # :5173 (ตั้ง VITE_API_BASE_URL=http://localhost:4000/api)
 ```
-
-| Service | Container Name | Port |
-|---------|---------------|------|
-| Frontend | `netops-portal-frontend` | `2000` |
-| Backend | `netops-portal-backend` | `2500` |
 
 ---
 
-## 🔧 แนวทางการต่อยอด
+## 5. Usage
 
-### เพิ่มทีมใหม่ (เช่น ทีม OPS)
+| บทบาท | เข้าได้ |
+| :--- | :--- |
+| `nds` | Hub + NDS |
+| `cds` | Hub + CDS |
+| `admin` | ทั้งหมด |
 
-```
-Backend:
-  ├── routes/ops.routes.js
-  ├── controllers/ops.controller.js
-  ├── services/ops.service.js
-  └── models/ops.model.js
-  → เพิ่มใน routes/index.js: router.use('/ops', opsRoutes)
-
-Frontend:
-  └── pages/ops/
-      ├── OPSLayout.jsx
-      ├── OPSHomePage.jsx
-      └── ...
-  → เพิ่ม route ใน routes/AppRoutes.jsx
-```
-
-### เพิ่มฟีเจอร์ใหม่ใน CDS
-
-1. **เพิ่ม API Route** ใน `cds.routes.js`
-2. **เพิ่ม Controller** ใน `cds.controller.js`
-3. **เพิ่ม Business Logic** ใน `cds.service.js`
-4. **เพิ่มหน้า Frontend** ใน `pages/cds/`
-5. **เพิ่ม Route** ใน `AppRoutes.jsx`
-
-### Shared Services
-
-- `netbox.service.js` — ใช้ร่วมกันทุกทีม สำหรับติดต่อ NetBox API
-- มี **in-memory cache** (TTL 5 นาที) สำหรับ Devices, Prefixes, Sites, VLANs
-- ใช้ `fetchNetboxApi()` helper สำหรับ CRUD operations ทั้งหมด
+- **เปลี่ยนรุ่นอุปกรณ์ (NDS)**: Replace Device → เลือกอุปกรณ์ → เลือก Model ใหม่ → จับคู่ interface → ยืนยัน → ตรวจผล / Rollback
+- **เพิ่ม interface ให้ตรง template (NDS)**: Sync Interfaces → เลือก Model หรืออุปกรณ์ → Add missing / Sync & update
+- **จองพอร์ตลูกค้า (CDS)**: Search & Reserve → เลือก LSW Network → กรอก node, พอร์ต main/backup, prefix, VLAN → Reserve → ดูใน Dashboard
+- **หาเส้นทาง (CDS)**: Topology Map → กรอก IP หรือ Node ID → Start Trace
 
 ---
 
-## 📄 License
+## 6. Demo / Output
 
-Private — Internal Use Only
+> ภาพถ่ายจากระบบที่รันจริงด้วย Docker Compose (headless Chrome 1440×900) ต่อกับ **NetBox 4.6 ทดสอบที่ตั้งขึ้นแยก** และใส่ข้อมูลสมมติ (4 sites, 9 อุปกรณ์ Huawei, cables, 6 prefixes, 3 VRFs, 5 VLANs) — ไม่ใช่ข้อมูลเครือข่ายจริง
+
+### 6.1 Login & Hub
+| Login | Hub |
+| :---: | :---: |
+| ![](docs/screenshots/01-login.png) | ![](docs/screenshots/02-home.png) |
+
+### 6.2 NDS
+| Site Management | Devices |
+| :---: | :---: |
+| ![](docs/screenshots/10-nds-sites.png) | ![](docs/screenshots/11-nds-devices.png) |
+| **Device Types** | **Module Types** |
+| ![](docs/screenshots/12-nds-device-types.png) | ![](docs/screenshots/13-nds-module-types.png) |
+| **Sync Interfaces** | **Module Bays (Drag & Drop)** |
+| ![](docs/screenshots/14-nds-sync-interfaces.png) | ![](docs/screenshots/15-nds-module-bays.png) |
+| **Replace Device** | **IP Management (Prefix)** |
+| ![](docs/screenshots/16-nds-replace-device.png) | ![](docs/screenshots/17-nds-prefixes.png) |
+| **Domains (VRF)** | **VLANs** |
+| ![](docs/screenshots/18-nds-domains.png) | ![](docs/screenshots/19-nds-vlans.png) |
+
+### 6.3 CDS
+| Dashboard | Search & Reserve |
+| :---: | :---: |
+| ![](docs/screenshots/20-cds-dashboard.png) | ![](docs/screenshots/21-cds-search-reserve.png) |
+| **Topology Map — Path Trace `10.10.1.11`** | **Bulk Import** |
+| ![](docs/screenshots/22-cds-topology-map.png) | ![](docs/screenshots/23-cds-bulk-import.png) |
+| **Domain → AGG → IP** | **Domain (VRF)** |
+| ![](docs/screenshots/24-cds-domain-ip.png) | ![](docs/screenshots/25-cds-domain-demo.png) |
+| **VLANs** | **VLAN Assign** |
+| ![](docs/screenshots/26-cds-vlans.png) | ![](docs/screenshots/27-cds-vlan-assign.png) |
+| **Devices** | **Models** |
+| ![](docs/screenshots/28-cds-devices.png) | ![](docs/screenshots/29-cds-models.png) |
+| **Site Code** | |
+| ![](docs/screenshots/30-cds-site-code.png) | |
+
+### 6.4 Terminal
+
+```bash
+$ curl -s localhost:2500/api/health
+{"success":true,"message":"network-portal API is healthy","timestamp":"2026-09-17T09:38:59.033Z"}
+
+$ curl -s -X POST localhost:2500/api/auth/login -H 'content-type: application/json' \
+    -d '{"username":"admin","password":"***"}'
+{"success":true,"message":"เข้าสู่ระบบสำเร็จ","data":{"token":"eyJ...","user":{"username":"admin","role":"admin","allowedTeams":["nds","cds"]}}}
+```
+
+Backend log (Morgan) — สังเกต cache ของ NetBox (ครั้งแรก 257 ms, ครั้งถัดไป ~1 ms):
+
+```text
+POST /api/auth/login 200 0.959 ms - 466
+GET /api/nds/pes 200 257.235 ms - 292
+⚡ [Cache] Returning cached NetBox devices
+GET /api/nds/devices 200 1.642 ms - 9394
+GET /api/nds/sites 200 1.203 ms - 1768
+GET /api/nds/regions 200 38.418 ms - 192
+```
+
+---
+
+## 7. API Reference
+
+Base: `http://localhost:2500/api` — `/nds/*` และ `/cds/*` ต้องมี `Authorization: Bearer <JWT>` และสิทธิ์ทีม
+
+### Auth
+| Method | Path | คำอธิบาย |
+| :--- | :--- | :--- |
+| GET | `/health` | สถานะ API |
+| POST | `/auth/login` | login → JWT |
+| GET | `/auth/me` | ผู้ใช้ปัจจุบัน |
+| GET | `/auth/info` | รายชื่อบัญชี/ทีม (สำหรับหน้า Login) |
+
+### NDS (`/nds`)
+| กลุ่ม | Endpoints |
+| :--- | :--- |
+| Devices | `GET/POST /devices` · `PUT/DELETE /devices/:id` · `GET /devices/:id/interfaces` · `PATCH /interfaces/:interfaceId` |
+| Replace / Sync | `POST /devices/sync-interfaces` · `POST /devices/replace` · `POST /devices/rollback` · `GET /devices/snapshots/:snapshotId` |
+| Device types | `GET/POST /device-types` · `GET/POST /device-types/:id/interfaces` · `GET/POST /port-presets` · `GET /interface-type-choices` |
+| Modules | `GET/POST /module-types` · `PATCH/DELETE /module-types/:id` · `GET/POST /module-types/:id/interfaces` · `PATCH/DELETE /interface-templates/:id` · `GET /device-types/:id/module-bays` · `GET /devices/:id/module-bays` · `POST /module-bays/install` · `DELETE /modules/:moduleId` |
+| Lookups | `/device-roles` `/tenants` `/tenant-groups` `/locations` `/racks` `/platforms` `/config-templates` `/clusters` `/virtual-chassises` `/tags` `/regions` `/vlans` · `GET /netbox-redirect` |
+| CRUD resources | `sites` `prefixes` `pes` `aggs` `lsw_nts` `domains` `rings` → `GET/POST /{resource}` · `PUT/DELETE /{resource}/:id` |
+| Projects | `GET/POST /projects` · `GET /projects/:id` |
+
+### CDS (`/cds`)
+| กลุ่ม | Endpoints |
+| :--- | :--- |
+| Dashboard / Reserve | `GET/POST /dashboard` · `PATCH /dashboard/:id` |
+| Topology | `GET /topology` · `GET /topology/:site_code` · `GET /path-trace?query=` (หรือ `?ip=`) · `GET /device-details/:id` |
+| IPAM | `GET /prefixes` · `GET /ip-addresses` · `GET /available-ips` · `GET/POST /vlans` · `GET /vlan-roles` · `GET /vlan-groups` |
+| Other | `GET /sites` · `GET/POST /projects` · `GET /projects/:id` |
+
+---
+
+## 8. Project Structure
+
+```text
+network-management/
+├── docker-compose.yml         # frontend :2000, backend :2500
+├── .env.example
+├── update.sh / rebuild.sh / sync-code.sh
+├── backend/
+│   ├── Dockerfile / Dockerfile.dev / nodemon.json
+│   └── src/
+│       ├── server.js, app.js          # helmet, cors, morgan, error handler
+│       ├── config/                    # env → config, บัญชีผู้ใช้ต่อทีม
+│       ├── middlewares/               # verifyToken, requireTeam, errorHandler, notFound
+│       ├── routes/                    # index (/auth, /nds, /cds), nds.routes, cds.routes
+│       ├── controllers/               # auth, nds, cds
+│       ├── services/
+│       │   ├── netbox.service.js      # NetBox API shared (~2,800 บรรทัด): cache, replace, rollback, modules
+│       │   ├── nds.service.js
+│       │   └── cds.service.js         # Reserve flow, path trace, topology
+│       ├── models/                    # in-memory data (fallback / dashboard)
+│       └── utils/                     # jwt.js, apiResponse.js
+├── frontend/
+│   ├── Dockerfile / Dockerfile.dev / nginx.conf
+│   └── src/
+│       ├── routes/AppRoutes.jsx       # /login, /, /nds/*, /cds/*
+│       ├── context/AuthContext.jsx
+│       ├── api/                       # axiosClient + auth / nds / cds
+│       ├── components/                # Navbar, Sidebar, ProtectedRoute, NetworkGraphic, ...
+│       └── pages/
+│           ├── nds/                   # 16 ไฟล์ (รวม NDSLayout)
+│           └── cds/                   # 13 ไฟล์ (รวม CDSLayout)
+└── docs/screenshots/
+```
+
+---
+
+## 9. Extending the Portal
+
+เพิ่มทีมใหม่ (เช่น OPS):
+
+```text
+Backend:  routes/ops.routes.js → controllers/ops.controller.js → services/ops.service.js
+          routes/index.js: router.use('/ops', verifyToken, requireTeam('ops'), opsRoutes)
+          config/index.js: เพิ่มบัญชีและ allowedTeams ['ops']
+Frontend: pages/ops/OPSLayout.jsx, OPSHomePage.jsx → เพิ่ม route ใน AppRoutes.jsx
+```
+
+เพิ่มฟีเจอร์ใน CDS: route → controller → service (เรียก `netbox.service.js`) → page → route
+
+---
+
+## 10. Known Issues & Security Notes
+
+ตรวจจากโค้ดและทดสอบกับระบบ demo
+
+| # | ปัญหา | ผลกระทบ | แนวทางแก้ |
+| :--- | :--- | :--- | :--- |
+| 1 | รหัสผ่านมีค่า default ในโค้ด (`nds_password`, `cds_password`, `admin_password`) และ `JWT_SECRET` default | ถ้าไม่ตั้ง `.env` ใครก็ login เป็น admin หรือปลอม JWT ได้ | บังคับตั้งค่า ไม่ใช้ default |
+| 2 | รหัสผ่านเก็บเป็น plain text ใน `.env` และเทียบตรง ๆ, ไม่มี rate limit ที่ `/auth/login` | brute force ได้ | hash + rate limit / ใช้ SSO |
+| 3 | `GET /auth/info` (ไม่ต้อง login) คืนรายชื่อ username ทุกบัญชี | ช่วยผู้โจมตีเดา username | แสดงเฉพาะชื่อทีม |
+| 4 | `getAllPEs` / `getAllAGGs` / `getAllLswNts` กรองด้วย `d.device_role?.name` แต่ object ที่ map แล้วมีแค่ `role` | **ทดสอบแล้ว**: `/api/nds/pes` คืนข้อมูล mock (`bkk-pe-01`, Cisco ASR 9010) แทน PE จริงใน NetBox | กรองด้วย `d.role_name` |
+| 5 | Snapshot ของ Replace Device และข้อมูล CDS Dashboard เก็บใน memory | restart backend แล้ว rollback ไม่ได้ / dashboard หาย | เก็บลง DB (มี config `DB_*` เตรียมไว้) |
+| 6 | NetBox 4.6+ ใช้ token v2 เป็นค่าเริ่มต้น แต่ backend ส่ง `Token <key>` (v1) | ต้องสร้าง token แบบ v1 | รองรับ `Bearer nbt_...` |
+| 7 | `sync-code.sh` รัน `git reset --hard` + `git clean -fd` | ลบงานที่ยังไม่ commit ทั้งหมด | ใช้ด้วยความระวัง |
+| 8 | `rebuild.sh` รัน `docker system prune -f` | ลบ resource ที่ไม่ได้ใช้ทั้งเครื่อง | |
+| 9 | docker-compose รัน `Dockerfile.dev` (vite dev / nodemon) และ mount source | ไม่เหมาะกับ production | ใช้ `Dockerfile` (nginx build) |
+
+**FAQ**
+- **หน้าเว็บขึ้นแต่ข้อมูลว่าง** — ตรวจ `NETBOX_API_URL` / token และ log backend (`Netbox API ส่งคืนค่าผิดพลาดสถานะ 403`)
+- **`Invalid v1 token`** — token ที่สร้างใน NetBox เป็น v2 ให้สร้าง v1 (ดู issue #6)
+- **แก้ข้อมูลใน NetBox แล้วพอร์ทัลยังไม่เปลี่ยน** — cache 5 นาที รอหรือ restart backend
+- **เข้า NDS ไม่ได้ด้วยบัญชี cds** — เป็นไปตามสิทธิ์ ใช้บัญชี `nds` หรือ `admin`
+
+---
+
+> Private — Internal Use Only
