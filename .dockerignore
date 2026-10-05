@@ -27,7 +27,6 @@ frontend/dist-ssr/
 .env.example
 
 # Dockerfiles and Compose configs
-docker-compose.yml
 rebuild.sh
 update.sh
 

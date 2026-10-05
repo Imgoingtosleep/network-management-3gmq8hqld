@@ -27,3 +27,6 @@ frontend/dist-ssr/
 backend/.env
 frontend/.env
 frontend/.env.production
+
+# Documentation
+sso-deployment-guide.md
