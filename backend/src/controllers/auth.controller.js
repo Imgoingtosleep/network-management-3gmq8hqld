@@ -16,35 +16,73 @@ async function login(req, res, next) {
     const trimmedUsername = String(username).trim().toLowerCase();
     const rawPassword = String(password);
 
-    // ตรวจสอบกับรายการผู้ใช้ที่ตั้งค่าไว้ใน config / .env
-    const matchedUser = config.auth.users.find(
-      (u) => u.username.toLowerCase() === trimmedUsername && u.password === rawPassword
+    // 1. ตรวจสอบกับรายการผู้ใช้ที่ตั้งค่าไว้ใน config / .env (Bypass 3 Roles: NDS, CDS, Admin)
+    const bypassUser = config.auth.users.find(
+      (u) => u.username.toLowerCase() === trimmedUsername
     );
 
-    if (!matchedUser) {
-      return fail(res, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง โปรดตรวจสอบข้อมูลอีกครั้ง', 401);
+    let tokenPayload = null;
+
+    if (bypassUser) {
+      // เป็นบัญชี Bypass -> ตรวจสอบรหัสผ่านตรงนี้
+      if (bypassUser.password !== rawPassword) {
+        return fail(res, 'รหัสผ่านสำหรับบัญชี Bypass ไม่ถูกต้อง', 401);
+      }
+      
+      tokenPayload = {
+        username: bypassUser.username,
+        name: bypassUser.name,
+        role: bypassUser.role,
+        allowedTeams: bypassUser.allowedTeams,
+      };
+    } else {
+      // 2. ถ้าไม่ใช่บัญชี Bypass -> วิ่งไปเช็คกับ SSO Server (Single View)
+      if (!config.sso.apiUrl) {
+        return fail(res, 'ระบบ SSO ยังไม่เปิดใช้งาน (ไม่พบการตั้งค่า SINGLE_VIEW_API_URL)', 500);
+      }
+
+      try {
+        // [คำแนะนำ]: ปรับแก้ไข Endpoint ของ SSO ให้ตรงกับ API จริง (เช่น /api/auth/login)
+        const ssoEndpoint = `${config.sso.apiUrl}/api/auth/login`; 
+        
+        const ssoResponse = await fetch(ssoEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: trimmedUsername,
+            password: rawPassword,
+            appName: config.sso.appName
+          }),
+        });
+
+        if (!ssoResponse.ok) {
+          return fail(res, 'ชื่อผู้ใช้หรือรหัสผ่าน SSO ไม่ถูกต้อง', 401);
+        }
+
+        const ssoData = await ssoResponse.json();
+        
+        // สมมติว่า SSO ส่งข้อมูลกลับมาให้ ถอดข้อมูลมาใส่ Payload
+        // ถ้า SSO ไม่ได้ส่ง Role มา จะให้สิทธิ์เป็น User ทั่วไป (เข้าได้ทั้ง NDS และ CDS ตามที่คุยกันเบื้องต้น)
+        tokenPayload = {
+          username: trimmedUsername,
+          name: ssoData?.name || ssoData?.user?.name || trimmedUsername,
+          role: 'sso_user',
+          allowedTeams: ['nds', 'cds'], 
+        };
+      } catch (ssoError) {
+        console.error('SSO Login Error:', ssoError.message);
+        return fail(res, 'ไม่สามารถเชื่อมต่อกับระบบ SSO (Single View) ได้', 502);
+      }
     }
 
-    // สร้าง payload สำหรับ token
-    const tokenPayload = {
-      username: matchedUser.username,
-      name: matchedUser.name,
-      role: matchedUser.role,
-      allowedTeams: matchedUser.allowedTeams,
-    };
-
+    // สร้าง Token ด้วย Payload ที่ได้ (ไม่ว่าจะเป็น Bypass หรือ SSO)
     const token = jwt.sign(tokenPayload, config.jwt.secret, config.jwt.expiresIn);
 
     return ok(
       res,
       {
         token,
-        user: {
-          username: matchedUser.username,
-          name: matchedUser.name,
-          role: matchedUser.role,
-          allowedTeams: matchedUser.allowedTeams,
-        },
+        user: tokenPayload,
       },
       'เข้าสู่ระบบสำเร็จ'
     );

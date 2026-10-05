@@ -63,6 +63,12 @@ const config = {
       externalApiUrl: process.env.CDS_EXTERNAL_API_URL || '',
     },
   },
+
+  sso: {
+    apiUrl: process.env.SINGLE_VIEW_API_URL || '',
+    appName: process.env.SINGLE_VIEW_APP_NAME || 'Network Management',
+    emailDomain: process.env.SINGLE_VIEW_EMAIL_DOMAIN || 'rpm.com',
+  },
 };
 
 module.exports = config;
