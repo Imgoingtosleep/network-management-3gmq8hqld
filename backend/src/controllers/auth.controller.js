@@ -47,11 +47,15 @@ async function login(req, res, next) {
         
         const ssoResponse = await fetch(ssoEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RPM-Auth-Client/1.0'
+          },
           body: JSON.stringify({
             username: trimmedUsername,
             password: rawPassword,
-            appName: config.sso.appName
+            app_name: config.sso.appName
           }),
         });
 
@@ -59,13 +63,21 @@ async function login(req, res, next) {
           return fail(res, 'ชื่อผู้ใช้หรือรหัสผ่าน SSO ไม่ถูกต้อง', 401);
         }
 
-        const ssoData = await ssoResponse.json();
+        let ssoData;
+        try {
+          ssoData = await ssoResponse.json();
+        } catch {
+          ssoData = {};
+        }
+        
+        const userInfo = ssoData?.user_info || ssoData?.user || ssoData?.data?.user || ssoData?.data || ssoData?.result || ssoData || {};
+        const ssoName = userInfo?.name || userInfo?.fullname || userInfo?.full_name || userInfo?.display_name || userInfo?.displayName || userInfo?.username || trimmedUsername;
         
         // สมมติว่า SSO ส่งข้อมูลกลับมาให้ ถอดข้อมูลมาใส่ Payload
         // ถ้า SSO ไม่ได้ส่ง Role มา จะให้สิทธิ์เป็น User ทั่วไป (เข้าได้ทั้ง NDS และ CDS ตามที่คุยกันเบื้องต้น)
         tokenPayload = {
           username: trimmedUsername,
-          name: ssoData?.name || ssoData?.user?.name || trimmedUsername,
+          name: ssoName,
           role: 'sso_user',
           allowedTeams: ['nds', 'cds'], 
         };
