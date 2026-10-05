@@ -7,7 +7,8 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ .
-COPY .env .
+ARG ENV_FILE=.env
+COPY ${ENV_FILE} .env
 RUN npm run build
 
 # Production stage
