@@ -24,11 +24,17 @@ axiosClient.interceptors.request.use(
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && window.location.pathname !== '/login') {
+    if (error.response?.status === 401 && !window.location.pathname.endsWith('/login')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('isAuthenticated');
-      window.location.href = '/login';
+      
+      const base = import.meta.env.BASE_URL || '/';
+      const loginPath = `${base.replace(/\/$/, '')}/login`;
+      
+      if (window.location.pathname !== loginPath) {
+        window.location.href = loginPath;
+      }
     }
     return Promise.reject(error);
   }
