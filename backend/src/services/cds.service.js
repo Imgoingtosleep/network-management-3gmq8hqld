@@ -164,7 +164,7 @@ async function setupVlanifAndPrimaryIp(deviceId, item) {
     await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Token ${token}`,
+        'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },

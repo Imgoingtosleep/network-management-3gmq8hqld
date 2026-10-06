@@ -54,7 +54,7 @@ async function fetchNetboxApi(endpoint, method = 'GET', body = null) {
   const options = {
     method,
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Accept': 'application/json'
     }
   };
@@ -110,7 +110,7 @@ async function fetchAllPages(endpointPath) {
   while (nextUrl) {
     const res = await fetch(nextUrl, {
       headers: {
-        'Authorization': `Token ${token}`,
+        'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
         'Accept': 'application/json'
       }
     });
@@ -518,7 +518,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   const token = process.env.NETBOX_API_TOKEN;
   
   const searchRes = await fetch(`${baseUrl}/dcim/interfaces/?device_id=${deviceId}&name=${name}`, {
-    headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+    headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
   });
   if (searchRes.ok) {
     const data = await searchRes.json();
@@ -531,7 +531,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   let templateLabel = label;
   try {
     const devRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
-      headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
     });
     if (devRes.ok) {
       const devData = await devRes.json();
@@ -553,7 +553,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   const createRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -592,7 +592,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
   }
   
   const searchRes = await fetch(`${baseUrl}/ipam/ip-addresses/?address=${encodeURIComponent(normalized)}`, {
-    headers: { 'Authorization': `Token ${token}`, 'Accept': 'application/json' }
+    headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
   });
   let ipId = null;
   if (searchRes.ok) {
@@ -604,7 +604,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
         const updateRes = await fetch(`${baseUrl}/ipam/ip-addresses/${ipId}/`, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Token ${token}`,
+            'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
@@ -624,7 +624,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
   const createRes = await fetch(`${baseUrl}/ipam/ip-addresses/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -680,7 +680,7 @@ async function handleDeviceIPAssignments(deviceId, primaryIp4, primaryIp6, oobIp
     const patchRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Token ${token}`,
+        'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -715,7 +715,7 @@ async function createDevice(data) {
   const res = await fetch(`${baseUrl}/dcim/devices/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -747,7 +747,7 @@ async function createDevice(data) {
       const vifRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${token}`,
+          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -797,7 +797,7 @@ async function createDeviceType(data) {
       const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${token}`,
+          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -824,7 +824,7 @@ async function createDeviceType(data) {
   const res = await fetch(`${baseUrl}/dcim/device-types/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -893,7 +893,7 @@ async function createDeviceType(data) {
       const itRes = await fetch(`${baseUrl}/dcim/interface-templates/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${token}`,
+          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -970,7 +970,7 @@ async function createInterfaceTemplates(deviceTypeId, data) {
   const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -1412,7 +1412,7 @@ async function getInterfaceTypeChoices() {
   const res = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'OPTIONS',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Accept': 'application/json'
     }
   });
@@ -1444,7 +1444,7 @@ async function createCable(aInterfaceId, bInterfaceId) {
   const res = await fetch(`${baseUrl}/dcim/cables/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -1498,7 +1498,7 @@ async function getVlanByVid(vid) {
   
   const res = await fetch(`${baseUrl}/ipam/vlans/?vid=${vid}&limit=1`, {
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Accept': 'application/json'
     }
   });
@@ -2436,7 +2436,7 @@ async function createModuleType(data) {
       const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${token}`,
+          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -2461,7 +2461,7 @@ async function createModuleType(data) {
   const res = await fetch(`${baseUrl}/dcim/module-types/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -2514,7 +2514,7 @@ async function createModuleType(data) {
       await fetch(`${baseUrl}/dcim/interface-templates/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${token}`,
+          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -2618,7 +2618,7 @@ async function createModuleTypeInterfaceTemplates(moduleTypeId, data) {
   const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${token}`,
+      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
