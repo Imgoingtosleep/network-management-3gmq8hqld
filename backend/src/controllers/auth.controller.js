@@ -37,53 +37,74 @@ async function login(req, res, next) {
       };
     } else {
       // 2. ถ้าไม่ใช่บัญชี Bypass -> วิ่งไปเช็คกับ SSO Server (Single View)
-      if (!config.sso.apiUrl) {
-        return fail(res, 'ระบบ SSO ยังไม่เปิดใช้งาน (ไม่พบการตั้งค่า SINGLE_VIEW_API_URL)', 500);
-      }
+      // ปรับเปลี่ยนให้ใช้ Hardcode จำลองชั่วคราว (ไม่ต้องลบโค้ด SSO เดิม)
+      const USE_REAL_SSO = false;
 
-      try {
-        // [คำแนะนำ]: ปรับแก้ไข Endpoint ของ SSO ให้ตรงกับ API จริง (เช่น /api/auth/login)
-        const ssoEndpoint = `${config.sso.apiUrl}/api/auth/login`; 
+      if (!USE_REAL_SSO) {
+        // --- ส่วนจำลองการ Login ด้วย Hardcode สำหรับไอดีทั่วไป (ชั่วคราว) ---
+        // กำหนดให้ทุกคนที่ไม่ได้อยู่ในรายชื่อ Bypass (nds, cds, admin) ต้องใช้รหัสผ่านชั่วคราว 'password123'
+        const HARDCODED_PASSWORD = 'password123';
         
-        const ssoResponse = await fetch(ssoEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RPM-Auth-Client/1.0'
-          },
-          body: JSON.stringify({
-            username: trimmedUsername,
-            password: rawPassword,
-            app_name: config.sso.appName
-          }),
-        });
-
-        if (!ssoResponse.ok) {
-          return fail(res, 'ชื่อผู้ใช้หรือรหัสผ่าน SSO ไม่ถูกต้อง', 401);
+        if (rawPassword !== HARDCODED_PASSWORD) {
+          return fail(res, `ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เปิดโหมด Hardcode ชั่วคราว - รหัสคือ ${HARDCODED_PASSWORD})`, 401);
         }
 
-        let ssoData;
-        try {
-          ssoData = await ssoResponse.json();
-        } catch {
-          ssoData = {};
-        }
-        
-        const userInfo = ssoData?.user_info || ssoData?.user || ssoData?.data?.user || ssoData?.data || ssoData?.result || ssoData || {};
-        const ssoName = userInfo?.name || userInfo?.fullname || userInfo?.full_name || userInfo?.display_name || userInfo?.displayName || userInfo?.username || trimmedUsername;
-        
-        // สมมติว่า SSO ส่งข้อมูลกลับมาให้ ถอดข้อมูลมาใส่ Payload
-        // ถ้า SSO ไม่ได้ส่ง Role มา จะให้สิทธิ์เป็น User ทั่วไป (เข้าได้ทั้ง NDS และ CDS ตามที่คุยกันเบื้องต้น)
         tokenPayload = {
           username: trimmedUsername,
-          name: ssoName,
-          role: 'sso_user',
-          allowedTeams: ['nds', 'cds'], 
+          name: trimmedUsername,
+          role: 'sso_user', // จำลองว่าเป็น User ที่มาจาก SSO
+          allowedTeams: ['nds', 'cds'],
         };
-      } catch (ssoError) {
-        console.error('SSO Login Error:', ssoError.message);
-        return fail(res, 'ไม่สามารถเชื่อมต่อกับระบบ SSO (Single View) ได้', 502);
+      } else {
+        // --- ส่วนของ SSO ของจริง (ถูกปิดไว้ด้วย USE_REAL_SSO = false) ---
+        if (!config.sso.apiUrl) {
+          return fail(res, 'ระบบ SSO ยังไม่เปิดใช้งาน (ไม่พบการตั้งค่า SINGLE_VIEW_API_URL)', 500);
+        }
+
+        try {
+          // [คำแนะนำ]: ปรับแก้ไข Endpoint ของ SSO ให้ตรงกับ API จริง (เช่น /api/auth/login)
+          const ssoEndpoint = `${config.sso.apiUrl}/api/auth/login`; 
+          
+          const ssoResponse = await fetch(ssoEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RPM-Auth-Client/1.0'
+            },
+            body: JSON.stringify({
+              username: trimmedUsername,
+              password: rawPassword,
+              app_name: config.sso.appName
+            }),
+          });
+
+          if (!ssoResponse.ok) {
+            return fail(res, 'ชื่อผู้ใช้หรือรหัสผ่าน SSO ไม่ถูกต้อง', 401);
+          }
+
+          let ssoData;
+          try {
+            ssoData = await ssoResponse.json();
+          } catch {
+            ssoData = {};
+          }
+          
+          const userInfo = ssoData?.user_info || ssoData?.user || ssoData?.data?.user || ssoData?.data || ssoData?.result || ssoData || {};
+          const ssoName = userInfo?.name || userInfo?.fullname || userInfo?.full_name || userInfo?.display_name || userInfo?.displayName || userInfo?.username || trimmedUsername;
+          
+          // สมมติว่า SSO ส่งข้อมูลกลับมาให้ ถอดข้อมูลมาใส่ Payload
+          // ถ้า SSO ไม่ได้ส่ง Role มา จะให้สิทธิ์เป็น User ทั่วไป (เข้าได้ทั้ง NDS และ CDS ตามที่คุยกันเบื้องต้น)
+          tokenPayload = {
+            username: trimmedUsername,
+            name: ssoName,
+            role: 'sso_user',
+            allowedTeams: ['nds', 'cds'], 
+          };
+        } catch (ssoError) {
+          console.error('SSO Login Error:', ssoError.message);
+          return fail(res, 'ไม่สามารถเชื่อมต่อกับระบบ SSO (Single View) ได้', 502);
+        }
       }
     }
 
