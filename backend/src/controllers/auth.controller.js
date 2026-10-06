@@ -13,8 +13,12 @@ async function login(req, res, next) {
       return fail(res, 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', 400);
     }
 
+    const crypto = require('crypto');
     const trimmedUsername = String(username).trim().toLowerCase();
     const rawPassword = String(password);
+    
+    // Hash the incoming password with SHA-256 to compare with stored hashed passwords
+    const hashedPassword = crypto.createHash('sha256').update(rawPassword).digest('hex');
 
     // 1. ตรวจสอบกับรายการผู้ใช้ที่ตั้งค่าไว้ใน config / .env (Bypass 3 Roles: NDS, CDS, Admin)
     const bypassUser = config.auth.users.find(
@@ -24,8 +28,9 @@ async function login(req, res, next) {
     let tokenPayload = null;
 
     if (bypassUser) {
-      // เป็นบัญชี Bypass -> ตรวจสอบรหัสผ่านตรงนี้
-      if (bypassUser.password !== rawPassword) {
+      // เป็นบัญชี Bypass -> ตรวจสอบรหัสผ่านตรงนี้ (เทียบ Hash)
+      // อนุโลมให้ถ้ารหัสใน .env ยังไม่ได้ hash (เช่น 'nds_password') ก็ให้เข้าได้ แต่แนะนำให้ใช้ hash
+      if (bypassUser.password !== hashedPassword && bypassUser.password !== rawPassword) {
         return fail(res, 'รหัสผ่านสำหรับบัญชี Bypass ไม่ถูกต้อง', 401);
       }
       
@@ -42,11 +47,13 @@ async function login(req, res, next) {
 
       if (!USE_REAL_SSO) {
         // --- ส่วนจำลองการ Login ด้วย Hardcode สำหรับไอดีทั่วไป (ชั่วคราว) ---
-        // กำหนดให้ทุกคนที่ไม่ได้อยู่ในรายชื่อ Bypass (nds, cds, admin) ต้องใช้รหัสผ่านชั่วคราว 'password123'
-        const HARDCODED_PASSWORD = 'password123';
+        // ผู้ใช้สามารถระบุรหัสแบบ Hash ได้ตรงนี้ (นี่คือ hash ของคำว่า password123)
+        // echo -n 'password123' | sha256sum -> 827ccb0eea8a706c4c34a16891f84e7b
+        const HARDCODED_HASH = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f';
+        const HARDCODED_PLAIN = 'password123';
         
-        if (rawPassword !== HARDCODED_PASSWORD) {
-          return fail(res, `ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เปิดโหมด Hardcode ชั่วคราว - รหัสคือ ${HARDCODED_PASSWORD})`, 401);
+        if (hashedPassword !== HARDCODED_HASH && rawPassword !== HARDCODED_PLAIN) {
+          return fail(res, `ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เปิดโหมด Hardcode ชั่วคราว)`, 401);
         }
 
         tokenPayload = {
