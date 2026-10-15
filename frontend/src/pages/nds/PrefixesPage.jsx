@@ -133,7 +133,7 @@ export default function PrefixesPage() {
       mark_utilized: false,
       ringname: '',
       description: '',
-      tags: '',
+      tags: 'UIH_NETWORK',
       scope_type: '',
       scope_id: '',
       vlan: '',
@@ -227,6 +227,8 @@ export default function PrefixesPage() {
 
     if (formData.tags) {
       payload.tags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
+    } else {
+      payload.tags = ['UIH_NETWORK'];
     }
 
     try {
@@ -303,7 +305,7 @@ export default function PrefixesPage() {
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
             <span className="text-ink-400">Tenant:</span>
-            <span className="font-semibold text-blue-300">uih_network</span>
+            <span className="font-semibold text-blue-300">UIH_NETWORK</span>
           </div>
           {selectedPrefixes.length > 0 && (
             <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4">

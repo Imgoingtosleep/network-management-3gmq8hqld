@@ -504,7 +504,12 @@ async function updatePrefix(id, data) {
  * @returns {Promise<Object>} Created prefix.
  */
 async function createPrefix(data) {
-  const result = await fetchNetboxApi(`/ipam/prefixes/`, 'POST', data);
+  const payload = { ...data };
+  if (!payload.tenant) payload.tenant = 16;
+  if (!payload.tags || (Array.isArray(payload.tags) && payload.tags.length === 0)) {
+    payload.tags = [{ name: 'UIH_NETWORK', slug: 'uih_network' }];
+  }
+  const result = await fetchNetboxApi(`/ipam/prefixes/`, 'POST', payload);
   memoryCache.prefixes.data = null;
   return result;
 }
@@ -538,7 +543,12 @@ async function updateSite(id, data) {
  * @returns {Promise<Object>} Created site.
  */
 async function createSite(data) {
-  const result = await fetchNetboxApi(`/dcim/sites/`, 'POST', data);
+  const payload = { ...data };
+  if (!payload.tenant) payload.tenant = 16;
+  if (!payload.tags || (Array.isArray(payload.tags) && payload.tags.length === 0)) {
+    payload.tags = [{ name: 'UIH_NETWORK', slug: 'uih_network' }];
+  }
+  const result = await fetchNetboxApi(`/dcim/sites/`, 'POST', payload);
   memoryCache.sites.data = null;
   return result;
 }
@@ -781,6 +791,21 @@ async function createDevice(data) {
   // แยกฟิลด์สำหรับสร้าง Vlanif และ IP Address ออกจากข้อมูลดีไวซ์หลัก
   const { create_vlanif100, create_vlanif115, primary_ip4, primary_ip6, oob_ip, ...deviceData } = data;
 
+  if (!deviceData.tenant) {
+    deviceData.tenant = 16;
+  }
+  if (!deviceData.tags || (Array.isArray(deviceData.tags) && deviceData.tags.length === 0)) {
+    deviceData.tags = [{ name: 'UIH_NETWORK', slug: 'uih_network' }];
+  } else if (Array.isArray(deviceData.tags)) {
+    const hasUih = deviceData.tags.some(t => {
+      const name = typeof t === 'object' ? (t.name || t.slug) : String(t);
+      return name.toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork';
+    });
+    if (!hasUih) {
+      deviceData.tags.push({ name: 'UIH_NETWORK', slug: 'uih_network' });
+    }
+  }
+
   await sanitizeDeviceData(deviceData);
 
   const res = await fetch(`${baseUrl}/dcim/devices/`, {
@@ -890,7 +915,7 @@ async function createDeviceType(data) {
     part_number: data.part_number || '',
     u_height: parseInt(data.u_height) || 1,
     is_full_depth: !!data.is_full_depth,
-    tags: data.tags || [{ name: 'uih_network', slug: 'uih_network' }]
+    tags: data.tags || [{ name: 'UIH_NETWORK', slug: 'uih_network' }]
   };
 
   const res = await fetch(`${baseUrl}/dcim/device-types/`, {
@@ -2019,10 +2044,19 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
-  // 1. Update Device Type on the device
+  // 1. Update Device Type, Tenant and Tag on the device
   try {
+    let existingTags = [];
+    try {
+      const devObj = await getSingle(`/dcim/devices/${deviceId}/`);
+      existingTags = (devObj?.tags || []).map(t => t.id || t);
+    } catch (e) {}
+    const finalTags = existingTags.includes(42) ? existingTags : [...existingTags, 42];
+
     await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
-      device_type: parseInt(newDeviceTypeId)
+      device_type: parseInt(newDeviceTypeId),
+      tenant: 16,
+      tags: finalTags
     });
     summary.deviceUpdated = true;
   } catch (err) {

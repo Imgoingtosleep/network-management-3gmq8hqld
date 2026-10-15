@@ -28,7 +28,8 @@ async function createProject(req, res, next) {
 async function listDevices(req, res, next) {
   try {
     const { tenant } = req.query;
-    const data = await netboxService.getDevices(tenant);
+    const filter = (tenant === 'all' || tenant === '*') ? null : (tenant || 'uih_network');
+    const data = await netboxService.getDevices(filter);
     return ok(res, data, 'ดึงรายการอุปกรณ์จาก Netbox สำเร็จ');
   } catch (err) { return next(err); }
 }
@@ -121,7 +122,8 @@ async function deleteDevice(req, res, next) {
 async function listDeviceTypes(req, res, next) {
   try {
     const { tag } = req.query;
-    const data = await ndsService.getDeviceTypes(tag);
+    const filter = (tag === 'all' || tag === '*') ? null : (tag || 'uih_network');
+    const data = await ndsService.getDeviceTypes(filter);
     return ok(res, data, 'ดึงรายการ Device Types สำเร็จ');
   } catch (err) { return next(err); }
 }

@@ -152,7 +152,7 @@ export default function DevicesPage() {
       airflow: '',
       serial: '',
       asset_tag: '',
-      tags: '',
+      tags: 'UIH_NETWORK',
       nodeid: '',
       primary_ip4: '',
       primary_ip6: '',
@@ -283,6 +283,8 @@ export default function DevicesPage() {
     // Parse tag names to array of strings
     if (formData.tags) {
       payload.tags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
+    } else {
+      payload.tags = ['UIH_NETWORK'];
     }
 
     try {
@@ -406,7 +408,7 @@ export default function DevicesPage() {
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
               <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
               <span className="text-ink-400">Tenant:</span>
-              <span className="font-semibold text-blue-300">uih_network</span>
+              <span className="font-semibold text-blue-300">UIH_NETWORK</span>
             </div>
             {selectedDevices.length > 0 && (
               <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4 animate-in fade-in duration-200">

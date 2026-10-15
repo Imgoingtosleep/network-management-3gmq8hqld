@@ -622,7 +622,7 @@ export default function DeviceTypesPage() {
         part_number: deviceTypeFormData.part_number.trim(),
         u_height: parseInt(deviceTypeFormData.u_height) || 1,
         is_full_depth: deviceTypeFormData.is_full_depth,
-        tags: [{ name: 'uih_network', slug: 'uih_network' }],
+        tags: [{ name: 'UIH_NETWORK', slug: 'uih_network' }],
         interface_ranges: selectedRanges
       });
       setIsCreateModalOpen(false);
@@ -897,7 +897,7 @@ export default function DeviceTypesPage() {
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span className="text-ink-400">Tag Filter:</span>
-            <span className="font-semibold text-emerald-300">uih_network</span>
+            <span className="font-semibold text-emerald-300">UIH_NETWORK</span>
           </div>
           {selectedDeviceTypes.length > 0 && (
             <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4 animate-in fade-in duration-200">

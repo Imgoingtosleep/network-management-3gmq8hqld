@@ -90,8 +90,8 @@ export default function ReplaceDevicePage() {
     setErrorMessage('');
     try {
       const [devRes, dtRes, mtRes] = await Promise.all([
-        ndsApi.getDevices(),
-        ndsApi.getDeviceTypes(),
+        ndsApi.getDevices({ tenant: 'uih_network' }),
+        ndsApi.getDeviceTypes({ tag: 'uih_network' }),
         ndsApi.getModuleTypes()
       ]);
       const rawDevs = devRes.data?.data || devRes.data || [];
@@ -560,6 +560,9 @@ export default function ReplaceDevicePage() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-nds tracking-wider uppercase flex items-center gap-2">
               <span>1. เลือกอุปกรณ์ที่ต้องการเปลี่ยน Model</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 lowercase">
+                tenant: UIH_NETWORK
+              </span>
             </h3>
             {loadingOldIfaces && <span className="text-xs text-nds animate-pulse">กำลังโหลด Interfaces...</span>}
           </div>
@@ -597,6 +600,10 @@ export default function ReplaceDevicePage() {
                 <span className="text-amber-400 font-bold">{selectedDeviceDetails.device_type?.model || selectedDeviceDetails.type || 'N/A'}</span>
               </div>
               <div className="flex justify-between border-b border-base-700 pb-1">
+                <span className="text-ink-400">Tenant:</span>
+                <span className="text-blue-300 font-bold">{selectedDeviceDetails.tenant || 'UIH_NETWORK'}</span>
+              </div>
+              <div className="flex justify-between border-b border-base-700 pb-1">
                 <span className="text-ink-400">Primary IP / Site:</span>
                 <span className="text-ink-100">{selectedDeviceDetails.ip || 'N/A'} ({selectedDeviceDetails.site_name || 'N/A'})</span>
               </div>
@@ -613,6 +620,9 @@ export default function ReplaceDevicePage() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-green-400 tracking-wider uppercase flex items-center gap-2">
               <span>2. เลือก Model (Device Type) ใหม่</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 lowercase">
+                tag: UIH_NETWORK
+              </span>
             </h3>
             {loadingNewTemplates && <span className="text-xs text-green-400 animate-pulse">กำลังโหลด Port Templates...</span>}
           </div>

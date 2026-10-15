@@ -98,7 +98,7 @@ const deleteSite = async (id) => {
 // PEs (ดึงตรงจาก NetBox)
 const getAllPEs = async () => {
   try {
-    const netboxDevices = await netboxService.getDevices();
+    const netboxDevices = await netboxService.getDevices('uih_network');
     const filtered = netboxDevices.filter(d => 
       d.device_role?.name?.toLowerCase() === 'provider edge'
     );
@@ -117,7 +117,7 @@ const deletePE = (id) => ndsModel.deletePE(id);
 // LSW/NTs (ดึงตรงจาก NetBox)
 const getAllLswNts = async () => {
   try {
-    const netboxDevices = await netboxService.getDevices();
+    const netboxDevices = await netboxService.getDevices('uih_network');
     const filtered = netboxDevices.filter(d => 
       d.device_role?.name?.toLowerCase() === 'lsw_network' ||
       d.device_role?.name?.toLowerCase() === 'network'
@@ -268,7 +268,7 @@ const deletePrefix = async (id) => {
 // AGGs (ดึงตรงจาก NetBox)
 const getAllAGGs = async () => {
   try {
-    const netboxDevices = await netboxService.getDevices();
+    const netboxDevices = await netboxService.getDevices('uih_network');
     const filtered = netboxDevices.filter(d => 
       d.device_role?.name?.toLowerCase() === 'aggregation'
     );

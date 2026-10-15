@@ -175,7 +175,9 @@ export default function SitesPage() {
         site_name: formData.site_name,
         owner_group: formData.owner_group || null,
         owner: formData.owner || null
-      }
+      },
+      tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : ['UIH_NETWORK'],
+      tenant: formData.tenant ? parseInt(formData.tenant) : 16
     };
 
     try {

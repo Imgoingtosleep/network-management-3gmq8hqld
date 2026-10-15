@@ -151,7 +151,7 @@ export default function CDSDevicesPage() {
       airflow: '',
       serial: '',
       asset_tag: '',
-      tags: '',
+      tags: 'UIH_NETWORK',
       nodeid: '',
       primary_ip4: '',
       primary_ip6: '',
@@ -282,6 +282,8 @@ export default function CDSDevicesPage() {
     // Parse tag names to array of strings
     if (formData.tags) {
       payload.tags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
+    } else {
+      payload.tags = ['UIH_NETWORK'];
     }
 
     try {
