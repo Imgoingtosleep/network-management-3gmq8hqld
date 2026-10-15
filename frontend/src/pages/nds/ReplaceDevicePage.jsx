@@ -1,6 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ndsApi } from '../../api/nds.api.js';
 
+// Normalizes port_status value to match NetBox custom field choice set
+const normalizePortStatus = (val) => {
+  if (!val) return '';
+  const s = String(val).trim().toLowerCase();
+  if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') return '';
+  if (s === 'use' || s === 'active' || s === 'up' || s.includes('occup') || s.includes('in use') || s.includes('in-use')) return 'use';
+  if (s.includes('reserv') || s.includes('hold')) return 'reserver';
+  if (s.includes('fail') || s.includes('disable') || s.includes('down') || s.includes('shutdown') || s.includes('broken')) return 'fail';
+  if (s.includes('plan') || s.includes('spare')) return 'planed';
+  return s;
+};
+
+// Extracts and normalizes port_status from any interface custom_field aliases (port_status, cf_port_status, cf_status, status)
+const getInterfacePortStatus = (iface) => {
+  if (!iface || !iface.custom_fields) return '';
+  const raw = iface.custom_fields.port_status ?? 
+              iface.custom_fields.cf_port_status ?? 
+              iface.custom_fields.cf_status ?? 
+              iface.custom_fields.status ?? '';
+  return normalizePortStatus(raw);
+};
+
 export default function ReplaceDevicePage() {
   const [devices, setDevices] = useState([]);
   const [deviceTypes, setDeviceTypes] = useState([]);
@@ -96,7 +118,7 @@ export default function ReplaceDevicePage() {
       const ifaces = res.data?.data || res.data || [];
       const parsedIfaces = Array.isArray(ifaces) ? ifaces : [];
       setOldInterfaces(parsedIfaces);
-      generateMappings(parsedIfaces, getAllTargetTemplates(newDeviceTypeTemplates, selectedBayModules, moduleInterfacesMap));
+      generateMappings(parsedIfaces, getAllTargetTemplates(newDeviceTypeTemplates, selectedBayModules, moduleInterfacesMap), []);
     } catch (err) {
       setErrorMessage('ไม่สามารถโหลดรายการ Interface ของอุปกรณ์เดิมได้');
     } finally {
@@ -126,7 +148,7 @@ export default function ReplaceDevicePage() {
       const bays = bayRes.data?.data || bayRes.data || [];
       setTargetModuleBays(Array.isArray(bays) ? bays : []);
 
-      generateMappings(oldInterfaces, parsedTemplates);
+      generateMappings(oldInterfaces, parsedTemplates, interfaceMappings);
     } catch (err) {
       setErrorMessage('ไม่สามารถโหลด Port Templates ของ Model ใหม่ได้');
     } finally {
@@ -161,7 +183,7 @@ export default function ReplaceDevicePage() {
     }
 
     const combinedTemplates = getAllTargetTemplates(newDeviceTypeTemplates, updatedBayModules, currentMap);
-    generateMappings(oldInterfaces, combinedTemplates);
+    generateMappings(oldInterfaces, combinedTemplates, interfaceMappings);
   };
 
   // รวมพอร์ตจาก Device Type และ Module Types ทั้งหมดที่เลือก
@@ -194,9 +216,67 @@ export default function ReplaceDevicePage() {
     return list;
   };
 
+  // Smart matching helper between old port name and target template names
+  const findBestMatchingTemplate = (oldName, targetTemplates, usedNames = new Set()) => {
+    if (!oldName || !targetTemplates || targetTemplates.length === 0) return '';
+    const cleanOld = oldName.trim().toLowerCase();
+
+    // 1. Exact match (case-insensitive)
+    const exact = targetTemplates.find(t => t.name.toLowerCase() === cleanOld && !usedNames.has(t.name));
+    if (exact) return exact.name;
+
+    // 2. Extract numeric/slot pattern e.g. "0/1", "0/0/1", "1/0/24", "1/1"
+    const oldNumsMatch = cleanOld.match(/\d+(?:[\/\:\.]\d+)*/);
+    const oldNumPattern = oldNumsMatch ? oldNumsMatch[0] : null;
+
+    if (oldNumPattern) {
+      const patternMatch = targetTemplates.find(t => {
+        if (usedNames.has(t.name)) return false;
+        const tMatch = t.name.toLowerCase().match(/\d+(?:[\/\:\.]\d+)*/);
+        return tMatch && tMatch[0] === oldNumPattern;
+      });
+      if (patternMatch) return patternMatch.name;
+
+      // 3. Match by port number / last segment of pattern e.g. "1/0/24" -> "24" matches "0/0/24" -> "24"
+      const oldParts = oldNumPattern.split(/[\/\:\.]/);
+      const oldPortNum = oldParts[oldParts.length - 1];
+      if (oldPortNum) {
+        const portNumMatch = targetTemplates.find(t => {
+          if (usedNames.has(t.name)) return false;
+          const tMatch = t.name.toLowerCase().match(/\d+(?:[\/\:\.]\d+)*/);
+          if (!tMatch) return false;
+          const tParts = tMatch[0].split(/[\/\:\.]/);
+          return tParts[tParts.length - 1] === oldPortNum;
+        });
+        if (portNumMatch) return portNumMatch.name;
+      }
+    }
+
+    // 4. Match normalized digits e.g. "01" matches "0/1" or "01"
+    const oldDigits = cleanOld.replace(/\D/g, '');
+    if (oldDigits) {
+      const digitsMatch = targetTemplates.find(t => {
+        if (usedNames.has(t.name)) return false;
+        const tDigits = t.name.replace(/\D/g, '');
+        return tDigits === oldDigits || tDigits.endsWith(oldDigits) || oldDigits.endsWith(tDigits);
+      });
+      if (digitsMatch) return digitsMatch.name;
+    }
+
+    return '';
+  };
+
   // 3. คำนวณการจับคู่อัตโนมัติ (Smart Auto Match)
-  const generateMappings = (oldIfaces, targetTemplates) => {
-    if (!oldIfaces.length) return;
+  const generateMappings = (oldIfaces, targetTemplates, existingMappings = []) => {
+    if (!oldIfaces || !oldIfaces.length) {
+      setInterfaceMappings([]);
+      return;
+    }
+
+    const existingMap = new Map();
+    if (Array.isArray(existingMappings)) {
+      existingMappings.forEach(m => existingMap.set(m.oldInterfaceId, m));
+    }
     
     // กรองพวก Virtual Interface และ Sub-Interface ออก (Sub-interface จะย้ายตาม Physical Port หลักให้อัตโนมัติ ไม่สามารถติ๊กเลือกแยกได้)
     const physicalOnly = oldIfaces.filter(oldIf => {
@@ -207,20 +287,73 @@ export default function ReplaceDevicePage() {
       return !isVirtual;
     });
 
+    const usedTargetNames = new Set();
+    const maxSelections = targetTemplates ? targetTemplates.length : 0;
+    let autoSelectedCount = 0;
+
     const mappings = physicalOnly.map((oldIf) => {
       const oldName = oldIf.name;
       const isFromModule = Boolean(oldIf.module || oldIf.module_bay);
+      const oldPortStatus = getInterfacePortStatus(oldIf);
+      const oldLabel = oldIf.label || '';
+      const oldDesc = oldIf.description || '';
+      const hasDescription = Boolean(oldDesc && oldDesc.trim() !== '');
+
+      const existing = existingMap.get(oldIf.id);
+
+      // Check if existing mapping has a valid interface name that belongs to targetTemplates
+      const isExistingValid = Boolean(existing?.newInterfaceName && targetTemplates.some(t => t.name === existing.newInterfaceName));
+      let targetName = isExistingValid ? existing.newInterfaceName : '';
+
+      // Auto-match target template port
+      if (!targetName && targetTemplates && targetTemplates.length > 0) {
+        targetName = findBestMatchingTemplate(oldName, targetTemplates, usedTargetNames);
+      }
+
+      // Fallback: Pick next available template from the new Device Type so unedited rows also get template names
+      if (!targetName && targetTemplates && targetTemplates.length > 0) {
+        const nextAvailable = targetTemplates.find(t => !usedTargetNames.has(t.name));
+        if (nextAvailable) {
+          targetName = nextAvailable.name;
+        }
+      }
+
+      if (targetName) {
+        usedTargetNames.add(targetName);
+      }
+
+      // Logic: Default selection is true for ports that have an existing description
+      let isSelected = false;
+      if (existing) {
+        isSelected = existing.selected;
+      } else if (hasDescription) {
+        if (maxSelections === 0 || autoSelectedCount < maxSelections) {
+          isSelected = true;
+          autoSelectedCount++;
+        }
+      }
+
+      const defaultPortStatus = oldPortStatus || (hasDescription ? 'use' : '');
+      const newPortStatus = existing?.newPortStatus !== undefined ? normalizePortStatus(existing.newPortStatus) : defaultPortStatus;
+      const newDescription = existing?.newDescription !== undefined ? existing.newDescription : oldDesc;
+      const newLabel = existing?.newLabel !== undefined ? existing.newLabel : oldLabel;
 
       return {
         oldInterfaceId: oldIf.id,
         oldInterfaceName: oldName,
+        oldLabel: oldLabel,
         isFromModule: isFromModule,
         moduleName: oldIf.module?.display || oldIf.module?.name || oldIf.module_bay?.name || '',
-        newInterfaceName: '', // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ตปลายทาง
-        selected: false,      // ค่าเริ่มต้นยังไม่ได้เลือกพอร์ต (ผู้ใช้เลือกเอง)
-        description: oldIf.description || '',
+        oldPortStatus: oldPortStatus,
+        oldDescription: oldDesc,
         type: oldIf.type?.label || oldIf.type?.value || 'Physical',
-        untagged_vlan: oldIf.untagged_vlan?.vid ? `VLAN ${oldIf.untagged_vlan.vid}` : null
+        untagged_vlan: oldIf.untagged_vlan?.vid ? `VLAN ${oldIf.untagged_vlan.vid}` : null,
+        
+        selected: isSelected,
+        newInterfaceName: targetName,
+        newPortStatus: newPortStatus,
+        newDescription: newDescription,
+        newLabel: newLabel
       };
     });
     setInterfaceMappings(mappings);
@@ -243,24 +376,58 @@ export default function ReplaceDevicePage() {
       return;
     }
 
-    newMappings[index].selected = !newMappings[index].selected;
+    const willBeSelected = !targetItem.selected;
+    targetItem.selected = willBeSelected;
+
+    // If selected and no target chosen yet, auto-match from available templates
+    if (willBeSelected && !targetItem.newInterfaceName) {
+      const used = new Set(newMappings.filter(m => m.newInterfaceName).map(m => m.newInterfaceName));
+      let matched = findBestMatchingTemplate(targetItem.oldInterfaceName, allTargetTemplates, used);
+      if (!matched && allTargetTemplates && allTargetTemplates.length > 0) {
+        const nextAvail = allTargetTemplates.find(t => !used.has(t.name));
+        if (nextAvail) matched = nextAvail.name;
+      }
+      if (matched) {
+        targetItem.newInterfaceName = matched;
+      }
+    }
+
+    setInterfaceMappings(newMappings);
+  };
+
+  const updateMappingField = (index, field, value) => {
+    const newMappings = [...interfaceMappings];
+    newMappings[index][field] = value;
+    if (field === 'newInterfaceName') {
+      newMappings[index].selected = Boolean(value);
+    }
     setInterfaceMappings(newMappings);
   };
 
   const updateMappingTarget = (index, targetName) => {
-    const newMappings = [...interfaceMappings];
-    newMappings[index].newInterfaceName = targetName;
-    newMappings[index].selected = !!targetName;
-    setInterfaceMappings(newMappings);
+    updateMappingField(index, 'newInterfaceName', targetName);
   };
 
   const selectAllPhysical = (select) => {
     if (select && maxAllowedSelection > 0) {
-      // Select only up to maxAllowedSelection ports
-      setInterfaceMappings(interfaceMappings.map((m, idx) => ({
-        ...m,
-        selected: idx < maxAllowedSelection
-      })));
+      const used = new Set();
+      setInterfaceMappings(interfaceMappings.map((m, idx) => {
+        const isSel = idx < maxAllowedSelection;
+        let targetName = m.newInterfaceName;
+        if (isSel && !targetName) {
+          targetName = findBestMatchingTemplate(m.oldInterfaceName, allTargetTemplates, used);
+          if (!targetName && allTargetTemplates && allTargetTemplates.length > 0) {
+            const nextAvail = allTargetTemplates.find(t => !used.has(t.name));
+            if (nextAvail) targetName = nextAvail.name;
+          }
+          if (targetName) used.add(targetName);
+        }
+        return {
+          ...m,
+          selected: isSel,
+          newInterfaceName: targetName
+        };
+      }));
     } else {
       setInterfaceMappings(interfaceMappings.map(m => ({ ...m, selected: false })));
     }
@@ -314,7 +481,10 @@ export default function ReplaceDevicePage() {
         modulesToInstall: modulesPayload,
         interfaceMappings: selectedMappings.map(m => ({
           oldInterfaceId: m.oldInterfaceId,
-          newInterfaceName: m.newInterfaceName
+          newInterfaceName: m.newInterfaceName,
+          newPortStatus: m.newPortStatus,
+          newDescription: m.newDescription,
+          newLabel: m.newLabel !== undefined ? m.newLabel : (m.oldLabel || '')
         }))
       });
       const resData = res.data?.data || res.data || {};
@@ -666,12 +836,12 @@ export default function ReplaceDevicePage() {
             </div>
           </div>
 
-          {/* Warning Banner for Unselected Ports Data Loss */}
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
+          {/* Policy Banner: Non-selected ports and Label preservation */}
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs text-emerald-300 flex items-start gap-2.5">
             <div>
-              <span className="font-bold block text-amber-200 mb-0.5">คำเตือนสำคัญเกี่ยวกับข้อมูลพอร์ต:</span>
-              <p className="text-amber-300/90 leading-relaxed">
-                พอร์ตของอุปกรณ์เดิมที่ **ไม่ถูกเลือก (ไม่ได้ติ๊กถูก)** ข้อมูลเดิม (เช่น Description, IP Address, Configs) **จะถูกลบทิ้งออกจากอุปกรณ์ในระบบ NetBox โดยอัตโนมัติ** หลังจากการดำเนินการ Replace Model สำเร็จ กรุณาตรวจสอบให้แน่ใจว่าได้เลือกพอร์ตที่ต้องการเก็บข้อมูลครบถ้วนแล้ว
+              <span className="font-bold block text-emerald-200 mb-0.5">นโยบายการรักษาข้อมูลพอร์ต (Interface &amp; Label Preservation):</span>
+              <p className="text-emerald-300/90 leading-relaxed">
+                ระบบจะย้ายข้อมูลเฉพาะ Interface ที่ท่านติ๊กเลือกไปยังพอร์ตเป้าหมาย โดยค่า **Label**, Description, IP Address, VLAN และการตั้งค่าทั้งหมดจะตามไปพอร์ตใหม่อย่างครบถ้วน ส่วนพอร์ตอื่นๆ ที่ไม่ได้เลือก **จะคงค่าเดิมทุกอย่างไว้ทั้งหมด (ไม่มีการลบหรือเปลี่ยนแปลง)**
               </p>
             </div>
           </div>
@@ -701,14 +871,44 @@ export default function ReplaceDevicePage() {
                 <thead className="bg-base-900/80 text-ink-400 border-b border-base-700">
                   <tr>
                     <th className="p-3 text-center w-10">เลือก</th>
-                    <th className="p-3">Physical Interface เดิม</th>
-                    <th className="p-3">รายละเอียดเดิม (Description / Config)</th>
-                    <th className="p-3 text-center w-12">-&gt;</th>
-                    <th className="p-3">ตกพอร์ตปลายทางบน Model ใหม่</th>
+                    <th className="p-3">Interface เดิม</th>
+                    <th className="p-3">cf_port_status</th>
+                    <th className="p-3">Description</th>
+                    <th className="p-3 text-center w-8">-&gt;</th>
+                    <th className="p-3 min-w-[320px] w-[340px]">Interface ใหม่</th>
+                    <th className="p-3 w-36">cf_port_status</th>
+                    <th className="p-3 min-w-[200px]">Description</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-base-800">
                   {interfaceMappings.map((m, globalIdx) => {
+                    const getStatusBadge = (status) => {
+                      const s = normalizePortStatus(status);
+                      if (!s) return <span className="text-ink-600">-</span>;
+                      if (s === 'use') {
+                        return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-green-500/10 text-green-400 border border-green-500/30">Use</span>;
+                      }
+                      if (s === 'fail') {
+                        return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-red-500/10 text-red-400 border border-red-500/30">Disable</span>;
+                      }
+                      if (s === 'reserver') {
+                        return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">Reserve</span>;
+                      }
+                      if (s === 'planed') {
+                        return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">Spare</span>;
+                      }
+                      return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-base-800 text-ink-300 border border-base-700">{status}</span>;
+                    };
+
+                    const getSelectColor = (status) => {
+                      const s = normalizePortStatus(status);
+                      if (s === 'use') return 'bg-green-500/10 text-green-400 border-green-500/30';
+                      if (s === 'fail') return 'bg-red-500/10 text-red-400 border-red-500/30';
+                      if (s === 'reserver') return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
+                      if (s === 'planed') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
+                      return 'bg-base-950 text-ink-400 border-base-600';
+                    };
+
                     return (
                       <tr key={m.oldInterfaceId} className={m.selected ? 'bg-nds/5' : 'opacity-60'}>
                         <td className="p-3 text-center">
@@ -716,39 +916,84 @@ export default function ReplaceDevicePage() {
                             type="checkbox"
                             checked={m.selected}
                             onChange={() => toggleMappingSelection(globalIdx)}
-                            className="rounded border-base-600 bg-base-900 text-nds focus:ring-nds"
+                            className="rounded border-base-600 bg-base-900 text-nds focus:ring-nds cursor-pointer"
                           />
                         </td>
-                        <td className="p-3 font-bold">
-                          <span className={m.isFromModule ? 'text-blue-400 font-mono' : 'text-ink-100'}>
-                            {m.oldInterfaceName}
-                          </span>
-                          {m.isFromModule && (
-                            <span className="ml-1.5 inline-block text-[9px] font-sans px-1.5 py-0.2 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 font-medium">
-                              {m.moduleName ? `Module: ${m.moduleName}` : 'Module Port'}
-                            </span>
-                          )}
-                          <span className="block text-[10px] text-ink-600 font-normal">{m.type}</span>
+                        <td className="p-3 font-bold whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className={m.isFromModule ? 'text-blue-400 font-mono' : 'text-ink-100'}>
+                                {m.oldInterfaceName}
+                              </span>
+                              {m.isFromModule && (
+                                <span className="inline-block text-[9px] font-sans px-1.5 py-0.2 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 font-medium">
+                                  {m.moduleName ? `Module: ${m.moduleName}` : 'Module Port'}
+                                </span>
+                              )}
+                            </div>
+                            {m.oldLabel && (
+                              <span className="text-[10px] text-purple-300 font-normal font-mono mt-0.5">
+                                label: {m.oldLabel}
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="p-3 text-ink-400">
-                          {m.description ? <span className="text-ink-200">{m.description}</span> : <span className="text-ink-600">-</span>}
+                        <td className="p-3 whitespace-nowrap">
+                          {getStatusBadge(m.oldPortStatus)}
+                        </td>
+                        <td className="p-3 text-ink-400 max-w-xs break-words">
+                          {m.oldDescription ? <span className="text-ink-200">{m.oldDescription}</span> : <span className="text-ink-600">-</span>}
                           {m.untagged_vlan && <span className="ml-2 rounded bg-base-800 px-1.5 py-0.5 text-[10px] text-amber-400">{m.untagged_vlan}</span>}
                         </td>
                         <td className="p-3 text-center text-ink-600">➔</td>
-                        <td className="p-3">
+                        <td className="p-3 min-w-[320px]">
                           <select
                             value={m.newInterfaceName}
-                            onChange={(e) => updateMappingTarget(globalIdx, e.target.value)}
+                            onChange={(e) => updateMappingField(globalIdx, 'newInterfaceName', e.target.value)}
                             disabled={!m.selected}
-                            className="w-full rounded border border-base-600 bg-base-900 px-2 py-1 text-xs text-green-400 focus:border-green-500 focus:outline-none disabled:opacity-50"
+                            className="w-full rounded border border-base-600 bg-base-900 px-2 py-1 text-xs text-green-400 focus:border-green-500 focus:outline-none disabled:opacity-50 cursor-pointer"
                           >
                             <option value="">-- เลือกพอร์ตของ Model ใหม่ / Module --</option>
                             {allTargetTemplates.map(tmpl => (
                               <option key={tmpl.id || tmpl.name} value={tmpl.name}>
-                                {tmpl.name} ({tmpl.type?.label || tmpl.type || 'Port'}) {tmpl.fromModule ? '[การ์ด Module]' : ''}
+                                {tmpl.name} {tmpl.fromModule ? '[การ์ด Module]' : ''}
                               </option>
                             ))}
                           </select>
+                          {m.selected && (m.newLabel || m.oldLabel) && (
+                            <div className="mt-1 text-[10px] text-purple-300 font-mono">
+                              label ที่จะคงไว้: {m.newLabel || m.oldLabel}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <select
+                            value={m.newPortStatus || ''}
+                            onChange={(e) => updateMappingField(globalIdx, 'newPortStatus', e.target.value)}
+                            disabled={!m.selected}
+                            className={`w-full rounded border px-2 py-1 text-[11px] font-semibold uppercase focus:outline-none focus:ring-1 focus:ring-nds disabled:opacity-50 cursor-pointer ${getSelectColor(m.newPortStatus)}`}
+                          >
+                            <option className="bg-base-900 text-ink-500" value="">port ว่าง</option>
+                            <option className="bg-base-900 text-green-400 font-semibold" value="use">Use</option>
+                            <option className="bg-base-900 text-red-400 font-semibold" value="fail">Disable</option>
+                            <option className="bg-base-900 text-yellow-400 font-semibold" value="reserver">Reserve</option>
+                            <option className="bg-base-900 text-cyan-400 font-semibold" value="planed">Spare</option>
+                            {m.newPortStatus && !['', 'use', 'fail', 'reserver', 'planed'].includes(String(m.newPortStatus).toLowerCase()) && (
+                              <option className="bg-base-900 text-ink-300 font-semibold" value={m.newPortStatus}>
+                                {m.newPortStatus}
+                              </option>
+                            )}
+                          </select>
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            value={m.newDescription || ''}
+                            onChange={(e) => updateMappingField(globalIdx, 'newDescription', e.target.value)}
+                            disabled={!m.selected}
+                            placeholder="Description..."
+                            className="w-full rounded border border-base-600 bg-base-900 px-2 py-1 text-xs text-ink-100 placeholder:text-ink-600 focus:border-nds focus:outline-none disabled:opacity-50"
+                          />
                         </td>
                       </tr>
                     );
@@ -835,6 +1080,26 @@ export default function ReplaceDevicePage() {
                     <div key={iface.id || iface.name} className="p-2.5 flex items-center justify-between bg-base-900/40 hover:bg-base-900">
                       <div>
                         <span className="font-semibold text-ink-100">{iface.name}</span>
+                        {(() => {
+                          const st = getInterfacePortStatus(iface);
+                          if (!st) return null;
+                          const badgeColor = st === 'use' ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                            : st === 'fail' ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                            : st === 'reserver' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
+                            : st === 'planed' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+                            : 'bg-base-800 text-ink-300 border-base-700';
+                          const label = st === 'use' ? 'Use' : st === 'fail' ? 'Disable' : st === 'reserver' ? 'Reserve' : st === 'planed' ? 'Spare' : st;
+                          return (
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase border ${badgeColor}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
+                        {iface.label && (
+                          <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-mono border border-purple-500/30 bg-purple-500/10 text-purple-300 font-medium">
+                            label: {iface.label}
+                          </span>
+                        )}
                         {iface.description && <span className="ml-2 text-[11px] text-ink-400">({iface.description})</span>}
                       </div>
                       <div className="text-[11px] text-right">
@@ -870,6 +1135,26 @@ export default function ReplaceDevicePage() {
                     <div key={iface.id || iface.name} className="p-2.5 flex items-center justify-between bg-green-950/20 hover:bg-green-950/30 border-l-2 border-green-500">
                       <div>
                         <span className="font-semibold text-green-300">{iface.name}</span>
+                        {(() => {
+                          const st = getInterfacePortStatus(iface);
+                          if (!st) return null;
+                          const badgeColor = st === 'use' ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                            : st === 'fail' ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                            : st === 'reserver' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
+                            : st === 'planed' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+                            : 'bg-green-500/10 text-green-400 border-green-500/30';
+                          const label = st === 'use' ? 'Use' : st === 'fail' ? 'Disable' : st === 'reserver' ? 'Reserve' : st === 'planed' ? 'Spare' : st;
+                          return (
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase border ${badgeColor}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
+                        {iface.label && (
+                          <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-mono border border-purple-500/30 bg-purple-500/10 text-purple-300 font-medium">
+                            label: {iface.label}
+                          </span>
+                        )}
                         {iface.description && <span className="ml-2 text-[11px] text-ink-400">({iface.description})</span>}
                       </div>
                       <div className="text-[11px] text-right">

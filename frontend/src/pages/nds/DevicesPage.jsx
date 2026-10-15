@@ -325,7 +325,7 @@ export default function DevicesPage() {
           port_status: newStatus || null
         }
       };
-      if (newStatus === 'Disable') {
+      if (newStatus === 'Disable' || newStatus === 'fail') {
         payload.enabled = false;
       } else {
         payload.enabled = true;
@@ -1207,29 +1207,34 @@ export default function DevicesPage() {
                           <td className="px-5 py-3.5 font-mono text-xs text-ink-400">{iface.type?.label || iface.type || '-'}</td>
                           <td className="px-5 py-3.5">
                             {(() => {
-                              const portStatus = iface.custom_fields?.port_status || '';
-                              const statusStr = String(portStatus).toLowerCase();
+                              const rawPortStatus = iface.custom_fields?.port_status || '';
+                              const statusStr = String(rawPortStatus).toLowerCase();
+                              let canonicalStatus = '';
                               let selectColor = 'bg-base-950 text-ink-400 border-base-600';
-                              if (statusStr.includes('active') || statusStr.includes('up') || statusStr === 'use') {
+                              if (statusStr === 'use' || statusStr.includes('active') || statusStr.includes('up')) {
+                                canonicalStatus = 'use';
                                 selectColor = 'bg-green-500/10 text-green-400 border-green-500/30';
-                              } else if (statusStr.includes('down') || statusStr.includes('shutdown') || statusStr.includes('disable')) {
+                              } else if (statusStr === 'fail' || statusStr.includes('down') || statusStr.includes('shutdown') || statusStr.includes('disable')) {
+                                canonicalStatus = 'fail';
                                 selectColor = 'bg-red-500/10 text-red-400 border-red-500/30';
-                              } else if (statusStr.includes('reserve') || statusStr.includes('hold')) {
+                              } else if (statusStr === 'reserver' || statusStr.includes('reserve') || statusStr.includes('hold')) {
+                                canonicalStatus = 'reserver';
                                 selectColor = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
-                              } else if (statusStr.includes('spare') || statusStr.includes('free') || statusStr.includes('available')) {
+                              } else if (statusStr === 'planed' || statusStr.includes('spare') || statusStr.includes('plan')) {
+                                canonicalStatus = 'planed';
                                 selectColor = 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
                               }
                               return (
                                 <select
-                                  value={portStatus}
+                                  value={canonicalStatus}
                                   onChange={(e) => handleStatusChange(iface.id, e.target.value)}
                                   className={`rounded px-2 py-0.5 text-[10px] font-semibold font-mono uppercase focus:outline-none focus:ring-1 focus:ring-nds focus:border-nds cursor-pointer transition-all border ${selectColor}`}
                                 >
                                   <option className="bg-base-900 text-ink-500" value="">port ว่าง</option>
-                                  <option className="bg-base-900 text-green-400 font-semibold" value="Use">Use</option>
-                                  <option className="bg-base-900 text-red-400 font-semibold" value="Disable">Disable</option>
-                                  <option className="bg-base-900 text-yellow-400 font-semibold" value="Reserve">Reserve</option>
-                                  <option className="bg-base-900 text-cyan-400 font-semibold" value="Spare">Spare</option>
+                                  <option className="bg-base-900 text-green-400 font-semibold" value="use">Use</option>
+                                  <option className="bg-base-900 text-red-400 font-semibold" value="fail">Disable</option>
+                                  <option className="bg-base-900 text-yellow-400 font-semibold" value="reserver">Reserve</option>
+                                  <option className="bg-base-900 text-cyan-400 font-semibold" value="planed">Spare</option>
                                 </select>
                               );
                             })()}

@@ -48,6 +48,23 @@ async function getAvailableCustomFields() {
   }
 }
 
+// In-memory snapshot storage for replace device rollback & comparison
+const deviceSnapshots = {};
+
+/**
+ * Normalizes port_status value to match NetBox custom field choice set
+ */
+function normalizePortStatus(val) {
+  if (!val) return null;
+  const s = String(val).trim().toLowerCase();
+  if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') return null;
+  if (s === 'use' || s === 'active' || s === 'up' || s.includes('occup') || s.includes('in use') || s.includes('in-use')) return 'use';
+  if (s.includes('reserv') || s.includes('hold')) return 'reserver';
+  if (s.includes('fail') || s.includes('disable') || s.includes('down') || s.includes('shutdown') || s.includes('broken')) return 'fail';
+  if (s.includes('plan') || s.includes('spare')) return 'planed';
+  return null;
+}
+
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
 
 /**
@@ -1475,7 +1492,24 @@ async function getDeviceInterfaces(deviceId) {
  */
 async function updateInterface(interfaceId, payload) {
   try {
-    return await fetchNetboxApi(`/dcim/interfaces/${interfaceId}/`, 'PATCH', payload);
+    const patchBody = { ...payload };
+    if (patchBody.custom_fields && (
+      patchBody.custom_fields.port_status !== undefined ||
+      patchBody.custom_fields.cf_port_status !== undefined ||
+      patchBody.custom_fields.cf_status !== undefined
+    )) {
+      const raw = patchBody.custom_fields.port_status !== undefined
+        ? patchBody.custom_fields.port_status
+        : (patchBody.custom_fields.cf_port_status !== undefined
+            ? patchBody.custom_fields.cf_port_status
+            : patchBody.custom_fields.cf_status);
+      const normalized = normalizePortStatus(raw);
+      patchBody.custom_fields = {
+        ...patchBody.custom_fields,
+        port_status: normalized
+      };
+    }
+    return await fetchNetboxApi(`/dcim/interfaces/${interfaceId}/`, 'PATCH', patchBody);
   } catch (err) {
     throw new Error(`NetBox API PATCH request failed with status ${err.status}: ${err.text || err.message}`);
   }
@@ -1813,12 +1847,12 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
         payload.parent = existing.parent.id || existing.parent;
       }
 
-      // ถ้าพบ Connection / IP / Description บนพอร์ตนี้ ให้ตั้งค่า port_status เป็น USE ทันที
+      // ถ้าพบ Connection / IP / Description บนพอร์ตนี้ ให้ตั้งค่า port_status เป็น use ทันที
       try {
         const availableCFs = await getAvailableCustomFields();
         if (availableCFs.includes('port_status')) {
           if (hasConnection(existing)) {
-            payload.custom_fields = { port_status: 'USE' };
+            payload.custom_fields = { port_status: 'use' };
           }
         }
       } catch (cfErr) {}
@@ -1922,6 +1956,38 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
 }
 
 /**
+ * Capture complete device snapshot (device, interfaces with IPs, and modules)
+ * for before/after comparison and rollback support.
+ */
+async function captureDeviceSnapshot(deviceId) {
+  try {
+    const [device, interfaces, modules, ips] = await Promise.all([
+      getSingle(`/dcim/devices/${deviceId}/`),
+      fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`),
+      fetchAllPages(`/dcim/modules/?device_id=${deviceId}`).catch(() => []),
+      fetchAllPages(`/ipam/ip-addresses/?device_id=${deviceId}`).catch(() => [])
+    ]);
+
+    const ifacesWithIps = interfaces.map(iface => {
+      const boundIps = (ips || []).filter(ip => ip.assigned_object_id === iface.id);
+      return {
+        ...iface,
+        ips: boundIps
+      };
+    });
+
+    return {
+      device,
+      interfaces: ifacesWithIps,
+      modules: modules || []
+    };
+  } catch (err) {
+    console.warn(`Failed to capture snapshot for device ${deviceId}:`, err.message);
+    return { device: { id: deviceId }, interfaces: [], modules: [] };
+  }
+}
+
+/**
  * Replaces the model (Device Type) of an existing device and maps interfaces.
  * @param {number} deviceId - The target device ID.
  * @param {number} newDeviceTypeId - The new Device Type ID.
@@ -1934,38 +2000,23 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   // 0. Capture Before Snapshot for Rollback & Comparison
   const beforeSnapshot = await captureDeviceSnapshot(deviceId);
 
-  // Fetch initial interfaces on old device to track old physical interface IDs for cleanup later (Issue 1 Fix)
-  const oldPhysicalIfaceIds = new Set();
-  try {
-    const initialIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
-    initialIfaces.forEach(i => {
-      const nameLower = (i.name || '').toLowerCase();
-      const typeLower = (i.type?.value || i.type || '').toLowerCase();
-      const isSubInterface = (i.name || '').includes('.') || Boolean(i.parent?.id || i.parent);
-      const isVirt = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
-      if (!isVirt) {
-        oldPhysicalIfaceIds.add(i.id);
-      }
-    });
-  } catch (initErr) {
-    console.warn('Error fetching initial device interfaces:', initErr.message);
-  }
-
-  // 0. Remove existing modules on the device if new modules are being installed OR device model changes to non-matching
-  try {
-    const existingModules = await fetchAllPages(`/dcim/modules/?device_id=${deviceId}`);
-    if (existingModules && existingModules.length > 0) {
-      for (const mod of existingModules) {
-        try {
-          await fetchNetboxApi(`/dcim/modules/${mod.id}/`, 'DELETE');
-          summary.modulesRemoved.push(mod.display || mod.name || `Module #${mod.id}`);
-        } catch (modDelErr) {
-          console.warn(`Failed to remove old module ${mod.id}:`, modDelErr.message);
+  // Only remove existing modules if new modules are explicitly specified to install
+  if (Array.isArray(modulesToInstall) && modulesToInstall.length > 0) {
+    try {
+      const existingModules = await fetchAllPages(`/dcim/modules/?device_id=${deviceId}`);
+      if (existingModules && existingModules.length > 0) {
+        for (const mod of existingModules) {
+          try {
+            await fetchNetboxApi(`/dcim/modules/${mod.id}/`, 'DELETE');
+            summary.modulesRemoved.push(mod.display || mod.name || `Module #${mod.id}`);
+          } catch (modDelErr) {
+            console.warn(`Failed to remove old module ${mod.id}:`, modDelErr.message);
+          }
         }
       }
+    } catch (modErr) {
+      console.warn('Error fetching existing modules for removal:', modErr.message);
     }
-  } catch (modErr) {
-    console.warn('Error fetching existing modules for removal:', modErr.message);
   }
 
   // 1. Update Device Type on the device
@@ -1979,8 +2030,9 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   }
 
   // 1.1 Instantiate all Interface Templates of the new DeviceType on the device (Issue 3 Fix)
+  let newTemplates = [];
   try {
-    const newTemplates = await getInterfaceTemplates(newDeviceTypeId);
+    newTemplates = await getInterfaceTemplates(newDeviceTypeId);
     if (Array.isArray(newTemplates) && newTemplates.length > 0) {
       for (const tpl of newTemplates) {
         try {
@@ -2145,6 +2197,7 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   // ===== FIX 2: Rename Old Interfaces to avoid Name Collision =====
   for (let idx = 0; idx < fetchedMappings.length; idx++) {
     const item = fetchedMappings[idx];
+    item.originalName = item.ifaceObj.name;
     try {
       const tempName = `${item.ifaceObj.name}_OLD_TEMP_${Date.now()}_${idx}`;
       await fetchNetboxApi(`/dcim/interfaces/${item.ifaceObj.id}/`, 'PATCH', { name: tempName });
@@ -2196,8 +2249,34 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       // 2. Transfer full configurations (Description, Mode, VLANs, MAC, Speed, Duplex, Enabled, Tags, Custom Fields)
       const updatePayload = {};
       if (parentId) updatePayload.parent = parentId;
-      if (oldIface.description !== undefined) updatePayload.description = oldIface.description;
-      if (oldIface.enabled !== undefined) updatePayload.enabled = oldIface.enabled;
+
+      // User target description or fallback to old interface's description
+      const targetDescription = item.newDescription !== undefined ? item.newDescription : (oldIface.description || '');
+      updatePayload.description = targetDescription;
+
+      // Preserve label from old interface (must not change)
+      const targetLabel = item.newLabel !== undefined 
+        ? item.newLabel 
+        : (oldIface.label !== undefined ? oldIface.label : '');
+      if (targetLabel !== undefined) {
+        updatePayload.label = targetLabel;
+      }
+
+      // User target port status or fallback to old interface's port status
+      const rawPortStatus = item.newPortStatus !== undefined 
+        ? item.newPortStatus 
+        : (oldIface.custom_fields?.port_status ?? 
+           oldIface.custom_fields?.cf_port_status ?? 
+           oldIface.custom_fields?.cf_status ?? 
+           oldIface.custom_fields?.status ?? '');
+      const normalizedStatus = normalizePortStatus(rawPortStatus);
+
+      if (rawPortStatus && ['disable', 'fail', 'down', 'shutdown', 'broken'].some(x => String(rawPortStatus).toLowerCase().includes(x))) {
+        updatePayload.enabled = false;
+      } else if (oldIface.enabled !== undefined) {
+        updatePayload.enabled = oldIface.enabled;
+      }
+
       if (oldIface.mac_address) updatePayload.mac_address = oldIface.mac_address;
       if (oldIface.speed !== undefined && oldIface.speed !== null) updatePayload.speed = oldIface.speed;
       if (oldIface.duplex?.value || oldIface.duplex) updatePayload.duplex = oldIface.duplex?.value || oldIface.duplex;
@@ -2209,32 +2288,57 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       if (modeVal !== 'access' && oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
         updatePayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
       }
+      if (oldIface.qinq_svlan?.id) updatePayload.qinq_svlan = oldIface.qinq_svlan.id;
+      if (oldIface.vlan_translation_policy?.id) updatePayload.vlan_translation_policy = oldIface.vlan_translation_policy.id;
+      if (oldIface.vrf?.id) updatePayload.vrf = oldIface.vrf.id;
+      if (oldIface.mtu) updatePayload.mtu = Number(oldIface.mtu);
+      if (oldIface.comments) updatePayload.comments = oldIface.comments;
+      if (oldIface.poe_mode?.value || oldIface.poe_mode) updatePayload.poe_mode = oldIface.poe_mode?.value || oldIface.poe_mode;
+      if (oldIface.poe_type?.value || oldIface.poe_type) updatePayload.poe_type = oldIface.poe_type?.value || oldIface.poe_type;
+      if (oldIface.mgmt_only !== undefined) updatePayload.mgmt_only = oldIface.mgmt_only;
+      if (oldIface.lag?.id) updatePayload.lag = oldIface.lag.id;
       if (oldIface.mark_connected !== undefined) updatePayload.mark_connected = oldIface.mark_connected;
+      if (oldIface.bridge?.id) updatePayload.bridge = oldIface.bridge.id;
+      if (oldIface.wwn) updatePayload.wwn = oldIface.wwn;
       if (oldIface.tags && oldIface.tags.length > 0) {
         updatePayload.tags = oldIface.tags.map(t => t.id || t);
       }
-
-      // 4. Transfer all bound IP addresses
-      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
+      if (oldIface.rf_role?.value || oldIface.rf_role) updatePayload.rf_role = oldIface.rf_role?.value || oldIface.rf_role;
+      if (oldIface.rf_channel?.value || oldIface.rf_channel) updatePayload.rf_channel = oldIface.rf_channel?.value || oldIface.rf_channel;
+      if (oldIface.rf_channel_frequency) updatePayload.rf_channel_frequency = oldIface.rf_channel_frequency;
+      if (oldIface.rf_channel_width) updatePayload.rf_channel_width = oldIface.rf_channel_width;
+      if (oldIface.tx_power !== undefined && oldIface.tx_power !== null) updatePayload.tx_power = oldIface.tx_power;
 
       // Check if port has connection (has Cable, bound IP Addresses, or active VLAN/Description config)
+      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
       const hasConnection = Boolean(
         oldIface.cable || 
         (boundIps && boundIps.length > 0) || 
         oldIface.untagged_vlan || 
         (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) ||
-        (oldIface.description && oldIface.description.trim() !== '') ||
+        (targetDescription && targetDescription.trim() !== '') ||
         oldIface.mark_connected === true
       );
 
-      // Copy all custom_fields from old interface & set port_status = 'USE' ONLY if hasConnection
+      // Copy all custom_fields from old interface & update port_status / cf_port_status / cf_status
       const customFieldsPayload = { ...(oldIface.custom_fields || {}) };
       try {
         const availableCFs = await getAvailableCustomFields();
-        if (availableCFs.includes('port_status')) {
-          customFieldsPayload.port_status = hasConnection ? 'USE' : (customFieldsPayload.port_status || '');
+        const cfKeys = ['port_status', 'cf_port_status', 'cf_status', 'status'];
+        const targetVal = normalizedStatus !== null ? normalizedStatus : (hasConnection ? 'use' : null);
+        let setAny = false;
+        for (const k of cfKeys) {
+          if (availableCFs.includes(k)) {
+            customFieldsPayload[k] = targetVal;
+            setAny = true;
+          }
         }
-      } catch (cfErr) {}
+        if (!setAny) {
+          customFieldsPayload.port_status = targetVal;
+        }
+      } catch (cfErr) {
+        customFieldsPayload.port_status = normalizedStatus;
+      }
 
       if (Object.keys(customFieldsPayload).length > 0) {
         updatePayload.custom_fields = customFieldsPayload;
@@ -2247,10 +2351,14 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
           console.warn(`Full PATCH failed for ${targetName}, retrying with safe fallback payload:`, patchErr.message);
           // Fallback: Retry with essential non-conflicting fields if NetBox returns 400 (e.g. MAC collision or VLAN mode error)
           const safePayload = {};
+          if (updatePayload.label !== undefined) safePayload.label = updatePayload.label;
           if (updatePayload.description !== undefined) safePayload.description = updatePayload.description;
           if (updatePayload.enabled !== undefined) safePayload.enabled = updatePayload.enabled;
           if (updatePayload.mode) safePayload.mode = updatePayload.mode;
           if (updatePayload.untagged_vlan) safePayload.untagged_vlan = updatePayload.untagged_vlan;
+          if (updatePayload.vrf) safePayload.vrf = updatePayload.vrf;
+          if (updatePayload.mtu) safePayload.mtu = updatePayload.mtu;
+          if (updatePayload.comments) safePayload.comments = updatePayload.comments;
           if (updatePayload.custom_fields) safePayload.custom_fields = updatePayload.custom_fields;
           try {
             await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', safePayload);
@@ -2260,12 +2368,68 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         }
       }
 
-      // 3. Disconnect cable if attached on old interface to avoid NetBox cable lock errors
+      // 3. Reconnect Cable connection back to NetBox
+      let cableData = null;
+      if (oldIface.cable?.id) {
+        try {
+          cableData = await getSingle(`/dcim/cables/${oldIface.cable.id}/`);
+        } catch (cErr) {
+          console.warn(`Could not fetch cable details #${oldIface.cable.id}:`, cErr.message);
+        }
+      }
+
+      const isOldA = cableData?.a_terminations?.some(t => t.object_id === oldIface.id);
+      const isOldB = cableData?.b_terminations?.some(t => t.object_id === oldIface.id);
+
+      // Disconnect old cable first to release endpoint in NetBox
       if (oldIface.cable?.id) {
         try {
           await fetchNetboxApi(`/dcim/cables/${oldIface.cable.id}/`, 'DELETE');
         } catch (cableDelErr) {
           console.warn(`Failed to disconnect cable on ${oldIface.name}:`, cableDelErr.message);
+        }
+      }
+
+      // Reconnect cable to new target interface on NetBox
+      if (cableData && (isOldA || isOldB)) {
+        const peerList = isOldA ? cableData.b_terminations : cableData.a_terminations;
+        if (peerList && peerList.length > 0) {
+          try {
+            const newCablePayload = {
+              a_terminations: isOldA 
+                ? [{ object_type: 'dcim.interface', object_id: newIfaceId }]
+                : peerList.map(t => ({ object_type: t.object_type, object_id: t.object_id })),
+              b_terminations: isOldA 
+                ? peerList.map(t => ({ object_type: t.object_type, object_id: t.object_id }))
+                : [{ object_type: 'dcim.interface', object_id: newIfaceId }],
+              status: cableData.status?.value || cableData.status || 'connected'
+            };
+            if (cableData.type?.value || cableData.type) {
+              newCablePayload.type = cableData.type?.value || cableData.type;
+            }
+            if (cableData.label) newCablePayload.label = cableData.label;
+            if (cableData.color) newCablePayload.color = cableData.color;
+            if (cableData.length !== undefined && cableData.length !== null) newCablePayload.length = cableData.length;
+            if (cableData.length_unit?.value || cableData.length_unit) newCablePayload.length_unit = cableData.length_unit?.value || cableData.length_unit;
+            if (cableData.description) newCablePayload.description = cableData.description;
+            if (cableData.comments) newCablePayload.comments = cableData.comments;
+            if (cableData.tenant?.id) newCablePayload.tenant = cableData.tenant.id;
+            if (cableData.tags && cableData.tags.length > 0) newCablePayload.tags = cableData.tags.map(t => t.id || t);
+            if (cableData.custom_fields && Object.keys(cableData.custom_fields).length > 0) newCablePayload.custom_fields = cableData.custom_fields;
+
+            const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', newCablePayload);
+            summary.migrated.push({
+              oldInterface: oldIface.name,
+              newInterface: targetName,
+              status: `Reconnected cable #${reconnectedCable?.id || ''} to new interface`
+            });
+          } catch (reconnectErr) {
+            console.warn(`Failed to reconnect cable for ${targetName}:`, reconnectErr.message);
+            summary.errors.push({
+              interface: targetName,
+              error: `ไม่สามารถเชื่อมต่อ Cable ไปยัง Interface ใหม่ได้: ${reconnectErr.message}`
+            });
+          }
         }
       }
 
@@ -2277,12 +2441,64 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         });
       }
 
-      // 4. Migrate sub-interfaces attached to old physical interface (if any)
+      // 4.1 Transfer FHRP Group Assignments (VRRP, HSRP, GLBP)
+      try {
+        const fhrpAssignments = await fetchAllPages(`/ipam/fhrp-group-assignments/?interface_id=${oldIface.id}`);
+        for (const fhrp of fhrpAssignments) {
+          try {
+            await fetchNetboxApi(`/ipam/fhrp-group-assignments/${fhrp.id}/`, 'PATCH', {
+              interface_type: 'dcim.interface',
+              interface_id: newIfaceId
+            });
+            summary.migrated.push({
+              oldInterface: oldIface.name,
+              newInterface: targetName,
+              status: `Transferred FHRP Group Assignment #${fhrp.id}`
+            });
+          } catch (fhrpErr) {
+            console.warn(`Failed to transfer FHRP assignment ${fhrp.id}:`, fhrpErr.message);
+          }
+        }
+      } catch (fhrpListErr) {}
+
+      // 4.2 Transfer L2VPN Termination if attached
+      try {
+        if (oldIface.l2vpn_termination?.id) {
+          await fetchNetboxApi(`/vpn/l2vpn-terminations/${oldIface.l2vpn_termination.id}/`, 'PATCH', {
+            assigned_object_type: 'dcim.interface',
+            assigned_object_id: newIfaceId
+          });
+          summary.migrated.push({
+            oldInterface: oldIface.name,
+            newInterface: targetName,
+            status: `Transferred L2VPN Termination #${oldIface.l2vpn_termination.id}`
+          });
+        }
+      } catch (l2vpnErr) {
+        console.warn(`Failed to transfer L2VPN termination on ${oldIface.name}:`, l2vpnErr.message);
+      }
+
+      // 4.3 Transfer LAG Member Interfaces if this old interface was a Port-Channel / LAG master
+      try {
+        const lagMembers = await fetchAllPages(`/dcim/interfaces/?lag_id=${oldIface.id}`);
+        for (const member of lagMembers) {
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${member.id}/`, 'PATCH', {
+              lag: newIfaceId
+            });
+          } catch (lagMemErr) {
+            console.warn(`Failed to re-link LAG member ${member.name}:`, lagMemErr.message);
+          }
+        }
+      } catch (lagErr) {}
+
+      // 4.4 Migrate sub-interfaces attached to old physical interface (if any)
       try {
         const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+        const origName = item.originalName || oldIface.name;
         const childSubIfaces = allDeviceIfaces.filter(i => 
           i.parent?.id === oldIface.id || 
-          (oldIface.name && i.name.startsWith(`${oldIface.name}.`))
+          (origName && i.name.startsWith(`${origName}.`))
         );
         for (const sub of childSubIfaces) {
           const dotIndex = sub.name.indexOf('.');
@@ -2300,6 +2516,105 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         }
       } catch (subErr) {
         console.warn(`Failed to migrate sub-interfaces for ${oldIface.name}:`, subErr.message);
+      }
+
+      // 4.5 Transfer Inventory Items (e.g. SFP Transceivers / Optics attached to old interface)
+      try {
+        const invItems = await fetchAllPages(`/dcim/inventory-items/?device_id=${deviceId}`);
+        const attachedItems = invItems.filter(item => 
+          item.component_type === 'dcim.interface' && (item.component_id === oldIface.id || item.component?.id === oldIface.id)
+        );
+        for (const item of attachedItems) {
+          try {
+            await fetchNetboxApi(`/dcim/inventory-items/${item.id}/`, 'PATCH', {
+              component_type: 'dcim.interface',
+              component_id: newIfaceId
+            });
+            summary.migrated.push({
+              oldInterface: oldIface.name,
+              newInterface: targetName,
+              status: `Transferred Inventory Item #${item.id} (${item.name})`
+            });
+          } catch (invErr) {
+            console.warn(`Failed to transfer inventory item ${item.name}:`, invErr.message);
+          }
+        }
+      } catch (invListErr) {}
+
+      // 4.6 Transfer Services bound to interface
+      try {
+        const services = await fetchAllPages(`/ipam/services/?device_id=${deviceId}`);
+        for (const s of services) {
+          if (Array.isArray(s.interfaces) && s.interfaces.some(i => (i.id || i) === oldIface.id)) {
+            const updatedIfaces = s.interfaces.map(i => (i.id || i) === oldIface.id ? newIfaceId : (i.id || i));
+            try {
+              await fetchNetboxApi(`/ipam/services/${s.id}/`, 'PATCH', {
+                interfaces: updatedIfaces
+              });
+              summary.migrated.push({
+                oldInterface: oldIface.name,
+                newInterface: targetName,
+                status: `Transferred Service binding #${s.id} (${s.name})`
+              });
+            } catch (svcErr) {
+              console.warn(`Failed to update service ${s.name}:`, svcErr.message);
+            }
+          }
+        }
+      } catch (svcListErr) {}
+
+      // 4.7 Transfer additional MAC Addresses assigned to interface
+      try {
+        const macAddrs = await fetchAllPages(`/dcim/mac-addresses/?assigned_object_type=dcim.interface&assigned_object_id=${oldIface.id}`);
+        for (const mac of macAddrs) {
+          try {
+            await fetchNetboxApi(`/dcim/mac-addresses/${mac.id}/`, 'PATCH', {
+              assigned_object_type: 'dcim.interface',
+              assigned_object_id: newIfaceId
+            });
+            summary.migrated.push({
+              oldInterface: oldIface.name,
+              newInterface: targetName,
+              status: `Transferred MAC Address #${mac.id} (${mac.mac_address})`
+            });
+          } catch (macErr) {
+            console.warn(`Failed to transfer MAC address ${mac.mac_address}:`, macErr.message);
+          }
+        }
+      } catch (macListErr) {}
+
+      // 4.8 Transfer Bridge Member Interfaces (if old interface was bridge master)
+      try {
+        const bridgeMembers = await fetchAllPages(`/dcim/interfaces/?bridge_id=${oldIface.id}`);
+        for (const member of bridgeMembers) {
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${member.id}/`, 'PATCH', {
+              bridge: newIfaceId
+            });
+          } catch (bMemErr) {
+            console.warn(`Failed to re-link bridge member ${member.name}:`, bMemErr.message);
+          }
+        }
+      } catch (bErr) {}
+
+      // 4.9 Transfer Wireless Links if attached
+      try {
+        if (oldIface.wireless_link?.id) {
+          const wl = await getSingle(`/wireless/wireless-links/${oldIface.wireless_link.id}/`);
+          if (wl) {
+            const isA = (wl.interface_a?.id || wl.interface_a) === oldIface.id;
+            await fetchNetboxApi(`/wireless/wireless-links/${wl.id}/`, 'PATCH', {
+              [isA ? 'interface_a' : 'interface_b']: newIfaceId
+            });
+            summary.migrated.push({
+              oldInterface: oldIface.name,
+              newInterface: targetName,
+              status: `Transferred Wireless Link #${wl.id}`
+            });
+          }
+        }
+      } catch (wlErr) {
+        console.warn(`Failed to transfer wireless link on ${oldIface.name}:`, wlErr.message);
       }
 
       // 5. Delete old temporary interface
@@ -2324,35 +2639,75 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
-  // ===== FIX 5: Delete Unmapped/Unselected Old Physical Interfaces (Issue 1 Fix) =====
+  // ===== Cleanup Old Physical Interfaces from previous device model =====
+  // Interfaces on the device after replacement must strictly come from the new Device Type (templates/modules)
+  // or be preserved virtual/sub-interfaces. Old physical interfaces not matching new templates must be removed.
   try {
     const remainingIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+    const validTargetNames = new Set(newTemplates.map(t => (t.name || '').toLowerCase()));
+    
+    // Also include any target names that were mapped
+    interfaceMappings.forEach(m => {
+      if (m.newInterfaceName) validTargetNames.add(m.newInterfaceName.toLowerCase());
+    });
 
     for (const iface of remainingIfaces) {
+      const isTempName = iface.name.includes('_OLD_TEMP_');
       const nameLower = (iface.name || '').toLowerCase();
       const typeLower = (iface.type?.value || iface.type || '').toLowerCase();
-      const isSubInterface = (iface.name || '').includes('.') || Boolean(iface.parent?.id || iface.parent);
+
+      // Preserve virtual interfaces, sub-interfaces, and module interfaces
+      const isSubInterface = Boolean(iface.parent?.id || iface.parent || iface.name.includes('.'));
       const isVirtual = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
+      const isFromModule = Boolean(iface.module?.id || iface.module || iface.module_bay?.id || iface.module_bay);
 
-      // If it was an old physical interface from before migration OR an old temp interface -> DELETE IT
-      const isOldPhysical = oldPhysicalIfaceIds.has(iface.id);
-      const isTempName = iface.name.includes('_OLD_TEMP_');
+      if (isVirtual || isFromModule) {
+        continue;
+      }
 
-      if (!isVirtual && (isOldPhysical || isTempName)) {
+      // Check if this interface belongs to the new Device Type templates
+      const isNewModelInterface = validTargetNames.has(nameLower);
+
+      if (isTempName || !isNewModelInterface) {
         try {
-          if (iface.cable?.id) {
-            await fetchNetboxApi(`/dcim/cables/${iface.cable.id}/`, 'DELETE');
+          // If this old physical interface still has IP addresses attached, transfer them to a matching new template port
+          const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${iface.id}`);
+          if (boundIps.length > 0) {
+            const candidate = remainingIfaces.find(tgt => 
+              tgt.id !== iface.id && 
+              validTargetNames.has((tgt.name || '').toLowerCase()) &&
+              !tgt.name.includes('_OLD_TEMP_')
+            );
+            if (candidate) {
+              for (const ip of boundIps) {
+                try {
+                  await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
+                    assigned_object_type: 'dcim.interface',
+                    assigned_object_id: candidate.id
+                  });
+                } catch (ipErr) {
+                  console.warn(`Failed to transfer IP ${ip.address} from ${iface.name} to ${candidate.name}:`, ipErr.message);
+                }
+              }
+            }
           }
+
+          if (iface.cable?.id) {
+            try {
+              await fetchNetboxApi(`/dcim/cables/${iface.cable.id}/`, 'DELETE');
+            } catch (cErr) {}
+          }
+
           await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
           summary.deleted = summary.deleted || [];
           summary.deleted.push(iface.name);
         } catch (delErr) {
-          console.warn(`Failed to delete unmapped old interface ${iface.name}:`, delErr.message);
+          console.warn(`Failed to delete old model interface ${iface.name}:`, delErr.message);
         }
       }
     }
   } catch (cleanErr) {
-    console.warn('Failed to cleanup unmapped old interfaces:', cleanErr.message);
+    console.warn('Failed to cleanup old model interfaces:', cleanErr.message);
   }
 
   // Capture After Snapshot for Rollback & Comparison
@@ -2450,12 +2805,18 @@ async function rollbackDevice(snapshotId) {
       enabled: bIface.enabled,
       mode: bIface.mode
     };
+    if (bIface.label !== undefined) patchPayload.label = bIface.label;
     if (bIface.mac_address) patchPayload.mac_address = bIface.mac_address;
     if (bIface.untagged_vlan?.id) patchPayload.untagged_vlan = bIface.untagged_vlan.id;
     if (bIface.mode !== 'access' && Array.isArray(bIface.tagged_vlans) && bIface.tagged_vlans.length > 0) {
       patchPayload.tagged_vlans = bIface.tagged_vlans.map(v => v.id);
     }
-    if (bIface.custom_fields) patchPayload.custom_fields = bIface.custom_fields;
+    if (bIface.custom_fields) {
+      patchPayload.custom_fields = { ...bIface.custom_fields };
+      if (patchPayload.custom_fields.port_status !== undefined) {
+        patchPayload.custom_fields.port_status = normalizePortStatus(patchPayload.custom_fields.port_status);
+      }
+    }
 
     try {
       await fetchNetboxApi(`/dcim/interfaces/${ifaceId}/`, 'PATCH', patchPayload);
