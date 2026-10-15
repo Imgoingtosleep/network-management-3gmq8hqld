@@ -27,7 +27,8 @@ async function createProject(req, res, next) {
 
 async function listDevices(req, res, next) {
   try {
-    const data = await netboxService.getDevices();
+    const { tenant } = req.query;
+    const data = await netboxService.getDevices(tenant);
     return ok(res, data, 'ดึงรายการอุปกรณ์จาก Netbox สำเร็จ');
   } catch (err) { return next(err); }
 }
@@ -50,7 +51,7 @@ function makeCrudHandlers(listFn, createFn, updateFn, deleteFn, resourceName) {
   return {
     list: async (req, res, next) => {
       try {
-        const data = await listFn();
+        const data = await listFn(req.query);
         return ok(res, data, `ดึงข้อมูล ${resourceName} สำเร็จ`);
       } catch (err) { return next(err); }
     },
@@ -119,7 +120,8 @@ async function deleteDevice(req, res, next) {
 // Metadata list controllers
 async function listDeviceTypes(req, res, next) {
   try {
-    const data = await ndsService.getDeviceTypes();
+    const { tag } = req.query;
+    const data = await ndsService.getDeviceTypes(tag);
     return ok(res, data, 'ดึงรายการ Device Types สำเร็จ');
   } catch (err) { return next(err); }
 }

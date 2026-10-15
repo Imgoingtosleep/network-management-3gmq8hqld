@@ -125,6 +125,7 @@ export default function DevicesPage() {
   };
 
   const handleCreateClick = () => {
+    const uihTenant = tenants.find(t => (t.slug || t.name || '').toLowerCase().replace(/[-_]/g, '') === 'uihnetwork');
     setFormData({
       name: '',
       status: 'active',
@@ -140,8 +141,8 @@ export default function DevicesPage() {
       platform: '',
       config_template: '',
       cluster: '',
-      tenant_group: '',
-      tenant: '',
+      tenant_group: uihTenant?.group?.id || '',
+      tenant: uihTenant ? uihTenant.id : '',
       virtual_chassis: '',
       vc_position: '',
       vc_priority: '',
@@ -402,6 +403,11 @@ export default function DevicesPage() {
                 <option key={role} value={role}>{role}</option>
               ))}
             </select>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+              <span className="text-ink-400">Tenant:</span>
+              <span className="font-semibold text-blue-300">uih_network</span>
+            </div>
             {selectedDevices.length > 0 && (
               <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4 animate-in fade-in duration-200">
                 Selected: <span className="text-nds font-bold">{selectedDevices.length}</span> devices
@@ -513,7 +519,16 @@ export default function DevicesPage() {
                         {item.status}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-ink-400">{item.tenant}</td>
+                    <td className="px-5 py-4">
+                      {item.tenant && item.tenant !== 'N/A' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                          {item.tenant}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-ink-500 font-mono">-</span>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-ink-400">{item.site}</td>
                     <td className="px-5 py-4 text-ink-400">{item.location}</td>
                     <td className="px-5 py-4 text-ink-400">{item.rack}</td>
@@ -539,10 +554,18 @@ export default function DevicesPage() {
   return (
     <div>
       <NDSPageContainer
-        fetchData={() => ndsApi.getDevices()}
+        fetchData={() => ndsApi.getDevices({ tenant: 'uih_network' })}
         refreshTrigger={refreshTrigger}
         renderTable={renderDeviceTable}
-        extraFilter={selectedRoleFilter === 'All' ? null : (item) => item.role === selectedRoleFilter}
+        extraFilter={(item) => {
+          const slugNorm = (item.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+          const nameNorm = (item.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+          const isTenantMatch = slugNorm.includes('uihnetwork') || nameNorm.includes('uihnetwork');
+          if (selectedRoleFilter === 'All') {
+            return isTenantMatch;
+          }
+          return isTenantMatch && item.role === selectedRoleFilter;
+        }}
         onDataLoaded={(data) => setAllDevices(data)}
       />
 

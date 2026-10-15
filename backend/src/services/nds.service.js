@@ -145,10 +145,11 @@ function ipToInt(ip) {
 }
 
 // IP Management / Prefixes (ดึงตรงจาก NetBox)
-const getAllPrefixes = async () => {
+const getAllPrefixes = async (query = {}) => {
+  const tenant = typeof query === 'string' ? query : query?.tenant;
   try {
     const [netboxPrefixes, netboxIps] = await Promise.all([
-      netboxService.getPrefixes(),
+      netboxService.getPrefixes(tenant),
       netboxService.getIpAddresses()
     ]);
 
@@ -196,6 +197,8 @@ const getAllPrefixes = async () => {
           vrf_id: p.vrf_id,
           tenant: p.tenant || 'N/A',
           tenant_id: p.tenant_id,
+          tenant_slug: p.tenant_slug || '',
+          raw_tenant: p.raw_tenant,
           tenant_group: p.tenant_group || 'N/A',
           tenant_group_id: p.tenant_group_id,
           role: p.role || 'N/A',
@@ -221,7 +224,7 @@ const getAllPrefixes = async () => {
     console.error('⚠️ Failed to load Prefixes from NetBox, using local database', err);
   }
   const local = await ndsModel.findPrefixes();
-  return local.map(p => ({
+  let mapped = local.map(p => ({
     ...p,
     siteName: p.siteName || 'N/A',
     vrf: p.vrf || 'Global',
@@ -231,6 +234,11 @@ const getAllPrefixes = async () => {
     utilization: '0%',
     last_updated: 'N/A'
   }));
+  if (tenant) {
+    const norm = tenant.toLowerCase().replace(/[\s\-_]/g, '');
+    mapped = mapped.filter(p => (p.tenant || '').toLowerCase().replace(/[\s\-_]/g, '').includes(norm));
+  }
+  return mapped;
 };
 const createPrefix = async (payload) => {
   try {
@@ -277,15 +285,18 @@ const updateAGG = (id, payload) => ndsModel.updateAGG(id, payload);
 const deleteAGG = (id) => ndsModel.deleteAGG(id);
 
 // Domains (ดึงตรงจาก NetBox VRF)
-const getAllDomains = async () => {
+const getAllDomains = async (query = {}) => {
+  const tenant = typeof query === 'string' ? query : query?.tenant;
   try {
-    const netboxVrfs = await netboxService.getVrfs();
+    const netboxVrfs = await netboxService.getVrfs(tenant);
     if (netboxVrfs.length > 0) {
       return netboxVrfs.map(v => ({
         id: v.id,
         name: v.name,
         rd: v.rd,
         tenant: v.tenant,
+        tenant_slug: v.tenant_slug,
+        raw_tenant: v.raw_tenant,
         description: v.description,
         last_updated: v.last_updated
       }));
@@ -294,7 +305,7 @@ const getAllDomains = async () => {
     console.log('⚠️ Failed to load VRFs from NetBox, using local database');
   }
   const localDomains = await ndsModel.findDomains();
-  return localDomains.map(d => ({
+  let mapped = localDomains.map(d => ({
     id: d.id,
     name: d.name,
     rd: d.code,
@@ -302,6 +313,11 @@ const getAllDomains = async () => {
     description: 'Local Mock VRF',
     last_updated: 'N/A'
   }));
+  if (tenant) {
+    const norm = tenant.toLowerCase().replace(/[\s\-_]/g, '');
+    mapped = mapped.filter(d => (d.tenant || '').toLowerCase().replace(/[\s\-_]/g, '').includes(norm));
+  }
+  return mapped;
 };
 const createDomain = (payload) => ndsModel.createDomain(payload);
 const updateDomain = (id, payload) => ndsModel.updateDomain(id, payload);
@@ -366,9 +382,9 @@ module.exports = {
   deleteDevice: async (id) => netboxService.deleteDevice(id),
 
   // Device Metadata helpers
-  getDeviceTypes: async () => {
+  getDeviceTypes: async (tag = null) => {
     try {
-      return await netboxService.getDeviceTypes();
+      return await netboxService.getDeviceTypes(tag);
     } catch (err) {
       console.log('⚠️ Failed to load Device Types from NetBox, using fallback mock data');
       return [

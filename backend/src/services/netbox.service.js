@@ -1,6 +1,20 @@
+function getAuthHeader(rawToken) {
+  const token = (rawToken || process.env.NETBOX_API_TOKEN || '').trim();
+  if (token.startsWith('Bearer ') || token.startsWith('Token ')) {
+    return token;
+  }
+  return token.startsWith('nbt_') ? `Bearer ${token}` : `Token ${token}`;
+}
+
 function getSanitizedUrl() {
   let url = process.env.NETBOX_API_URL;
   if (!url) return null;
+
+  // ใน Docker environment หากระบุ localhost หรือ 127.0.0.1 ให้ชี้ไปที่ host.docker.internal เพื่อเชื่อมต่อกับ NetBox บนโฮสต์
+  const isDocker = require('fs').existsSync('/.dockerenv');
+  if (isDocker && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+    url = url.replace('localhost', 'host.docker.internal').replace('127.0.0.1', 'host.docker.internal');
+  }
   
   if (url.endsWith('/')) {
     url = url.slice(0, -1);
@@ -54,7 +68,7 @@ async function fetchNetboxApi(endpoint, method = 'GET', body = null) {
   const options = {
     method,
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Accept': 'application/json'
     }
   };
@@ -110,7 +124,7 @@ async function fetchAllPages(endpointPath) {
   while (nextUrl) {
     const res = await fetch(nextUrl, {
       headers: {
-        'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+        'Authorization': getAuthHeader(token),
         'Accept': 'application/json'
       }
     });
@@ -134,87 +148,100 @@ async function fetchAllPages(endpointPath) {
  * Retrieves all devices from NetBox, optionally from cache.
  * @returns {Promise<Array>} Array of mapped device objects.
  */
-async function getDevices() {
+async function getDevices(tenantFilter) {
   const now = Date.now();
+  let mapped;
   // ถ้ามีข้อมูลแคชอยู่และไม่หมดอายุ ให้ดึงจากแคชทันที
   if (memoryCache.devices.data && (now - memoryCache.devices.timestamp < CACHE_TTL)) {
     console.log('⚡ [Cache] Returning cached NetBox devices');
-    return memoryCache.devices.data;
+    mapped = memoryCache.devices.data;
+  } else {
+    const rawDevices = await fetchAllPages('/dcim/devices/');
+    const sitesList = await getSites();
+    const sitesMap = new Map(sitesList.map(s => [s.id, s]));
+    
+    mapped = rawDevices.map(device => {
+      const siteObj = device.site?.id ? sitesMap.get(device.site.id) : null;
+      return {
+        id: device.id,
+        nodeid: device.custom_fields?.nodeid || device.custom_fields?.node_id || '-',
+        site_name: siteObj?.site_name && siteObj.site_name !== 'N/A' ? siteObj.site_name : (device.site?.name || 'N/A'),
+        name_thai: siteObj?.name_thai || 'N/A',
+        region: siteObj?.region || 'N/A',
+        name: device.name || 'Unnamed Device',
+        status: device.status?.label || device.status?.value || 'Active',
+        status_value: device.status?.value || 'active',
+        tenant: device.tenant?.name || 'N/A',
+        tenant_id: device.tenant?.id || null,
+        tenant_slug: device.tenant?.slug || '',
+        tenant_group: device.tenant?.group?.name || 'N/A',
+        tenant_group_id: device.tenant?.group?.id || null,
+        site: device.site?.name || 'N/A',
+        site_id: device.site?.id || null,
+        location: device.location?.name || 'N/A',
+        location_id: device.location?.id || null,
+        rack: device.rack?.name || 'N/A',
+        rack_id: device.rack?.id || null,
+        role: (() => {
+          const r = device.role?.name || device.device_role?.name || 'N/A';
+          if (r === 'Aggregation Switch') return 'Aggregation';
+          if (r === 'LSW') return 'Network';
+          return r; // Returns 'Provider Edge', 'Provider' as is
+        })(),
+        role_name: device.role?.name || device.device_role?.name || 'N/A',
+        role_id: device.role?.id || device.device_role?.id || null,
+        manufacturer: device.device_type?.manufacturer?.name || 'N/A',
+        type: device.device_type?.model || device.device_type?.name || 'N/A',
+        device_type_id: device.device_type?.id || null,
+        device_type: device.device_type ? {
+          id: device.device_type.id,
+          model: device.device_type.model || device.device_type.name || '',
+          display: device.device_type.display || device.device_type.model || device.device_type.name || '',
+          slug: device.device_type.slug || ''
+        } : null,
+        ip: device.primary_ip4?.address || device.primary_ip?.address || 'N/A',
+        primary_ip4: device.primary_ip4?.address || '',
+        primary_ip6: device.primary_ip6?.address || '',
+        oob_ip: device.oob_ip?.address || '',
+        description: device.description || 'N/A',
+        airflow: device.airflow?.value || device.airflow || '',
+        serial: device.serial || '',
+        asset_tag: device.asset_tag || '',
+        face: device.face?.value || device.face || '',
+        position: device.position || '',
+        latitude: device.custom_fields?.latitude || '',
+        longitude: device.custom_fields?.longitude || '',
+        platform: device.platform?.name || 'N/A',
+        platform_id: device.platform?.id || null,
+        config_template: device.config_template?.name || 'N/A',
+        config_template_id: device.config_template?.id || null,
+        cluster: device.cluster?.name || 'N/A',
+        cluster_id: device.cluster?.id || null,
+        virtual_chassis: device.virtual_chassis?.name || device.virtual_chassis?.display || 'N/A',
+        virtual_chassis_id: device.virtual_chassis?.id || null,
+        vc_position: device.vc_position || '',
+        vc_priority: device.vc_priority || '',
+        owner_group: device.custom_fields?.owner_group || 'N/A',
+        owner: device.custom_fields?.owner || 'N/A',
+        tags: device.tags ? device.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
+        raw_tags: device.tags || [],
+        local_context_data: device.local_context_data ? JSON.stringify(device.local_context_data, null, 2) : '',
+      };
+    });
+
+    memoryCache.devices.data = mapped;
+    memoryCache.devices.timestamp = now;
   }
 
-  const rawDevices = await fetchAllPages('/dcim/devices/');
-  const sitesList = await getSites();
-  const sitesMap = new Map(sitesList.map(s => [s.id, s]));
-  
-  const mapped = rawDevices.map(device => {
-    const siteObj = device.site?.id ? sitesMap.get(device.site.id) : null;
-    return {
-      id: device.id,
-      nodeid: device.custom_fields?.nodeid || device.custom_fields?.node_id || '-',
-      site_name: siteObj?.site_name && siteObj.site_name !== 'N/A' ? siteObj.site_name : (device.site?.name || 'N/A'),
-      name_thai: siteObj?.name_thai || 'N/A',
-      region: siteObj?.region || 'N/A',
-    name: device.name || 'Unnamed Device',
-    status: device.status?.label || device.status?.value || 'Active',
-    status_value: device.status?.value || 'active',
-    tenant: device.tenant?.name || 'N/A',
-    tenant_id: device.tenant?.id || null,
-    tenant_group: device.tenant?.group?.name || 'N/A',
-    tenant_group_id: device.tenant?.group?.id || null,
-    site: device.site?.name || 'N/A',
-    site_id: device.site?.id || null,
-    location: device.location?.name || 'N/A',
-    location_id: device.location?.id || null,
-    rack: device.rack?.name || 'N/A',
-    rack_id: device.rack?.id || null,
-    role: (() => {
-      const r = device.role?.name || device.device_role?.name || 'N/A';
-      if (r === 'Aggregation Switch') return 'Aggregation';
-      if (r === 'LSW') return 'Network';
-      return r; // Returns 'Provider Edge', 'Provider' as is
-    })(),
-    role_name: device.role?.name || device.device_role?.name || 'N/A',
-    role_id: device.role?.id || device.device_role?.id || null,
-    manufacturer: device.device_type?.manufacturer?.name || 'N/A',
-    type: device.device_type?.model || device.device_type?.name || 'N/A',
-    device_type_id: device.device_type?.id || null,
-    device_type: device.device_type ? {
-      id: device.device_type.id,
-      model: device.device_type.model || device.device_type.name || '',
-      display: device.device_type.display || device.device_type.model || device.device_type.name || '',
-      slug: device.device_type.slug || ''
-    } : null,
-    ip: device.primary_ip4?.address || device.primary_ip?.address || 'N/A',
-    primary_ip4: device.primary_ip4?.address || '',
-    primary_ip6: device.primary_ip6?.address || '',
-    oob_ip: device.oob_ip?.address || '',
-    description: device.description || 'N/A',
-    airflow: device.airflow?.value || device.airflow || '',
-    serial: device.serial || '',
-    asset_tag: device.asset_tag || '',
-    face: device.face?.value || device.face || '',
-    position: device.position || '',
-    latitude: device.custom_fields?.latitude || '',
-    longitude: device.custom_fields?.longitude || '',
-    platform: device.platform?.name || 'N/A',
-    platform_id: device.platform?.id || null,
-    config_template: device.config_template?.name || 'N/A',
-    config_template_id: device.config_template?.id || null,
-    cluster: device.cluster?.name || 'N/A',
-    cluster_id: device.cluster?.id || null,
-    virtual_chassis: device.virtual_chassis?.name || device.virtual_chassis?.display || 'N/A',
-    virtual_chassis_id: device.virtual_chassis?.id || null,
-    vc_position: device.vc_position || '',
-    vc_priority: device.vc_priority || '',
-    owner_group: device.custom_fields?.owner_group || 'N/A',
-    owner: device.custom_fields?.owner || 'N/A',
-    tags: device.tags ? device.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
-    local_context_data: device.local_context_data ? JSON.stringify(device.local_context_data, null, 2) : '',
-    };
-  });
+  if (tenantFilter) {
+    const norm = tenantFilter.toLowerCase().replace(/[\s\-_]/g, '');
+    return mapped.filter(d => {
+      const slugNorm = (d.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+      const nameNorm = (d.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+      return slugNorm.includes(norm) || nameNorm.includes(norm) || (slugNorm && norm.includes(slugNorm)) || (nameNorm && norm.includes(nameNorm));
+    });
+  }
 
-  memoryCache.devices.data = mapped;
-  memoryCache.devices.timestamp = now;
   return mapped;
 }
 
@@ -224,58 +251,71 @@ async function getDevices() {
  * Retrieves all prefixes from NetBox, optionally from cache.
  * @returns {Promise<Array>} Array of mapped prefix objects.
  */
-async function getPrefixes() {
+async function getPrefixes(tenantFilter) {
   const now = Date.now();
+  let mapped;
   if (memoryCache.prefixes.data && (now - memoryCache.prefixes.timestamp < CACHE_TTL)) {
     console.log('⚡ [Cache] Returning cached NetBox prefixes');
-    return memoryCache.prefixes.data;
+    mapped = memoryCache.prefixes.data;
+  } else {
+    const rawPrefixes = await fetchAllPages('/ipam/prefixes/');
+    
+    mapped = rawPrefixes.map(prefix => ({
+      id: prefix.id,
+      prefix: prefix.prefix,
+      status: {
+        value: prefix.status?.value || 'active',
+        label: prefix.status?.label || 'Active'
+      },
+      status_value: prefix.status?.value || 'active',
+      is_pool: prefix.is_pool || false,
+      mark_utilized: prefix.mark_utilized || false,
+      vrf: prefix.vrf?.name || 'Global',
+      vrf_id: prefix.vrf?.id || null,
+      tenant: prefix.tenant?.name || 'N/A',
+      tenant_id: prefix.tenant?.id || null,
+      tenant_slug: prefix.tenant?.slug || '',
+      raw_tenant: prefix.tenant || null,
+      tenant_group: prefix.tenant?.group?.name || 'N/A',
+      tenant_group_id: prefix.tenant?.group?.id || null,
+      site: {
+        name: prefix.site?.name || 'N/A',
+        id: prefix.site?.id || null
+      },
+      site_id: prefix.site?.id || null,
+      role: prefix.role?.name || 'N/A',
+      role_id: prefix.role?.id || null,
+      vlan: prefix.vlan ? {
+        id: prefix.vlan.id,
+        name: prefix.vlan.name,
+        vid: prefix.vlan.vid,
+        display: prefix.vlan.display
+      } : null,
+      vlan_id: prefix.vlan?.id || null,
+      scope_type: prefix.scope_type || '',
+      scope_id: prefix.scope_id || null,
+      ringname: prefix.custom_fields?.ringname || 'N/A',
+      owner_group: prefix.custom_fields?.owner_group || 'N/A',
+      owner: prefix.custom_fields?.owner || 'N/A',
+      tags: prefix.tags ? prefix.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
+      custom_fields: prefix.custom_fields || {},
+      description: prefix.description || 'N/A',
+      last_updated: prefix.last_updated ? new Date(prefix.last_updated).toLocaleString('th-TH') : 'N/A'
+    }));
+
+    memoryCache.prefixes.data = mapped;
+    memoryCache.prefixes.timestamp = now;
   }
 
-  const rawPrefixes = await fetchAllPages('/ipam/prefixes/');
-  
-  const mapped = rawPrefixes.map(prefix => ({
-    id: prefix.id,
-    prefix: prefix.prefix,
-    status: {
-      value: prefix.status?.value || 'active',
-      label: prefix.status?.label || 'Active'
-    },
-    status_value: prefix.status?.value || 'active',
-    is_pool: prefix.is_pool || false,
-    mark_utilized: prefix.mark_utilized || false,
-    vrf: prefix.vrf?.name || 'Global',
-    vrf_id: prefix.vrf?.id || null,
-    tenant: prefix.tenant?.name || 'N/A',
-    tenant_id: prefix.tenant?.id || null,
-    tenant_group: prefix.tenant?.group?.name || 'N/A',
-    tenant_group_id: prefix.tenant?.group?.id || null,
-    site: {
-      name: prefix.site?.name || 'N/A',
-      id: prefix.site?.id || null
-    },
-    site_id: prefix.site?.id || null,
-    role: prefix.role?.name || 'N/A',
-    role_id: prefix.role?.id || null,
-    vlan: prefix.vlan ? {
-      id: prefix.vlan.id,
-      name: prefix.vlan.name,
-      vid: prefix.vlan.vid,
-      display: prefix.vlan.display
-    } : null,
-    vlan_id: prefix.vlan?.id || null,
-    scope_type: prefix.scope_type || '',
-    scope_id: prefix.scope_id || null,
-    ringname: prefix.custom_fields?.ringname || 'N/A',
-    owner_group: prefix.custom_fields?.owner_group || 'N/A',
-    owner: prefix.custom_fields?.owner || 'N/A',
-    tags: prefix.tags ? prefix.tags.map(t => typeof t === 'object' ? t.name : t).join(', ') : '',
-    custom_fields: prefix.custom_fields || {},
-    description: prefix.description || 'N/A',
-    last_updated: prefix.last_updated ? new Date(prefix.last_updated).toLocaleString('th-TH') : 'N/A'
-  }));
+  if (tenantFilter) {
+    const norm = tenantFilter.toLowerCase().replace(/[\s\-_]/g, '');
+    return mapped.filter(p => {
+      const slugNorm = (p.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+      const nameNorm = (p.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+      return slugNorm.includes(norm) || nameNorm.includes(norm) || (slugNorm && norm.includes(slugNorm)) || (nameNorm && norm.includes(nameNorm));
+    });
+  }
 
-  memoryCache.prefixes.data = mapped;
-  memoryCache.prefixes.timestamp = now;
   return mapped;
 }
 
@@ -352,29 +392,43 @@ async function getRegions() {
  * Retrieves all VRFs from NetBox, optionally from cache.
  * @returns {Promise<Array>} Array of VRF objects.
  */
-async function getVrfs() {
+async function getVrfs(tenantFilter) {
   const now = Date.now();
   if (!memoryCache.vrfs) {
     memoryCache.vrfs = { data: null, timestamp: 0 };
   }
+  let mapped;
   if (memoryCache.vrfs.data && (now - memoryCache.vrfs.timestamp < CACHE_TTL)) {
     console.log('⚡ [Cache] Returning cached NetBox vrfs');
-    return memoryCache.vrfs.data;
+    mapped = memoryCache.vrfs.data;
+  } else {
+    const rawVrfs = await fetchAllPages('/ipam/vrfs/');
+    
+    mapped = rawVrfs.map(vrf => ({
+      id: vrf.id,
+      name: vrf.name || 'Unnamed VRF',
+      rd: vrf.rd || 'N/A',
+      tenant: vrf.tenant?.name || 'N/A',
+      tenant_id: vrf.tenant?.id || null,
+      tenant_slug: vrf.tenant?.slug || '',
+      raw_tenant: vrf.tenant || null,
+      description: vrf.description || 'N/A',
+      last_updated: vrf.last_updated ? new Date(vrf.last_updated).toLocaleString('th-TH') : 'N/A'
+    }));
+
+    memoryCache.vrfs.data = mapped;
+    memoryCache.vrfs.timestamp = now;
   }
 
-  const rawVrfs = await fetchAllPages('/ipam/vrfs/');
-  
-  const mapped = rawVrfs.map(vrf => ({
-    id: vrf.id,
-    name: vrf.name || 'Unnamed VRF',
-    rd: vrf.rd || 'N/A',
-    tenant: vrf.tenant?.name || 'N/A',
-    description: vrf.description || 'N/A',
-    last_updated: vrf.last_updated ? new Date(vrf.last_updated).toLocaleString('th-TH') : 'N/A'
-  }));
+  if (tenantFilter) {
+    const norm = tenantFilter.toLowerCase().replace(/[\s\-_]/g, '');
+    return mapped.filter(v => {
+      const slugNorm = (v.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+      const nameNorm = (v.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+      return slugNorm.includes(norm) || nameNorm.includes(norm) || (slugNorm && norm.includes(slugNorm)) || (nameNorm && norm.includes(nameNorm));
+    });
+  }
 
-  memoryCache.vrfs.data = mapped;
-  memoryCache.vrfs.timestamp = now;
   return mapped;
 }
 
@@ -518,7 +572,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   const token = process.env.NETBOX_API_TOKEN;
   
   const searchRes = await fetch(`${baseUrl}/dcim/interfaces/?device_id=${deviceId}&name=${name}`, {
-    headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
+    headers: { 'Authorization': getAuthHeader(token), 'Accept': 'application/json' }
   });
   if (searchRes.ok) {
     const data = await searchRes.json();
@@ -531,7 +585,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   let templateLabel = label;
   try {
     const devRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
-      headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': getAuthHeader(token), 'Accept': 'application/json' }
     });
     if (devRes.ok) {
       const devData = await devRes.json();
@@ -553,7 +607,7 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   const createRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -592,7 +646,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
   }
   
   const searchRes = await fetch(`${baseUrl}/ipam/ip-addresses/?address=${encodeURIComponent(normalized)}`, {
-    headers: { 'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`, 'Accept': 'application/json' }
+    headers: { 'Authorization': getAuthHeader(token), 'Accept': 'application/json' }
   });
   let ipId = null;
   if (searchRes.ok) {
@@ -604,7 +658,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
         const updateRes = await fetch(`${baseUrl}/ipam/ip-addresses/${ipId}/`, {
           method: 'PATCH',
           headers: {
-            'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+            'Authorization': getAuthHeader(token),
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
@@ -624,7 +678,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
   const createRes = await fetch(`${baseUrl}/ipam/ip-addresses/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -680,7 +734,7 @@ async function handleDeviceIPAssignments(deviceId, primaryIp4, primaryIp6, oobIp
     const patchRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
       method: 'PATCH',
       headers: {
-        'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+        'Authorization': getAuthHeader(token),
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -715,7 +769,7 @@ async function createDevice(data) {
   const res = await fetch(`${baseUrl}/dcim/devices/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -747,7 +801,7 @@ async function createDevice(data) {
       const vifRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
         method: 'POST',
         headers: {
-          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+          'Authorization': getAuthHeader(token),
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -797,7 +851,7 @@ async function createDeviceType(data) {
       const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
         method: 'POST',
         headers: {
-          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+          'Authorization': getAuthHeader(token),
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -818,13 +872,14 @@ async function createDeviceType(data) {
     slug: data.slug || slugify(`${data.manufacturer}-${data.model}`),
     part_number: data.part_number || '',
     u_height: parseInt(data.u_height) || 1,
-    is_full_depth: !!data.is_full_depth
+    is_full_depth: !!data.is_full_depth,
+    tags: data.tags || [{ name: 'uih_network', slug: 'uih_network' }]
   };
 
   const res = await fetch(`${baseUrl}/dcim/device-types/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -893,7 +948,7 @@ async function createDeviceType(data) {
       const itRes = await fetch(`${baseUrl}/dcim/interface-templates/`, {
         method: 'POST',
         headers: {
-          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+          'Authorization': getAuthHeader(token),
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -970,7 +1025,7 @@ async function createInterfaceTemplates(deviceTypeId, data) {
   const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -1035,30 +1090,55 @@ async function deleteDevice(id) {
 }
 
 // Netbox Metadata helpers
-async function getDeviceTypes() {
+async function getDeviceTypes(tagFilter) {
   const now = Date.now();
   if (!memoryCache.deviceTypes) {
     memoryCache.deviceTypes = { data: null, timestamp: 0 };
   }
+  let mapped;
   if (memoryCache.deviceTypes.data && (now - memoryCache.deviceTypes.timestamp < CACHE_TTL)) {
-    return memoryCache.deviceTypes.data;
+    mapped = memoryCache.deviceTypes.data;
+  } else {
+    const raw = await fetchAllPages('/dcim/device-types/');
+    mapped = raw.map(dt => {
+      const tagsStr = dt.tags ? dt.tags.map(t => typeof t === 'object' ? (t.name || t.slug) : t).join(', ') : '';
+      const tagsList = Array.isArray(dt.tags) ? dt.tags.map(t => typeof t === 'object' ? (t.slug || t.name) : t) : [];
+      return {
+        id: dt.id,
+        manufacturer: dt.manufacturer?.name || 'N/A',
+        model: dt.model || dt.name,
+        display: `${dt.manufacturer?.name || ''} ${dt.model || dt.name}`.trim(),
+        part_number: dt.part_number || 'N/A',
+        u_height: dt.u_height || 0,
+        is_full_depth: dt.is_full_depth ? 'Yes' : 'No',
+        device_count: dt.device_count || 0,
+        interface_count: dt.interface_template_count !== undefined 
+          ? dt.interface_template_count 
+          : (dt.interface_count !== undefined ? dt.interface_count : (dt.interfaces?.length || 0)),
+        tags: tagsStr,
+        tags_list: tagsList,
+        raw_tags: dt.tags || []
+      };
+    });
+    memoryCache.deviceTypes.data = mapped;
+    memoryCache.deviceTypes.timestamp = now;
   }
-  const raw = await fetchAllPages('/dcim/device-types/');
-  const mapped = raw.map(dt => ({
-    id: dt.id,
-    manufacturer: dt.manufacturer?.name || 'N/A',
-    model: dt.model || dt.name,
-    display: `${dt.manufacturer?.name || ''} ${dt.model || dt.name}`.trim(),
-    part_number: dt.part_number || 'N/A',
-    u_height: dt.u_height || 0,
-    is_full_depth: dt.is_full_depth ? 'Yes' : 'No',
-    device_count: dt.device_count || 0,
-    interface_count: dt.interface_template_count !== undefined 
-      ? dt.interface_template_count 
-      : (dt.interface_count !== undefined ? dt.interface_count : (dt.interfaces?.length || 0))
-  }));
-  memoryCache.deviceTypes.data = mapped;
-  memoryCache.deviceTypes.timestamp = now;
+
+  if (tagFilter) {
+    const norm = tagFilter.toLowerCase().replace(/[\s\-_]/g, '');
+    return mapped.filter(dt => {
+      const tagsListMatch = Array.isArray(dt.tags_list) && dt.tags_list.some(t => 
+        String(t).toLowerCase().replace(/[\s\-_]/g, '').includes(norm)
+      );
+      const tagsStrMatch = (dt.tags || '').toLowerCase().replace(/[\s\-_]/g, '').includes(norm);
+      const rawTagsMatch = Array.isArray(dt.raw_tags) && dt.raw_tags.some(t => {
+        const name = typeof t === 'object' ? (t.name || t.slug || t.display || '') : String(t);
+        return name.toLowerCase().replace(/[\s\-_]/g, '').includes(norm);
+      });
+      return tagsListMatch || tagsStrMatch || rawTagsMatch;
+    });
+  }
+
   return mapped;
 }
 
@@ -1412,7 +1492,7 @@ async function getInterfaceTypeChoices() {
   const res = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'OPTIONS',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Accept': 'application/json'
     }
   });
@@ -1444,7 +1524,7 @@ async function createCable(aInterfaceId, bInterfaceId) {
   const res = await fetch(`${baseUrl}/dcim/cables/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -1498,7 +1578,7 @@ async function getVlanByVid(vid) {
   
   const res = await fetch(`${baseUrl}/ipam/vlans/?vid=${vid}&limit=1`, {
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Accept': 'application/json'
     }
   });
@@ -2436,7 +2516,7 @@ async function createModuleType(data) {
       const mfgRes = await fetch(`${baseUrl}/dcim/manufacturers/`, {
         method: 'POST',
         headers: {
-          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+          'Authorization': getAuthHeader(token),
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -2461,7 +2541,7 @@ async function createModuleType(data) {
   const res = await fetch(`${baseUrl}/dcim/module-types/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -2514,7 +2594,7 @@ async function createModuleType(data) {
       await fetch(`${baseUrl}/dcim/interface-templates/`, {
         method: 'POST',
         headers: {
-          'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+          'Authorization': getAuthHeader(token),
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -2618,7 +2698,7 @@ async function createModuleTypeInterfaceTemplates(moduleTypeId, data) {
   const res = await fetch(`${baseUrl}/dcim/interface-templates/`, {
     method: 'POST',
     headers: {
-      'Authorization': token.startsWith("nbt_") ? `Bearer ${token}` : `Token ${token}`,
+      'Authorization': getAuthHeader(token),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },

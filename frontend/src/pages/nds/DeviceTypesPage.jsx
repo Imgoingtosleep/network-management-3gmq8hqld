@@ -622,6 +622,7 @@ export default function DeviceTypesPage() {
         part_number: deviceTypeFormData.part_number.trim(),
         u_height: parseInt(deviceTypeFormData.u_height) || 1,
         is_full_depth: deviceTypeFormData.is_full_depth,
+        tags: [{ name: 'uih_network', slug: 'uih_network' }],
         interface_ranges: selectedRanges
       });
       setIsCreateModalOpen(false);
@@ -786,6 +787,7 @@ export default function DeviceTypesPage() {
             <th className="px-5 py-3.5">Device Type</th>
             <th className="px-5 py-3.5">Manufacturer</th>
             <th className="px-5 py-3.5">Part number</th>
+            <th className="px-5 py-3.5">Tags</th>
             <th className="px-5 py-3.5">U Height</th>
             <th className="px-5 py-3.5">Full Depth</th>
             <th className="px-5 py-3.5">Device Count</th>
@@ -811,6 +813,48 @@ export default function DeviceTypesPage() {
                 <td className="px-5 py-4 font-medium text-nds font-mono">{item.model || 'N/A'}</td>
                 <td className="px-5 py-4 font-semibold text-ink-100">{item.manufacturer || 'N/A'}</td>
                 <td className="px-5 py-4 text-ink-400 font-mono">{item.part_number || 'N/A'}</td>
+                <td className="px-5 py-4">
+                  {item.raw_tags && item.raw_tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.raw_tags.map((tag, idx) => {
+                        const tagName = (typeof tag === 'object' ? (tag.name || tag.display || tag.slug) : tag) || '';
+                        const isUih = String(tagName).toLowerCase().replace(/[\s\-_]/g, '').includes('uihnetwork');
+                        const color = tag.color ? (tag.color.startsWith('#') ? tag.color : `#${tag.color}`) : null;
+                        return (
+                          <span
+                            key={idx}
+                            style={color ? { backgroundColor: `${color}18`, borderColor: `${color}40`, color: color } : undefined}
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium border ${
+                              !color
+                                ? (isUih 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                    : 'bg-base-700/50 text-ink-300 border-base-600/50')
+                                : ''
+                            }`}
+                          >
+                            #{tagName}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : item.tags ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.tags.split(',').map((tag, idx) => {
+                        const t = tag.trim();
+                        return (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          >
+                            #{t}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-ink-500 font-mono">-</span>
+                  )}
+                </td>
                 <td className="px-5 py-4 text-ink-400 font-mono">{item.u_height ? `${item.u_height}U` : '0U'}</td>
                 <td className="px-5 py-4 text-ink-400">{item.is_full_depth || 'No'}</td>
                 <td className="px-5 py-4 text-ink-400 font-mono">{item.device_count || 0}</td>
@@ -832,7 +876,7 @@ export default function DeviceTypesPage() {
           })}
           {list.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">
+              <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-500 font-mono">
                 ไม่พบข้อมูล Device Types ในระบบ
               </td>
             </tr>
@@ -850,6 +894,11 @@ export default function DeviceTypesPage() {
           <span className="text-xs text-ink-400 font-mono">
             การจัดการข้อมูลประเภทและรุ่นอุปกรณ์
           </span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-ink-400">Tag Filter:</span>
+            <span className="font-semibold text-emerald-300">uih_network</span>
+          </div>
           {selectedDeviceTypes.length > 0 && (
             <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4 animate-in fade-in duration-200">
               Selected: <span className="text-nds font-bold">{selectedDeviceTypes.length}</span> item
@@ -884,10 +933,22 @@ export default function DeviceTypesPage() {
 
       {/* Main Table */}
       <NDSPageContainer
-        fetchData={() => ndsApi.getDeviceTypes()}
+        fetchData={() => ndsApi.getDeviceTypes({ tag: 'uih_network' })}
         refreshTrigger={refreshTrigger}
         renderTable={renderDeviceTypesTable}
         placeholder="ค้นหาด่วน (เช่น ชื่อรุ่น, ผู้ผลิต)..."
+        extraFilter={(item) => {
+          const norm = 'uihnetwork';
+          const hasTagInList = item.tags_list && item.tags_list.some(t => 
+            String(t).toLowerCase().replace(/[\s\-_]/g, '').includes(norm)
+          );
+          const hasTagInStr = (item.tags || '').toLowerCase().replace(/[\s\-_]/g, '').includes(norm);
+          const hasTagInRaw = item.raw_tags && item.raw_tags.some(t => {
+            const name = typeof t === 'object' ? (t.name || t.slug || t.display || '') : String(t);
+            return name.toLowerCase().replace(/[\s\-_]/g, '').includes(norm);
+          });
+          return hasTagInList || hasTagInStr || hasTagInRaw;
+        }}
       />
 
       {/* Create Device Type Modal */}

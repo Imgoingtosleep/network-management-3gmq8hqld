@@ -2,7 +2,7 @@ import axiosClient from './axiosClient';
 
 // Helper to generate typical CRUD request bindings
 const makeCrudApi = (path) => ({
-  list: () => axiosClient.get(`/nds/${path}`),
+  list: (params) => axiosClient.get(`/nds/${path}`, { params }),
   create: (payload) => axiosClient.post(`/nds/${path}`, payload),
   update: (id, payload) => axiosClient.put(`/nds/${path}/${id}`, payload),
   delete: (id) => axiosClient.delete(`/nds/${path}/${id}`),
@@ -12,7 +12,7 @@ export const ndsApi = {
   getProjects: () => axiosClient.get('/nds/projects'),
   getProject: (id) => axiosClient.get(`/nds/projects/${id}`),
   createProject: (payload) => axiosClient.post('/nds/projects', payload),
-  getDevices: () => axiosClient.get('/nds/devices'),
+  getDevices: (params) => axiosClient.get('/nds/devices', { params }),
   getDeviceInterfaces: (id) => axiosClient.get(`/nds/devices/${id}/interfaces`),
   updateDeviceInterface: (id, payload) => axiosClient.patch(`/nds/interfaces/${id}`, payload),
   createDevice: (payload) => axiosClient.post('/nds/devices', payload),
@@ -20,7 +20,7 @@ export const ndsApi = {
   updateDevice: (id, payload) => axiosClient.put(`/nds/devices/${id}`, payload),
   deleteDevice: (id) => axiosClient.delete(`/nds/devices/${id}`),
   getRegions: () => axiosClient.get('/nds/regions'),
-  getDeviceTypes: () => axiosClient.get('/nds/device-types'),
+  getDeviceTypes: (params) => axiosClient.get('/nds/device-types', { params }),
   createDeviceType: (payload) => axiosClient.post('/nds/device-types', payload),
   createInterfaceTemplates: (id, payload) => axiosClient.post(`/nds/device-types/${id}/interfaces`, payload),
   getInterfaceTemplates: (id) => axiosClient.get(`/nds/device-types/${id}/interfaces`),

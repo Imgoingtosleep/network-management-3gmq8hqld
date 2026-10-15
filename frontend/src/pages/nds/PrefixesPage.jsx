@@ -123,6 +123,7 @@ export default function PrefixesPage() {
   };
 
   const handleCreateClick = () => {
+    const uihTenant = tenants.find(t => (t.slug || t.name || '').toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork');
     setFormData({
       prefix: '',
       status: 'active',
@@ -136,8 +137,8 @@ export default function PrefixesPage() {
       scope_type: '',
       scope_id: '',
       vlan: '',
-      tenant_group: '',
-      tenant: '',
+      tenant_group: uihTenant?.group?.id || '',
+      tenant: uihTenant ? uihTenant.id : '',
       owner_group: '',
       owner: ''
     });
@@ -299,6 +300,11 @@ export default function PrefixesPage() {
           <span className="text-xs font-mono text-ink-400">
             IP Prefixes Management Toolbar
           </span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+            <span className="text-ink-400">Tenant:</span>
+            <span className="font-semibold text-blue-300">uih_network</span>
+          </div>
           {selectedPrefixes.length > 0 && (
             <span className="text-xs font-mono text-ink-500 border-l border-base-600/50 pl-4">
               Selected: <span className="text-nds font-bold">{selectedPrefixes.length}</span> prefixes
@@ -343,8 +349,13 @@ export default function PrefixesPage() {
       </div>
 
       <NDSPageContainer
-        fetchData={() => ndsApi.prefixes.list()}
+        fetchData={() => ndsApi.prefixes.list({ tenant: 'uih_network' })}
         refreshTrigger={refreshTrigger}
+        extraFilter={(item) => {
+          const slugNorm = (item.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+          const nameNorm = (item.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+          return slugNorm.includes('uihnetwork') || nameNorm.includes('uihnetwork');
+        }}
         renderTable={(list) => (
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-base-900/50 text-xs font-mono uppercase text-ink-400 border-b border-base-600/50">
@@ -397,7 +408,16 @@ export default function PrefixesPage() {
                     <td className="px-5 py-4 font-medium text-ink-100 font-mono">{item.prefix}</td>
                     <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.vlan}</td>
                     <td className="px-5 py-4">{renderUtilBar(item.utilization)}</td>
-                    <td className="px-5 py-4 text-ink-400">{item.tenant}</td>
+                    <td className="px-5 py-4">
+                      {item.tenant && item.tenant !== 'N/A' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20" title={item.tenant}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                          {item.tenant}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-ink-500 font-mono">-</span>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-ink-400 font-mono text-xs">{item.role}</td>
                     <td className="px-5 py-4 text-ink-400 max-w-xs truncate">{item.description}</td>
                     <td className="px-5 py-4 font-mono text-xs text-ink-600">{item.last_updated}</td>

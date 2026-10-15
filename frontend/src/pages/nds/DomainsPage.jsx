@@ -59,7 +59,7 @@ export default function DomainsPage() {
     setLoadingVrfs(true);
     setError(null);
     try {
-      const res = await ndsApi.domains.list();
+      const res = await ndsApi.domains.list({ tenant: 'uih_network' });
       const list = res.data?.data || res.data || res || [];
       setVrfs(list);
       
@@ -120,9 +120,14 @@ export default function DomainsPage() {
     );
   }
 
-  // Filter VRFs
+  // Filter VRFs to ensure only tenant = uih_network (case-insensitive) are shown
   const filteredVrfs = vrfs.filter(vrf => {
     if (!vrf) return false;
+    const slugNorm = (vrf.tenant_slug || '').toLowerCase().replace(/[\s\-_]/g, '');
+    const nameNorm = (vrf.tenant || '').toLowerCase().replace(/[\s\-_]/g, '');
+    const isUihTenant = slugNorm.includes('uihnetwork') || nameNorm.includes('uihnetwork');
+    if (!isUihTenant) return false;
+
     const query = searchVrfQuery.toLowerCase();
     return (
       (vrf.name || '').toLowerCase().includes(query) ||
@@ -190,9 +195,15 @@ export default function DomainsPage() {
           <div className="p-4 border-b border-base-600/50 bg-base-900/50 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-md font-semibold text-ink-100 font-display">Domains (VRF List)</h2>
-              <span className="text-[10px] font-mono text-ink-600 px-2 py-0.5 rounded bg-base-950 border border-base-600/30">
-                {filteredVrfs.length} VRFs
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-ink-600 px-2 py-0.5 rounded bg-base-950 border border-base-600/30">
+                  {filteredVrfs.length} VRFs
+                </span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] font-mono text-blue-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                  <span>Tenant: uih_network</span>
+                </div>
+              </div>
             </div>
             <input
               type="text"
@@ -236,8 +247,15 @@ export default function DomainsPage() {
                           {vrf.name}
                         </td>
                         <td className="px-4 py-3 font-mono text-ink-300">{vrf.rd || '-'}</td>
-                        <td className="px-4 py-3 text-ink-400 max-w-[120px] truncate" title={vrf.tenant}>
-                          {vrf.tenant}
+                        <td className="px-4 py-3">
+                          {vrf.tenant && vrf.tenant !== 'N/A' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 max-w-[140px] truncate" title={vrf.tenant}>
+                              <span className="w-1 h-1 rounded-full bg-blue-400"></span>
+                              {vrf.tenant}
+                            </span>
+                          ) : (
+                            <span className="text-ink-500 font-mono text-[10px]">-</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -259,10 +277,18 @@ export default function DomainsPage() {
               {/* Header & Search */}
               <div className="p-4 border-b border-base-600/50 bg-base-900/50 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] font-mono text-nds uppercase tracking-wide">
-                      VRF: {selectedVrf.rd || 'No RD'}
-                    </span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-mono text-nds uppercase tracking-wide">
+                        VRF: {selectedVrf.rd || 'No RD'}
+                      </span>
+                      {selectedVrf.tenant && selectedVrf.tenant !== 'N/A' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded font-medium">
+                          <span className="w-1 h-1 rounded-full bg-blue-400"></span>
+                          Tenant: {selectedVrf.tenant}
+                        </span>
+                      )}
+                    </div>
                     <h2 className="text-md font-semibold text-ink-100 font-display">
                       {selectedVrf.name} IP Networks & addresses
                     </h2>
