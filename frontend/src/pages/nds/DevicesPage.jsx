@@ -152,7 +152,7 @@ export default function DevicesPage() {
       airflow: '',
       serial: '',
       asset_tag: '',
-      tags: 'UIH_NETWORK',
+      tags: '',
       nodeid: '',
       primary_ip4: '',
       primary_ip6: '',
@@ -283,8 +283,6 @@ export default function DevicesPage() {
     // Parse tag names to array of strings
     if (formData.tags) {
       payload.tags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
-    } else {
-      payload.tags = ['UIH_NETWORK'];
     }
 
     try {

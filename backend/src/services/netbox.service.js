@@ -796,17 +796,6 @@ async function createDevice(data) {
   if (!deviceData.tenant) {
     deviceData.tenant = 16;
   }
-  if (!deviceData.tags || (Array.isArray(deviceData.tags) && deviceData.tags.length === 0)) {
-    deviceData.tags = [{ name: 'UIH_NETWORK', slug: 'uih_network' }];
-  } else if (Array.isArray(deviceData.tags)) {
-    const hasUih = deviceData.tags.some(t => {
-      const name = typeof t === 'object' ? (t.name || t.slug) : String(t);
-      return name.toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork';
-    });
-    if (!hasUih) {
-      deviceData.tags.push({ name: 'UIH_NETWORK', slug: 'uih_network' });
-    }
-  }
 
   await sanitizeDeviceData(deviceData);
 
@@ -2046,52 +2035,19 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
-  // 1. Update Device Type, Tenant and Tag on the device
+  // 1. Update Device Type on the device (do not modify tags; preserve existing device tags)
   try {
-    let devObj = null;
-    let existingTags = [];
-    try {
-      devObj = await getSingle(`/dcim/devices/${deviceId}/`);
-      existingTags = devObj?.tags || [];
-    } catch (e) {}
-
-    // Find UIH_NETWORK tag if exists in NetBox
-    let uihTag = null;
-    try {
-      const allTags = await getTags();
-      uihTag = allTags.find(t => 
-        (t.slug || '').toLowerCase() === 'uih_network' || 
-        (t.name || '').toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork'
-      );
-    } catch (e) {}
-
-    // Check if device already has UIH_NETWORK
-    const hasUih = existingTags.some(t => {
-      const name = typeof t === 'object' ? (t.name || t.slug) : String(t);
-      return (name || '').toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork';
-    });
-
-    const finalTags = existingTags.map(t => (typeof t === 'object' && t.id) ? { id: t.id } : t);
-    if (!hasUih) {
-      if (uihTag && uihTag.id) {
-        finalTags.push({ id: uihTag.id });
-      } else {
-        finalTags.push({ name: 'UIH_NETWORK', slug: 'uih_network' });
-      }
-    }
-
     const patchPayload = {
-      device_type: parseInt(newDeviceTypeId),
-      tags: finalTags
+      device_type: parseInt(newDeviceTypeId)
     };
 
-    if (devObj?.tenant?.id) {
-      patchPayload.tenant = devObj.tenant.id;
-    } else if (devObj?.tenant) {
-      patchPayload.tenant = devObj.tenant;
-    } else {
-      patchPayload.tenant = 16;
-    }
+    try {
+      const devObj = await getSingle(`/dcim/devices/${deviceId}/`);
+      // If the device has no tenant assigned, fallback to tenant 16
+      if (!devObj?.tenant) {
+        patchPayload.tenant = 16;
+      }
+    } catch (e) {}
 
     await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', patchPayload);
     summary.deviceUpdated = true;
