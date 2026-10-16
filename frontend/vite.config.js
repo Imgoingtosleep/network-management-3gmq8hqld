@@ -3,9 +3,13 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  let basePath = env.BASE_PATH || process.env.BASE_PATH || '/network-management/8100/';
+  if (!basePath.endsWith('/')) {
+    basePath += '/';
+  }
   return {
     plugins: [react()],
-    base: env.BASE_PATH || process.env.BASE_PATH || '/',
+    base: basePath,
     server: {
       port: 5173,
       watch: {
