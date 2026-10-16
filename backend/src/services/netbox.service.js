@@ -2039,19 +2039,11 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     }
   }
 
-  // 1. Update Device Type on the device (do not modify tags; preserve existing device tags)
+  // 1. Update Device Type on the device (do not modify tags or tenant; preserve existing device properties)
   try {
     const patchPayload = {
       device_type: parseInt(newDeviceTypeId)
     };
-
-    try {
-      const devObj = await getSingle(`/dcim/devices/${deviceId}/`);
-      // If the device has no tenant assigned, fallback to tenant 16
-      if (!devObj?.tenant) {
-        patchPayload.tenant = 16;
-      }
-    } catch (e) {}
 
     await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', patchPayload);
     summary.deviceUpdated = true;
