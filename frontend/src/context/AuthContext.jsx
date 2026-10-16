@@ -7,14 +7,14 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      const savedUser = localStorage.getItem('user');
+      const savedUser = localStorage.getItem('netops_user') || localStorage.getItem('user');
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
     }
   });
 
-  const [token, setToken] = useState(() => localStorage.getItem('token') || null);
+  const [token, setToken] = useState(() => localStorage.getItem('netops_token') || localStorage.getItem('token') || null);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -41,9 +41,9 @@ export function AuthProvider({ children }) {
       const res = await authApi.login({ username, password });
       const { token: receivedToken, user: receivedUser } = res.data.data;
 
-      localStorage.setItem('token', receivedToken);
-      localStorage.setItem('user', JSON.stringify(receivedUser));
-      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('netops_token', receivedToken);
+      localStorage.setItem('netops_user', JSON.stringify(receivedUser));
+      localStorage.setItem('netops_isAuthenticated', 'true');
 
       setToken(receivedToken);
       setUser(receivedUser);
@@ -61,6 +61,9 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    localStorage.removeItem('netops_token');
+    localStorage.removeItem('netops_user');
+    localStorage.removeItem('netops_isAuthenticated');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('isAuthenticated');

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // อ่านค่า base URL ของ backend จาก .env (VITE_API_BASE_URL)
-const baseURL = import.meta.env.VITE_API_BASE_URL || '/network-management/8100/api';
+const baseURL = import.meta.env.VITE_API_BASE_URL || '/network-management/8001/api';
 
 const axiosClient = axios.create({
   baseURL,
@@ -11,7 +11,7 @@ const axiosClient = axios.create({
 // แนบ JWT Token เข้าไปใน Authorization Header ทุกคำขอโดยอัตโนมัติ
 axiosClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('netops_token') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -25,6 +25,9 @@ axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && !window.location.pathname.endsWith('/login')) {
+      localStorage.removeItem('netops_token');
+      localStorage.removeItem('netops_user');
+      localStorage.removeItem('netops_isAuthenticated');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('isAuthenticated');
