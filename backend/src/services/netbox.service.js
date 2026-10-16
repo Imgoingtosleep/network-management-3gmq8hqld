@@ -1,9 +1,11 @@
 function getAuthHeader(rawToken) {
-  const token = (rawToken || process.env.NETBOX_API_TOKEN || '').trim();
-  if (token.startsWith('Bearer ') || token.startsWith('Token ')) {
-    return token;
+  let token = (rawToken || process.env.NETBOX_API_TOKEN || '').trim();
+  if (token.startsWith('Bearer ')) {
+    token = token.slice(7).trim();
+  } else if (token.startsWith('Token ')) {
+    token = token.slice(6).trim();
   }
-  return token.startsWith('nbt_') ? `Bearer ${token}` : `Token ${token}`;
+  return `Token ${token}`;
 }
 
 function getSanitizedUrl() {
