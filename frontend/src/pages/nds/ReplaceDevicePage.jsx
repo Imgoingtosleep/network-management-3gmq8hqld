@@ -322,20 +322,28 @@ export default function ReplaceDevicePage() {
         usedTargetNames.add(targetName);
       }
 
-      // Logic: Default selection is true for ports that have an existing description
+      const isFail = 
+        String(oldDesc).toLowerCase().includes('fail') || 
+        String(oldDesc).toLowerCase().includes('disable') || 
+        String(oldDesc).toLowerCase().includes('broken') || 
+        String(oldDesc).toLowerCase().includes('down') || 
+        String(oldPortStatus).toLowerCase() === 'fail' || 
+        oldIf.enabled === false;
+
+      // Logic: Default selection is true ONLY for active ports that have an existing description and are NOT failed/disabled
       let isSelected = false;
       if (existing) {
         isSelected = existing.selected;
-      } else if (hasDescription) {
+      } else if (hasDescription && !isFail) {
         if (maxSelections === 0 || autoSelectedCount < maxSelections) {
           isSelected = true;
           autoSelectedCount++;
         }
       }
 
-      const defaultPortStatus = oldPortStatus || (hasDescription ? 'use' : '');
+      const defaultPortStatus = oldPortStatus || (isFail ? 'fail' : (hasDescription ? 'use' : ''));
       const newPortStatus = existing?.newPortStatus !== undefined ? normalizePortStatus(existing.newPortStatus) : defaultPortStatus;
-      const newDescription = existing?.newDescription !== undefined ? existing.newDescription : oldDesc;
+      const newDescription = existing?.newDescription !== undefined ? existing.newDescription : (isFail ? '' : oldDesc);
       const newLabel = existing?.newLabel !== undefined ? existing.newLabel : oldLabel;
 
       return {
