@@ -513,7 +513,12 @@ export default function ReplaceDevicePage() {
       setResult(resData.summary || resData);
       setSnapshotResult(resData);
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || 'เกิดข้อผิดพลาดในการเปลี่ยน Model อุปกรณ์');
+      const detailMsg = err.response?.data?.message || 
+                        (typeof err.response?.data === 'string' && err.response.data.trim() ? err.response.data : null) ||
+                        (err.response?.status ? `HTTP ${err.response.status} ${err.response.statusText || ''}` : null) ||
+                        err.message || 
+                        'เกิดข้อผิดพลาดในการเปลี่ยน Model อุปกรณ์';
+      setErrorMessage(detailMsg);
     } finally {
       setExecuting(false);
     }
