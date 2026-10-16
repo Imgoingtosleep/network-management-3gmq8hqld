@@ -28,6 +28,8 @@ backend/.env
 frontend/.env
 frontend/.env.production
 
+.env.server
+
 # Documentation
 sso-deployment-guide.md
 

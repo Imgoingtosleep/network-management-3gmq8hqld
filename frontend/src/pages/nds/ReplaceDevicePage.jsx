@@ -90,8 +90,8 @@ export default function ReplaceDevicePage() {
     setErrorMessage('');
     try {
       const [devRes, dtRes, mtRes] = await Promise.all([
-        ndsApi.getDevices({ tenant: 'uih_network' }),
-        ndsApi.getDeviceTypes({ tag: 'uih_network' }),
+        ndsApi.getDevices({ tenant: 'UIH_NETWORK' }),
+        ndsApi.getDeviceTypes({ tag: 'UIH_NETWORK' }),
         ndsApi.getModuleTypes()
       ]);
       const rawDevs = devRes.data?.data || devRes.data || [];

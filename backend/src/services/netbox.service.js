@@ -2048,18 +2048,52 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
   // 1. Update Device Type, Tenant and Tag on the device
   try {
+    let devObj = null;
     let existingTags = [];
     try {
-      const devObj = await getSingle(`/dcim/devices/${deviceId}/`);
-      existingTags = (devObj?.tags || []).map(t => t.id || t);
+      devObj = await getSingle(`/dcim/devices/${deviceId}/`);
+      existingTags = devObj?.tags || [];
     } catch (e) {}
-    const finalTags = existingTags.includes(42) ? existingTags : [...existingTags, 42];
 
-    await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
-      device_type: parseInt(newDeviceTypeId),
-      tenant: 16,
-      tags: finalTags
+    // Find UIH_NETWORK tag if exists in NetBox
+    let uihTag = null;
+    try {
+      const allTags = await getTags();
+      uihTag = allTags.find(t => 
+        (t.slug || '').toLowerCase() === 'uih_network' || 
+        (t.name || '').toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork'
+      );
+    } catch (e) {}
+
+    // Check if device already has UIH_NETWORK
+    const hasUih = existingTags.some(t => {
+      const name = typeof t === 'object' ? (t.name || t.slug) : String(t);
+      return (name || '').toLowerCase().replace(/[\s\-_]/g, '') === 'uihnetwork';
     });
+
+    const finalTags = existingTags.map(t => (typeof t === 'object' && t.id) ? { id: t.id } : t);
+    if (!hasUih) {
+      if (uihTag && uihTag.id) {
+        finalTags.push({ id: uihTag.id });
+      } else {
+        finalTags.push({ name: 'UIH_NETWORK', slug: 'uih_network' });
+      }
+    }
+
+    const patchPayload = {
+      device_type: parseInt(newDeviceTypeId),
+      tags: finalTags
+    };
+
+    if (devObj?.tenant?.id) {
+      patchPayload.tenant = devObj.tenant.id;
+    } else if (devObj?.tenant) {
+      patchPayload.tenant = devObj.tenant;
+    } else {
+      patchPayload.tenant = 16;
+    }
+
+    await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', patchPayload);
     summary.deviceUpdated = true;
   } catch (err) {
     throw new Error(`ไม่สามารถอัปเดต Model อุปกรณ์ได้: ${err.message}`);
