@@ -346,7 +346,12 @@ export default function ReplaceDevicePage() {
       const defaultPortStatus = isFail ? 'fail' : (oldPortStatus || (hasDescription ? 'use' : ''));
       const newPortStatus = (existing && existing.manuallyEditedStatus) ? normalizePortStatus(existing.newPortStatus) : defaultPortStatus;
       const newDescription = (existing && existing.manuallyEditedDesc) ? existing.newDescription : (isFail ? '' : oldDesc);
-      const newLabel = existing?.newLabel !== undefined ? existing.newLabel : oldLabel;
+      // Match label from targetTemplates (new device model's template)
+      const matchedTemplate = (targetTemplates || []).find(t => 
+        (t.name || '').trim().toLowerCase() === (targetName || '').trim().toLowerCase()
+      );
+      const templateLabel = matchedTemplate?.label || '';
+      const newLabel = templateLabel;
 
       return {
         oldInterfaceId: oldIf.id,
@@ -359,6 +364,12 @@ export default function ReplaceDevicePage() {
         isFail: isFail,
         type: oldIf.type?.label || oldIf.type?.value || 'Physical',
         untagged_vlan: oldIf.untagged_vlan?.vid ? `VLAN ${oldIf.untagged_vlan.vid}` : null,
+        tagged_vlans: Array.isArray(oldIf.tagged_vlans) && oldIf.tagged_vlans.length > 0 
+          ? oldIf.tagged_vlans.map(v => v.vid || v.name || v.id).join(', ') 
+          : null,
+        mode: oldIf.mode?.label || oldIf.mode?.value || (typeof oldIf.mode === 'string' ? oldIf.mode : null),
+        mtu: oldIf.mtu || null,
+        parent: oldIf.parent?.name || oldIf.parent?.display || null,
         
         selected: isSelected,
         manuallyToggled: existing?.manuallyToggled || false,
@@ -404,6 +415,8 @@ export default function ReplaceDevicePage() {
       }
       if (matched) {
         targetItem.newInterfaceName = matched;
+        const tmpl = allTargetTemplates.find(t => (t.name || '').toLowerCase() === matched.toLowerCase());
+        targetItem.newLabel = tmpl?.label || '';
       }
     }
 
@@ -416,6 +429,8 @@ export default function ReplaceDevicePage() {
     if (field === 'newInterfaceName') {
       newMappings[index].selected = Boolean(value);
       newMappings[index].manuallyToggled = true;
+      const tmpl = allTargetTemplates.find(t => (t.name || '').toLowerCase() === String(value || '').toLowerCase());
+      newMappings[index].newLabel = tmpl?.label || '';
     }
     if (field === 'newDescription') {
       newMappings[index].manuallyEditedDesc = true;
@@ -444,10 +459,16 @@ export default function ReplaceDevicePage() {
           }
           if (targetName) used.add(targetName);
         }
+        let newLabel = m.newLabel;
+        if (targetName) {
+          const tmpl = allTargetTemplates.find(t => (t.name || '').toLowerCase() === targetName.toLowerCase());
+          if (tmpl) newLabel = tmpl.label || '';
+        }
         return {
           ...m,
           selected: isSel,
-          newInterfaceName: targetName
+          newInterfaceName: targetName,
+          newLabel: newLabel
         };
       }));
     } else {
@@ -506,7 +527,7 @@ export default function ReplaceDevicePage() {
           newInterfaceName: m.newInterfaceName,
           newPortStatus: m.newPortStatus,
           newDescription: m.newDescription,
-          newLabel: m.newLabel !== undefined ? m.newLabel : (m.oldLabel || '')
+          newLabel: m.newLabel !== undefined ? m.newLabel : ''
         }))
       });
       const resData = res.data?.data || res.data || {};
@@ -969,8 +990,8 @@ export default function ReplaceDevicePage() {
                               )}
                             </div>
                             {m.oldLabel && (
-                              <span className="text-[10px] text-purple-300 font-normal font-mono mt-0.5">
-                                label: {m.oldLabel}
+                              <span className="text-[10px] text-ink-400 font-normal font-mono mt-0.5">
+                                label เดิม: {m.oldLabel}
                               </span>
                             )}
                           </div>
@@ -980,7 +1001,33 @@ export default function ReplaceDevicePage() {
                         </td>
                         <td className="p-3 text-ink-400 max-w-xs break-words">
                           {m.oldDescription ? <span className="text-ink-200">{m.oldDescription}</span> : <span className="text-ink-600">-</span>}
-                          {m.untagged_vlan && <span className="ml-2 rounded bg-base-800 px-1.5 py-0.5 text-[10px] text-amber-400">{m.untagged_vlan}</span>}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {m.untagged_vlan && (
+                              <span className="rounded bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-400 font-mono">
+                                untagged: {m.untagged_vlan}
+                              </span>
+                            )}
+                            {m.tagged_vlans && (
+                              <span className="rounded bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 text-[10px] text-indigo-300 font-mono" title={`Tagged VLANs: ${m.tagged_vlans}`}>
+                                tagged: {m.tagged_vlans}
+                              </span>
+                            )}
+                            {m.mode && (
+                              <span className="rounded bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 text-[10px] text-cyan-400 font-mono">
+                                mode: {m.mode}
+                              </span>
+                            )}
+                            {m.mtu && (
+                              <span className="rounded bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] text-emerald-400 font-mono">
+                                MTU: {m.mtu}
+                              </span>
+                            )}
+                            {m.parent && (
+                              <span className="rounded bg-pink-500/10 border border-pink-500/30 px-1.5 py-0.5 text-[10px] text-pink-400 font-mono">
+                                parent: {m.parent}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3 text-center text-ink-600">➔</td>
                         <td className="p-3 min-w-[320px]">
@@ -997,9 +1044,13 @@ export default function ReplaceDevicePage() {
                               </option>
                             ))}
                           </select>
-                          {m.selected && (m.newLabel || m.oldLabel) && (
-                            <div className="mt-1 text-[10px] text-purple-300 font-mono">
-                              label ที่จะคงไว้: {m.newLabel || m.oldLabel}
+                          {m.selected && (
+                            <div className="mt-1 text-[10px] font-mono">
+                              {m.newLabel ? (
+                                <span className="text-purple-300 font-semibold">label เครื่องใหม่: {m.newLabel}</span>
+                              ) : (
+                                <span className="text-ink-500">(ไม่มี label เครื่องใหม่)</span>
+                              )}
                             </div>
                           )}
                         </td>

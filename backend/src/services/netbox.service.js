@@ -765,6 +765,10 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
   
+  const targetIfaceId = typeof interfaceId === 'object' && interfaceId !== null
+    ? (interfaceId.assigned_object_id || interfaceId.id)
+    : interfaceId;
+
   let normalized = addressStr.trim();
   if (!normalized.includes('/')) {
     if (normalized.includes(':')) {
@@ -783,7 +787,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
     if (data.results && data.results.length > 0) {
       ipId = data.results[0].id;
       const ipObj = data.results[0];
-      if (ipObj.assigned_object?.id !== interfaceId) {
+      if (targetIfaceId && ipObj.assigned_object?.id !== targetIfaceId) {
         const updateRes = await fetch(`${baseUrl}/ipam/ip-addresses/${ipId}/`, {
           method: 'PATCH',
           headers: {
@@ -793,7 +797,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
           },
           body: JSON.stringify({
             assigned_object_type: 'dcim.interface',
-            assigned_object_id: interfaceId
+            assigned_object_id: targetIfaceId
           })
         });
         if (!updateRes.ok) {
@@ -804,6 +808,12 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
     }
   }
   
+  const createPayload = { address: normalized };
+  if (targetIfaceId) {
+    createPayload.assigned_object_type = 'dcim.interface';
+    createPayload.assigned_object_id = targetIfaceId;
+  }
+
   const createRes = await fetch(`${baseUrl}/ipam/ip-addresses/`, {
     method: 'POST',
     headers: {
@@ -811,11 +821,7 @@ async function getOrCreateIPAddress(addressStr, interfaceId) {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
-    body: JSON.stringify({
-      address: normalized,
-      assigned_object_type: 'dcim.interface',
-      assigned_object_id: interfaceId
-    })
+    body: JSON.stringify(createPayload)
   });
   if (!createRes.ok) {
     throw new Error(`Failed to create IP Address ${normalized}: ${await createRes.text()}`);
@@ -2116,6 +2122,12 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   // 0. Capture Before Snapshot for Rollback & Comparison
   const beforeSnapshot = await captureDeviceSnapshot(deviceId);
 
+  // Fetch device details and all device IPs in advance for reliable IP and VLAN migration
+  const [deviceData, deviceIps] = await Promise.all([
+    getSingle(`/dcim/devices/${deviceId}/`).catch(() => null),
+    fetchAllPages(`/ipam/ip-addresses/?device_id=${deviceId}`).catch(() => [])
+  ]);
+
   // Only remove existing modules if new modules are explicitly specified to install
   if (Array.isArray(modulesToInstall) && modulesToInstall.length > 0) {
     try {
@@ -2322,69 +2334,142 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         summary.vlanifCreated.push(targetVlanifName);
 
         const allDeviceIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
-        const oldVlanifs = allDeviceIfaces.filter(i => {
-          const nameLower = (i.name || '').toLowerCase();
-          return nameLower.includes('vlan') && i.id !== targetVlanifId;
+        const vlanIfaces = allDeviceIfaces.filter(i => (i.name || '').toLowerCase().includes('vlan'));
+        const vlanIfaceIds = new Set(vlanIfaces.map(i => i.id));
+        vlanIfaces.forEach(i => {
+          vlanIfaceIds.add(String(i.id));
+          vlanIfaceIds.add(Number(i.id));
         });
+
+        // 1. Find all IPs belonging to any VLAN interface on this device from pre-fetched deviceIps
+        const existingVlanIps = deviceIps.filter(ip => {
+          const aId = ip.assigned_object_id || ip.assigned_object?.id || ip.interface?.id;
+          return vlanIfaceIds.has(aId) || vlanIfaceIds.has(Number(aId)) || vlanIfaceIds.has(String(aId));
+        });
+
+        // 2. Also directly query interface_id for each VLAN interface to ensure no IP is missed
+        const directVlanIps = [];
+        for (const vi of vlanIfaces) {
+          try {
+            const ifaceIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${vi.id}`);
+            if (Array.isArray(ifaceIps) && ifaceIps.length > 0) {
+              directVlanIps.push(...ifaceIps);
+            }
+          } catch (e) {}
+        }
+
+        // Merge into unique candidate list by ID
+        const vlanIpMap = new Map();
+        for (const ip of [...existingVlanIps, ...directVlanIps]) {
+          if (ip && ip.id) vlanIpMap.set(ip.id, ip);
+        }
+        const candidateVlanIps = Array.from(vlanIpMap.values());
+
+        console.log(`[REPLACE-DEBUG] Vlanif "${targetVlanifName}" (id=${targetVlanifId}): found ${vlanIfaces.length} vlan ifaces, ${candidateVlanIps.length} candidate VLAN IPs`);
 
         if (vlanifIpMode === 'new' && customVlanifIp && customVlanifIp.trim()) {
           // Mode 2: Use new IP address specified by user
           const ipStr = customVlanifIp.trim();
           try {
-            const newIpObj = await getOrCreateIPAddress(ipStr, {
+            const newIpId = await getOrCreateIPAddress(ipStr, targetVlanifId);
+            await fetchNetboxApi(`/ipam/ip-addresses/${newIpId}/`, 'PATCH', {
               assigned_object_type: 'dcim.interface',
               assigned_object_id: targetVlanifId
             });
-            summary.newIpCreated = newIpObj.address || ipStr;
+            await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
+              primary_ip4: newIpId
+            }).catch(() => {});
+
+            // Unbind any other old VLAN IPs from targetVlanifId so only the new IP is assigned
+            for (const oldIp of candidateVlanIps) {
+              if (oldIp.id !== newIpId) {
+                await fetchNetboxApi(`/ipam/ip-addresses/${oldIp.id}/`, 'PATCH', {
+                  assigned_object_type: null,
+                  assigned_object_id: null
+                }).catch(() => {});
+              }
+            }
+
+            summary.newIpCreated = ipStr;
             summary.migrated.push({
               oldInterface: 'Custom Input',
               newInterface: targetVlanifName,
               ipsTransferred: 1,
-              ipAddress: newIpObj.address || ipStr
+              ipAddress: ipStr
             });
+            console.log(`[REPLACE-DEBUG] Successfully bound new IP ${ipStr} (id=${newIpId}) to ${targetVlanifName}`);
           } catch (ipErr) {
             summary.errors.push({
               interface: targetVlanifName,
               error: `ไม่สามารถผูก IP ใหม่ ${ipStr} กับ ${targetVlanifName} ได้: ${ipErr.message}`
             });
           }
-
-          // Cleanup descriptions / old vlanifs if present
-          for (const oldVlanif of oldVlanifs) {
-            if (oldVlanif.description) {
-              await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
-            }
-            try {
-              await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
-            } catch (delVifErr) {
-              console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
-            }
-          }
         } else {
           // Mode 1: Use existing IP address from old Vlanif
-          for (const oldVlanif of oldVlanifs) {
-            if (oldVlanif.description) {
-              await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', { description: oldVlanif.description });
-            }
-
-            const vlanifIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldVlanif.id}`);
-            for (const ipObj of vlanifIps) {
+          for (const ipObj of candidateVlanIps) {
+            try {
               await fetchNetboxApi(`/ipam/ip-addresses/${ipObj.id}/`, 'PATCH', {
                 assigned_object_type: 'dcim.interface',
                 assigned_object_id: targetVlanifId
               });
+              await fetchNetboxApi(`/dcim/devices/${deviceId}/`, 'PATCH', {
+                primary_ip4: ipObj.id
+              }).catch(() => {});
               summary.migrated.push({
-                oldInterface: oldVlanif.name,
+                oldInterface: ipObj.assigned_object?.name || 'VLAN',
                 newInterface: targetVlanifName,
                 ipsTransferred: 1,
                 ipAddress: ipObj.address
               });
+              console.log(`[REPLACE-DEBUG] Transferred VLAN IP ${ipObj.address} (id=${ipObj.id}) to ${targetVlanifName}`);
+            } catch (ipErr) {
+              console.warn(`Failed to reassign VLAN IP ${ipObj.address}:`, ipErr.message);
             }
+          }
 
+          // If no VLAN IP was found, but device has primary_ip4, ensure it is assigned to target Vlanif
+          if (candidateVlanIps.length === 0 && deviceData?.primary_ip4?.id) {
             try {
-              await fetchNetboxApi(`/dcim/interfaces/${oldVlanif.id}/`, 'DELETE');
-            } catch (delVifErr) {
-              console.warn(`Failed to cleanup old Vlanif ${oldVlanif.name}:`, delVifErr.message);
+              await fetchNetboxApi(`/ipam/ip-addresses/${deviceData.primary_ip4.id}/`, 'PATCH', {
+                assigned_object_type: 'dcim.interface',
+                assigned_object_id: targetVlanifId
+              });
+              console.log(`[REPLACE-DEBUG] Assigned device primary_ip4 ${deviceData.primary_ip4.address} to ${targetVlanifName}`);
+            } catch (pErr) {}
+          }
+        }
+
+        // Copy description, MTU, mode, and VLANs from old Vlanif to targetVlanifId
+        const descSource = vlanIfaces.find(vi => vi.id !== targetVlanifId) || vlanIfaces.find(vi => vi.id === targetVlanifId);
+        if (descSource) {
+          const vlanPatch = {};
+          if (descSource.description) vlanPatch.description = descSource.description;
+          if (descSource.mtu) vlanPatch.mtu = Number(descSource.mtu);
+          if (descSource.mode?.value || (typeof descSource.mode === 'string' && descSource.mode)) {
+            vlanPatch.mode = descSource.mode?.value || descSource.mode;
+          }
+          if (descSource.untagged_vlan?.id || (typeof descSource.untagged_vlan === 'number' && descSource.untagged_vlan)) {
+            vlanPatch.untagged_vlan = descSource.untagged_vlan?.id || descSource.untagged_vlan;
+          }
+          if (Array.isArray(descSource.tagged_vlans) && descSource.tagged_vlans.length > 0) {
+            vlanPatch.tagged_vlans = descSource.tagged_vlans.map(v => (typeof v === 'object' ? v.id : v)).filter(Boolean);
+            if (!vlanPatch.mode || vlanPatch.mode === 'access') {
+              vlanPatch.mode = 'tagged';
+            }
+          }
+          if (Object.keys(vlanPatch).length > 0) {
+            await fetchNetboxApi(`/dcim/interfaces/${targetVlanifId}/`, 'PATCH', vlanPatch).catch(() => {});
+          }
+        }
+
+        // Cleanup obsolete Vlanif interfaces (e.g. Vlanif100 when target is Vlanif115)
+        for (const vi of vlanIfaces) {
+          if (vi.id !== targetVlanifId && !targetVlanifNames.includes(vi.name)) {
+            try {
+              await fetchNetboxApi(`/dcim/interfaces/${vi.id}/`, 'DELETE');
+              console.log(`[REPLACE-DEBUG] Cleaned up obsolete Vlanif ${vi.name} (id=${vi.id})`);
+            } catch (delErr) {
+              console.warn(`Failed to cleanup obsolete Vlanif ${vi.name}:`, delErr.message);
             }
           }
         }
@@ -2457,13 +2542,34 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       // Store in parentNewIdMap for sub-interfaces to reference if this was a parent
       parentNewIdMap[oldIface.id] = newIfaceId;
 
-      // 2. Transfer core configurations: Description, Label, Enabled (CRITICAL - ALWAYS UPDATE FIRST)
+      // 2. Transfer core configurations: Description, Label, Enabled, MTU, Parent
       const targetDescription = item.newDescription !== undefined ? item.newDescription : (oldIface.description || '');
-      const targetLabel = item.newLabel !== undefined 
-        ? item.newLabel 
-        : (oldIface.label !== undefined ? oldIface.label : '');
+      
+      // LABEL: User requirement -> Must use label of the NEW device model template!
+      let targetLabel = '';
+      const matchedNewTemplate = (newTemplates || []).find(t => 
+        (t.name || '').trim().toLowerCase() === (targetName || '').trim().toLowerCase()
+      );
+      if (matchedNewTemplate && matchedNewTemplate.label !== undefined) {
+        targetLabel = matchedNewTemplate.label || '';
+      } else if (item.newLabel !== undefined) {
+        targetLabel = item.newLabel || '';
+      }
 
-      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`).catch(() => []);
+      // Find bound IPs for this interface from deviceIps or direct interface query
+      let boundIps = deviceIps.filter(ip => {
+        const aId = ip.assigned_object_id || ip.assigned_object?.id || ip.interface?.id;
+        return String(aId) === String(oldIface.id);
+      });
+      if (boundIps.length === 0) {
+        try {
+          const directIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
+          if (Array.isArray(directIps) && directIps.length > 0) {
+            boundIps = directIps;
+          }
+        } catch (e) {}
+      }
+
       const hasConnection = Boolean(
         oldIface.cable || 
         (boundIps && boundIps.length > 0) || 
@@ -2476,7 +2582,6 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       // Determine targetPortStatusVal
       let targetPortStatusVal = null;
       if (item.newPortStatus !== undefined && item.newPortStatus !== null) {
-        // User explicitly specified or mapped
         targetPortStatusVal = normalizePortStatus(item.newPortStatus);
       } else {
         const rawPortStatus = oldIface.custom_fields?.port_status ?? 
@@ -2484,15 +2589,16 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
           oldIface.custom_fields?.cf_status ?? 
           oldIface.custom_fields?.status;
         const norm = normalizePortStatus(rawPortStatus);
-        targetPortStatusVal = norm !== null ? norm : (hasConnection ? 'use' : null);
+        targetPortStatusVal = norm !== null ? norm : (hasConnection ? 'Use' : 'Vacant');
       }
 
       let isPortDisabled = false;
-      if (targetPortStatusVal === 'fail') {
+      const statusLower = String(targetPortStatusVal || '').toLowerCase();
+      if (statusLower === 'fail') {
         isPortDisabled = true;
-      } else if (targetPortStatusVal === 'use') {
+      } else if (statusLower === 'use') {
         isPortDisabled = false;
-      } else if (oldIface.enabled === false && targetPortStatusVal !== 'use') {
+      } else if (oldIface.enabled === false && statusLower !== 'use') {
         isPortDisabled = true;
       }
 
@@ -2500,9 +2606,15 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         description: targetDescription || '',
         enabled: !isPortDisabled
       };
-      if (targetLabel) {
+      // Set label from the new model
+      if (targetLabel !== undefined) {
         corePayload.label = targetLabel;
       }
+      // Preserve MTU
+      if (oldIface.mtu !== undefined && oldIface.mtu !== null && oldIface.mtu !== '') {
+        corePayload.mtu = Number(oldIface.mtu);
+      }
+      // Preserve Parent interface binding
       if (parentId) {
         corePayload.parent = parentId;
       }
@@ -2513,21 +2625,20 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       try {
         await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', corePayload);
       } catch (coreErr) {
-        console.warn(`Failed to update core payload (description/label) for ${targetName}:`, coreErr.message);
+        console.warn(`Failed to update core payload for ${targetName}:`, coreErr.message);
       }
 
       // 3. Update Custom Fields (port_status)
       const validNetboxPortStatus = await mapStatusToNetboxChoice(targetPortStatusVal);
       console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" mapped port_status: "${targetPortStatusVal}" → "${validNetboxPortStatus}"`);
 
-      if (validNetboxPortStatus !== undefined && validNetboxPortStatus !== null) {
+      if (validNetboxPortStatus) {
         try {
           await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
             custom_fields: { port_status: validNetboxPortStatus }
           });
         } catch (cfErr) {
           console.warn(`Failed to set port_status (${validNetboxPortStatus}) for ${targetName}:`, cfErr.message);
-          // Try casing fallback: if uppercase, try lowercase; if lowercase, try uppercase
           const altStatus = validNetboxPortStatus === validNetboxPortStatus.toUpperCase()
             ? validNetboxPortStatus.toLowerCase()
             : validNetboxPortStatus.toUpperCase();
@@ -2543,48 +2654,60 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
             } catch (cfErr2) {}
           }
         }
-      } else if (validNetboxPortStatus === null) {
-        try {
-          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
-            custom_fields: { port_status: null }
-          });
-        } catch (clearErr) {}
       }
 
-      // 4. Update Network Configurations (Mode, VLANs, MAC, Speed, Duplex, MTU, etc.)
-      const netPayload = {};
-      const modeVal = oldIface.mode?.value || oldIface.mode;
-      if (modeVal) netPayload.mode = modeVal;
-      if (oldIface.untagged_vlan?.id) netPayload.untagged_vlan = oldIface.untagged_vlan.id;
-      if (modeVal !== 'access' && oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) {
-        netPayload.tagged_vlans = oldIface.tagged_vlans.map(v => v.id);
-      }
-      if (oldIface.qinq_svlan?.id) netPayload.qinq_svlan = oldIface.qinq_svlan.id;
-      if (oldIface.vlan_translation_policy?.id) netPayload.vlan_translation_policy = oldIface.vlan_translation_policy.id;
-      if (oldIface.vrf?.id) netPayload.vrf = oldIface.vrf.id;
-      if (oldIface.mac_address) netPayload.mac_address = oldIface.mac_address;
-      if (oldIface.speed !== undefined && oldIface.speed !== null) netPayload.speed = oldIface.speed;
-      if (oldIface.duplex?.value || oldIface.duplex) netPayload.duplex = oldIface.duplex?.value || oldIface.duplex;
-      if (oldIface.mtu) netPayload.mtu = Number(oldIface.mtu);
-      if (oldIface.comments) netPayload.comments = oldIface.comments;
-      if (oldIface.poe_mode?.value || oldIface.poe_mode) netPayload.poe_mode = oldIface.poe_mode?.value || oldIface.poe_mode;
-      if (oldIface.poe_type?.value || oldIface.poe_type) netPayload.poe_type = oldIface.poe_type?.value || oldIface.poe_type;
-      if (oldIface.mgmt_only !== undefined) netPayload.mgmt_only = oldIface.mgmt_only;
-      if (oldIface.lag?.id) netPayload.lag = oldIface.lag.id;
-      if (oldIface.mark_connected !== undefined) netPayload.mark_connected = oldIface.mark_connected;
-      if (oldIface.bridge?.id) netPayload.bridge = oldIface.bridge.id;
-      if (oldIface.wwn) netPayload.wwn = oldIface.wwn;
-      if (oldIface.rf_role?.value || oldIface.rf_role) netPayload.rf_role = oldIface.rf_role?.value || oldIface.rf_role;
-      if (oldIface.rf_channel?.value || oldIface.rf_channel) netPayload.rf_channel = oldIface.rf_channel?.value || oldIface.rf_channel;
-      if (oldIface.rf_channel_frequency) netPayload.rf_channel_frequency = oldIface.rf_channel_frequency;
-      if (oldIface.rf_channel_width) netPayload.rf_channel_width = oldIface.rf_channel_width;
-      if (oldIface.tx_power !== undefined && oldIface.tx_power !== null) netPayload.tx_power = oldIface.tx_power;
+      // 4. Transfer Mode & VLAN Configurations (tag vlan, untagged vlan, mode)
+      const vlanPayload = {};
+      const modeVal = oldIface.mode?.value || (typeof oldIface.mode === 'string' ? oldIface.mode : null);
+      const untaggedVlanId = oldIface.untagged_vlan?.id || (typeof oldIface.untagged_vlan === 'number' ? oldIface.untagged_vlan : null);
+      const taggedVlanIds = Array.isArray(oldIface.tagged_vlans)
+        ? oldIface.tagged_vlans.map(v => (typeof v === 'object' ? v.id : v)).filter(Boolean)
+        : [];
 
-      if (Object.keys(netPayload).length > 0) {
+      if (modeVal) {
+        vlanPayload.mode = modeVal;
+      }
+      if (untaggedVlanId) {
+        vlanPayload.untagged_vlan = untaggedVlanId;
+      }
+      if (taggedVlanIds.length > 0) {
+        vlanPayload.tagged_vlans = taggedVlanIds;
+        // In NetBox, tagged_vlans requires mode to be 'tagged' or 'tagged-all'
+        if (!vlanPayload.mode || vlanPayload.mode === 'access') {
+          vlanPayload.mode = 'tagged';
+        }
+      }
+
+      if (Object.keys(vlanPayload).length > 0) {
         try {
-          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', netPayload);
-        } catch (netErr) {
-          console.warn(`Failed to set network payload for ${targetName}:`, netErr.message);
+          console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" PATCH vlanPayload:`, JSON.stringify(vlanPayload));
+          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', vlanPayload);
+        } catch (vlanErr) {
+          console.warn(`Failed to set vlanPayload for ${targetName}:`, vlanErr.message);
+        }
+      }
+
+      // 4.1 Update other hardware configurations (MAC, VRF, etc.)
+      const otherPayload = {};
+      if (parentId) otherPayload.parent = parentId;
+      if (oldIface.mtu) otherPayload.mtu = Number(oldIface.mtu);
+      if (oldIface.qinq_svlan?.id) otherPayload.qinq_svlan = oldIface.qinq_svlan.id;
+      if (oldIface.vlan_translation_policy?.id) otherPayload.vlan_translation_policy = oldIface.vlan_translation_policy.id;
+      if (oldIface.vrf?.id) otherPayload.vrf = oldIface.vrf.id;
+      if (oldIface.mac_address) otherPayload.mac_address = oldIface.mac_address;
+      if (oldIface.speed !== undefined && oldIface.speed !== null) otherPayload.speed = oldIface.speed;
+      if (oldIface.duplex?.value || oldIface.duplex) otherPayload.duplex = oldIface.duplex?.value || oldIface.duplex;
+      if (oldIface.comments) otherPayload.comments = oldIface.comments;
+      if (oldIface.poe_mode?.value || oldIface.poe_mode) otherPayload.poe_mode = oldIface.poe_mode?.value || oldIface.poe_mode;
+      if (oldIface.poe_type?.value || oldIface.poe_type) otherPayload.poe_type = oldIface.poe_type?.value || oldIface.poe_type;
+      if (oldIface.mgmt_only !== undefined) otherPayload.mgmt_only = oldIface.mgmt_only;
+      if (oldIface.mark_connected !== undefined) otherPayload.mark_connected = oldIface.mark_connected;
+
+      if (Object.keys(otherPayload).length > 0) {
+        try {
+          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', otherPayload);
+        } catch (oErr) {
+          console.warn(`Failed to set other network payload for ${targetName}:`, oErr.message);
         }
       }
 
@@ -2735,10 +2858,15 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
       // 4. Transfer all bound IP addresses
       for (const ip of boundIps) {
-        await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
-          assigned_object_type: 'dcim.interface',
-          assigned_object_id: newIfaceId
-        });
+        try {
+          await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
+            assigned_object_type: 'dcim.interface',
+            assigned_object_id: newIfaceId
+          });
+          console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" transferred IP ${ip.address} (id=${ip.id}) to ${targetName}`);
+        } catch (ipErr) {
+          console.warn(`Failed to transfer IP ${ip.address} to ${targetName}:`, ipErr.message);
+        }
       }
 
       // 4.1 Transfer FHRP Group Assignments (VRRP, HSRP, GLBP)
