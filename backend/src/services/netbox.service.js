@@ -600,12 +600,16 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
   const baseUrl = getSanitizedUrl();
   const token = process.env.NETBOX_API_TOKEN;
   
-  const searchRes = await fetch(`${baseUrl}/dcim/interfaces/?device_id=${deviceId}&name=${name}`, {
+  const searchRes = await fetch(`${baseUrl}/dcim/interfaces/?device_id=${deviceId}&name=${encodeURIComponent(name)}`, {
     headers: { 'Authorization': getAuthHeader(token), 'Accept': 'application/json' }
   });
   if (searchRes.ok) {
     const data = await searchRes.json();
     if (data.results && data.results.length > 0) {
+      const match = data.results.find(i => (i.name || '').trim().toLowerCase() === String(name).trim().toLowerCase());
+      if (match) {
+        return match.id;
+      }
       return data.results[0].id;
     }
   }
@@ -2056,8 +2060,12 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
   }
 
   // 1.1 Fetch interface mappings and identify mapped old interfaces
+  console.log(`[REPLACE-DEBUG] === START replaceDeviceModel === deviceId=${deviceId}, newDeviceTypeId=${newDeviceTypeId}`);
+  console.log(`[REPLACE-DEBUG] interfaceMappings received (${(interfaceMappings || []).length} items):`, JSON.stringify(interfaceMappings, null, 2));
   const mappedOldIds = new Set((interfaceMappings || []).map(m => m.oldInterfaceId));
   const mappedTargetNames = new Set((interfaceMappings || []).map(m => (m.newInterfaceName || '').trim().toLowerCase()));
+  console.log(`[REPLACE-DEBUG] mappedOldIds:`, [...mappedOldIds]);
+  console.log(`[REPLACE-DEBUG] mappedTargetNames:`, [...mappedTargetNames]);
 
   const fetchedMappings = [];
   for (const m of (interfaceMappings || [])) {
@@ -2091,6 +2099,8 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       const isVirtual = isSubInterface || ['virtual', 'loopback', 'bridge', 'lag', 'vlan'].some(x => typeLower.includes(x) || nameLower.includes(x));
       const isFromModule = Boolean(iface.module?.id || iface.module || iface.module_bay?.id || iface.module_bay);
 
+      console.log(`[REPLACE-DEBUG] Step 1.2 checking iface: id=${iface.id}, name="${iface.name}", type="${typeLower}", isVirtual=${isVirtual}, isFromModule=${isFromModule}, isMapped=${mappedOldIds.has(iface.id)}`);
+
       if (isVirtual || isFromModule) {
         continue;
       }
@@ -2103,6 +2113,7 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
             const tempName = `${iface.name}_OLD_TEMP_${Date.now()}_${tempIdx++}`;
             await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', { name: tempName });
             mappingItem.tempName = tempName;
+            console.log(`[REPLACE-DEBUG] Step 1.2 RENAMED: "${iface.name}" → "${tempName}" (id=${iface.id})`);
           } catch (renameErr) {
             console.warn(`Could not rename old interface ${iface.name} to temp name:`, renameErr.message);
           }
@@ -2110,16 +2121,64 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       } else {
         // UNSELECTED OLD INTERFACE:
         // User explicitly chose NOT to migrate this port to the new device!
-        // Disconnect cable if attached & DELETE it so it never goes to the new device!
+        // We must completely release its dependencies and DELETE it.
         try {
-          if (iface.cable?.id) {
-            await fetchNetboxApi(`/dcim/cables/${iface.cable.id}/`, 'DELETE').catch(() => {});
+          console.log(`[REPLACE-DEBUG] Step 1.2 Cleaning up unselected interface ${iface.name} (id=${iface.id})`);
+
+          // 1. Disconnect any attached cable
+          const cableId = iface.cable?.id || (typeof iface.cable === 'number' ? iface.cable : null);
+          if (cableId) {
+            await fetchNetboxApi(`/dcim/cables/${cableId}/`, 'DELETE').catch(() => {});
+          } else {
+            const attachedCables = await fetchAllPages(`/dcim/cables/?interface_id=${iface.id}`).catch(() => []);
+            for (const c of attachedCables) {
+              await fetchNetboxApi(`/dcim/cables/${c.id}/`, 'DELETE').catch(() => {});
+            }
           }
+
+          // 2. Unbind or delete any child sub-interfaces
+          const childSubs = allDeviceIfaces.filter(ci => ci.parent?.id === iface.id || (ci.name && ci.name.startsWith(`${iface.name}.`)));
+          for (const sub of childSubs) {
+            try {
+              if (sub.cable?.id) await fetchNetboxApi(`/dcim/cables/${sub.cable.id}/`, 'DELETE').catch(() => {});
+              await fetchNetboxApi(`/dcim/interfaces/${sub.id}/`, 'DELETE');
+            } catch (sErr) {}
+          }
+
+          // 3. Unassign any bound IPs so ProtectedError doesn't block deletion
+          const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${iface.id}`).catch(() => []);
+          for (const ip of boundIps) {
+            try {
+              await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
+                assigned_object_type: null,
+                assigned_object_id: null
+              });
+            } catch (ipErr) {}
+          }
+
+          // 4. Remove LAG or bridge links
+          if (iface.lag?.id || iface.lag) {
+            await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', { lag: null }).catch(() => {});
+          }
+
+          // 5. DELETE the unselected interface
           await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
           summary.deleted = summary.deleted || [];
           summary.deleted.push(iface.name);
+          console.log(`[REPLACE-DEBUG] Step 1.2 Successfully DELETED unmapped: "${iface.name}" (id=${iface.id})`);
         } catch (delErr) {
           console.warn(`Failed to delete unselected old interface ${iface.name}:`, delErr.message);
+          // Safety Net: If DELETE failed, rename to temp dead name and clear description/status
+          // so it won't linger with "fail" description or collide with new model templates!
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', {
+              name: `${iface.name}_UNMAPPED_DEAD_${Date.now()}_${tempIdx++}`,
+              description: '',
+              enabled: false,
+              custom_fields: { port_status: null }
+            });
+            console.log(`[REPLACE-DEBUG] Step 1.2 Safety Net: Renamed & cleared unmapped interface ${iface.name} (id=${iface.id})`);
+          } catch (renameErr) {}
         }
       }
     }
@@ -2308,6 +2367,8 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         parentId
       );
 
+      console.log(`[REPLACE-DEBUG] FIX3 mapping: old="${oldIface.name}" (id=${oldIface.id}) → target="${targetName}" → newIfaceId=${newIfaceId}`);
+
       // Store in parentNewIdMap for sub-interfaces to reference if this was a parent
       parentNewIdMap[oldIface.id] = newIfaceId;
 
@@ -2317,18 +2378,36 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         ? item.newLabel 
         : (oldIface.label !== undefined ? oldIface.label : '');
 
-      const rawPortStatus = item.newPortStatus !== undefined 
-        ? item.newPortStatus 
-        : (oldIface.custom_fields?.port_status ?? 
-           oldIface.custom_fields?.cf_port_status ?? 
-           oldIface.custom_fields?.cf_status ?? 
-           oldIface.custom_fields?.status ?? '');
-      const normalizedStatus = normalizePortStatus(rawPortStatus);
+      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`).catch(() => []);
+      const hasConnection = Boolean(
+        oldIface.cable || 
+        (boundIps && boundIps.length > 0) || 
+        oldIface.untagged_vlan || 
+        (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) ||
+        (targetDescription && targetDescription.trim() !== '') ||
+        oldIface.mark_connected === true
+      );
+
+      // Determine targetPortStatusVal
+      let targetPortStatusVal = null;
+      if (item.newPortStatus !== undefined && item.newPortStatus !== null) {
+        // User explicitly specified or mapped
+        targetPortStatusVal = normalizePortStatus(item.newPortStatus);
+      } else {
+        const rawPortStatus = oldIface.custom_fields?.port_status ?? 
+          oldIface.custom_fields?.cf_port_status ?? 
+          oldIface.custom_fields?.cf_status ?? 
+          oldIface.custom_fields?.status;
+        const norm = normalizePortStatus(rawPortStatus);
+        targetPortStatusVal = norm !== null ? norm : (hasConnection ? 'use' : null);
+      }
 
       let isPortDisabled = false;
-      if (rawPortStatus && ['disable', 'fail', 'down', 'shutdown', 'broken'].some(x => String(rawPortStatus).toLowerCase().includes(x))) {
+      if (targetPortStatusVal === 'fail') {
         isPortDisabled = true;
-      } else if (oldIface.enabled === false) {
+      } else if (targetPortStatusVal === 'use') {
+        isPortDisabled = false;
+      } else if (oldIface.enabled === false && targetPortStatusVal !== 'use') {
         isPortDisabled = true;
       }
 
@@ -2343,6 +2422,9 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         corePayload.parent = parentId;
       }
 
+      console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" corePayload:`, JSON.stringify(corePayload));
+      console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" targetPortStatusVal="${targetPortStatusVal}", isPortDisabled=${isPortDisabled}`);
+
       try {
         await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', corePayload);
       } catch (coreErr) {
@@ -2350,25 +2432,17 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       }
 
       // 3. Update Custom Fields (port_status)
-      const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${oldIface.id}`);
-      const hasConnection = Boolean(
-        oldIface.cable || 
-        (boundIps && boundIps.length > 0) || 
-        oldIface.untagged_vlan || 
-        (oldIface.tagged_vlans && oldIface.tagged_vlans.length > 0) ||
-        (targetDescription && targetDescription.trim() !== '') ||
-        oldIface.mark_connected === true
-      );
-
-      const targetPortStatusVal = normalizedStatus !== null ? normalizedStatus : (hasConnection ? 'use' : null);
-      if (targetPortStatusVal) {
+      try {
+        await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
+          custom_fields: { port_status: targetPortStatusVal }
+        });
+      } catch (cfErr) {
+        console.warn(`Failed to set port_status custom field for ${targetName}:`, cfErr.message);
         try {
           await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
-            custom_fields: { port_status: targetPortStatusVal }
+            custom_fields: { cf_port_status: targetPortStatusVal }
           });
-        } catch (cfErr) {
-          console.warn(`Failed to set port_status custom field for ${targetName}:`, cfErr.message);
-        }
+        } catch (cfErr2) {}
       }
 
       // 4. Update Network Configurations (Mode, VLANs, MAC, Speed, Duplex, MTU, etc.)
@@ -2410,18 +2484,47 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
       // 5. Reconnect Cable connection back to NetBox
       let cableData = null;
-      if (oldIface.cable?.id) {
+      const oldCableId = oldIface.cable?.id || (typeof oldIface.cable === 'number' ? oldIface.cable : null);
+      if (oldCableId) {
         try {
-          cableData = await getSingle(`/dcim/cables/${oldIface.cable.id}/`);
+          cableData = await getSingle(`/dcim/cables/${oldCableId}/`);
         } catch (cErr) {
-          console.warn(`Could not fetch cable details #${oldIface.cable.id}:`, cErr.message);
+          console.warn(`Could not fetch cable details #${oldCableId}:`, cErr.message);
         }
+      }
+      if (!cableData) {
+        try {
+          const foundCables = await fetchAllPages(`/dcim/cables/?interface_id=${oldIface.id}`);
+          if (foundCables && foundCables.length > 0) {
+            cableData = foundCables[0];
+          }
+        } catch (fcErr) {}
       }
 
       if (cableData) {
+        console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" cableData found: id=${cableData.id}`);
         const getTermId = (t) => t.object_id || t.object?.id || t.id;
-        const isOldA = cableData.a_terminations?.some(t => getTermId(t) === oldIface.id);
-        const isOldB = cableData.b_terminations?.some(t => getTermId(t) === oldIface.id);
+        const getObjectType = (t) => {
+          if (t.object_type) return t.object_type;
+          if (t.url) {
+            if (t.url.includes('/dcim/interfaces/')) return 'dcim.interface';
+            if (t.url.includes('/dcim/front-ports/')) return 'dcim.frontport';
+            if (t.url.includes('/dcim/rear-ports/')) return 'dcim.rearport';
+            if (t.url.includes('/circuits/circuit-terminations/')) return 'circuits.circuittermination';
+          }
+          return 'dcim.interface';
+        };
+
+        const termAIds = (cableData.a_terminations || []).map(t => getTermId(t));
+        if (cableData.termination_a_id) termAIds.push(cableData.termination_a_id);
+        if (cableData.termination_a?.id) termAIds.push(cableData.termination_a.id);
+
+        const termBIds = (cableData.b_terminations || []).map(t => getTermId(t));
+        if (cableData.termination_b_id) termBIds.push(cableData.termination_b_id);
+        if (cableData.termination_b?.id) termBIds.push(cableData.termination_b.id);
+
+        const isOldA = termAIds.includes(oldIface.id);
+        const isOldB = termBIds.includes(oldIface.id);
 
         // Disconnect old cable first to release endpoint in NetBox
         try {
@@ -2431,56 +2534,93 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         }
 
         if (isOldA || isOldB) {
-          const peerList = isOldA ? cableData.b_terminations : cableData.a_terminations;
+          let peerList = [];
+          if (isOldA) {
+            peerList = cableData.b_terminations && cableData.b_terminations.length > 0
+              ? cableData.b_terminations
+              : (cableData.termination_b_id ? [{ object_type: cableData.termination_b_type || 'dcim.interface', object_id: cableData.termination_b_id }] : []);
+          } else {
+            peerList = cableData.a_terminations && cableData.a_terminations.length > 0
+              ? cableData.a_terminations
+              : (cableData.termination_a_id ? [{ object_type: cableData.termination_a_type || 'dcim.interface', object_id: cableData.termination_a_id }] : []);
+          }
+
           if (peerList && peerList.length > 0) {
             const mappedPeerList = peerList.map(t => ({
-              object_type: t.object_type || 'dcim.interface',
+              object_type: getObjectType(t),
               object_id: getTermId(t)
-            }));
+            })).filter(t => Boolean(t.object_id));
 
-            const newCablePayload = {
-              a_terminations: isOldA 
-                ? [{ object_type: 'dcim.interface', object_id: newIfaceId }]
-                : mappedPeerList,
-              b_terminations: isOldA 
-                ? mappedPeerList 
-                : [{ object_type: 'dcim.interface', object_id: newIfaceId }],
-              status: cableData.status?.value || cableData.status || 'connected'
-            };
-            if (cableData.type?.value || cableData.type) {
-              newCablePayload.type = cableData.type?.value || cableData.type;
-            }
-            if (cableData.label) newCablePayload.label = cableData.label;
-            if (cableData.color) newCablePayload.color = cableData.color;
-            if (cableData.description) newCablePayload.description = cableData.description;
+            if (mappedPeerList.length > 0) {
+              const newCablePayload = {
+                a_terminations: isOldA 
+                  ? [{ object_type: 'dcim.interface', object_id: newIfaceId }]
+                  : mappedPeerList,
+                b_terminations: isOldA 
+                  ? mappedPeerList 
+                  : [{ object_type: 'dcim.interface', object_id: newIfaceId }],
+                status: cableData.status?.value || (typeof cableData.status === 'string' && cableData.status.trim() ? cableData.status : 'connected')
+              };
+              if (cableData.type?.value || (typeof cableData.type === 'string' && cableData.type.trim())) {
+                newCablePayload.type = cableData.type?.value || cableData.type;
+              }
+              if (cableData.label) newCablePayload.label = cableData.label;
+              if (cableData.color) newCablePayload.color = cableData.color;
+              if (cableData.description) newCablePayload.description = cableData.description;
 
-            try {
-              const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', newCablePayload);
-              summary.migrated.push({
-                oldInterface: oldIface.name,
-                newInterface: targetName,
-                status: `Reconnected cable #${reconnectedCable?.id || ''} to new interface`
-              });
-            } catch (cablePostErr) {
-              console.warn(`Full cable POST failed for ${targetName}, retrying minimal payload:`, cablePostErr.message);
               try {
-                const minimalCablePayload = {
-                  a_terminations: newCablePayload.a_terminations,
-                  b_terminations: newCablePayload.b_terminations,
-                  status: 'connected'
-                };
-                const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', minimalCablePayload);
+                console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" POST cable payload:`, JSON.stringify(newCablePayload));
+                const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', newCablePayload);
                 summary.migrated.push({
                   oldInterface: oldIface.name,
                   newInterface: targetName,
-                  status: `Reconnected cable #${reconnectedCable?.id || ''} (minimal) to new interface`
+                  status: `Reconnected cable #${reconnectedCable?.id || ''} to new interface`
                 });
-              } catch (minCableErr) {
-                console.warn(`Minimal cable POST also failed for ${targetName}:`, minCableErr.message);
-                summary.errors.push({
-                  interface: targetName,
-                  error: `ไม่สามารถเชื่อมต่อ Cable ไปยัง Interface ใหม่ได้: ${minCableErr.message}`
-                });
+              } catch (cablePostErr) {
+                console.warn(`Full cable POST failed for ${targetName}, retrying minimal payload:`, cablePostErr.message);
+                try {
+                  const minimalCablePayload = {
+                    a_terminations: isOldA ? [{ object_type: 'dcim.interface', object_id: newIfaceId }] : mappedPeerList,
+                    b_terminations: isOldA ? mappedPeerList : [{ object_type: 'dcim.interface', object_id: newIfaceId }],
+                    status: 'connected'
+                  };
+                  const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', minimalCablePayload);
+                  summary.migrated.push({
+                    oldInterface: oldIface.name,
+                    newInterface: targetName,
+                    status: `Reconnected cable #${reconnectedCable?.id || ''} (minimal) to new interface`
+                  });
+                } catch (minCableErr) {
+                  // Try legacy NetBox format
+                  try {
+                    const peer = mappedPeerList[0];
+                    const legPayload = isOldA ? {
+                      termination_a_type: 'dcim.interface',
+                      termination_a_id: newIfaceId,
+                      termination_b_type: peer.object_type,
+                      termination_b_id: peer.object_id,
+                      status: 'connected'
+                    } : {
+                      termination_a_type: peer.object_type,
+                      termination_a_id: peer.object_id,
+                      termination_b_type: 'dcim.interface',
+                      termination_b_id: newIfaceId,
+                      status: 'connected'
+                    };
+                    const reconnectedCable = await fetchNetboxApi('/dcim/cables/', 'POST', legPayload);
+                    summary.migrated.push({
+                      oldInterface: oldIface.name,
+                      newInterface: targetName,
+                      status: `Reconnected cable #${reconnectedCable?.id || ''} (legacy) to new interface`
+                    });
+                  } catch (legErr) {
+                    console.warn(`Minimal and legacy cable POST also failed for ${targetName}:`, minCableErr.message);
+                    summary.errors.push({
+                      interface: targetName,
+                      error: `ไม่สามารถเชื่อมต่อ Cable ไปยัง Interface ใหม่ได้: ${minCableErr.message}`
+                    });
+                  }
+                }
               }
             }
           }
@@ -2780,6 +2920,7 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
 
   // Clear memory cache after operations
   memoryCache.devices.data = null;
+  memoryCache.devices.timestamp = 0;
 
   return {
     summary,

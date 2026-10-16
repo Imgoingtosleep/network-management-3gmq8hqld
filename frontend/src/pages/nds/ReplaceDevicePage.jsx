@@ -322,17 +322,17 @@ export default function ReplaceDevicePage() {
         usedTargetNames.add(targetName);
       }
 
+      const descLower = String(oldDesc).toLowerCase();
+      const statusLower = String(oldPortStatus).toLowerCase();
       const isFail = 
-        String(oldDesc).toLowerCase().includes('fail') || 
-        String(oldDesc).toLowerCase().includes('disable') || 
-        String(oldDesc).toLowerCase().includes('broken') || 
-        String(oldDesc).toLowerCase().includes('down') || 
-        String(oldPortStatus).toLowerCase() === 'fail' || 
+        ['fail', 'disable', 'broken', 'down', 'shut', 'die', 'dead', 'inactive', 'err', 'fault', 'drop', 'loss',
+         'เสีย', 'ชำรุด', 'พัง', 'ใช้ไม่ได้', 'ไม่ใช้', 'ยกเลิก', 'ระงับ', 'งดใช้', 'ปิด', 'มีปัญหา', 'ดับ'
+        ].some(keyword => descLower.includes(keyword) || statusLower.includes(keyword)) ||
         oldIf.enabled === false;
 
       // Logic: Default selection is true ONLY for active ports that have an existing description and are NOT failed/disabled
       let isSelected = false;
-      if (existing) {
+      if (existing && existing.manuallyToggled) {
         isSelected = existing.selected;
       } else if (hasDescription && !isFail) {
         if (maxSelections === 0 || autoSelectedCount < maxSelections) {
@@ -341,9 +341,11 @@ export default function ReplaceDevicePage() {
         }
       }
 
-      const defaultPortStatus = oldPortStatus || (isFail ? 'fail' : (hasDescription ? 'use' : ''));
-      const newPortStatus = existing?.newPortStatus !== undefined ? normalizePortStatus(existing.newPortStatus) : defaultPortStatus;
-      const newDescription = existing?.newDescription !== undefined ? existing.newDescription : (isFail ? '' : oldDesc);
+      // If port is failed/disabled, it must NEVER auto-copy its fail description to the new device!
+      // New description is empty by default for failed ports, unless user explicitly types a new description.
+      const defaultPortStatus = isFail ? 'fail' : (oldPortStatus || (hasDescription ? 'use' : ''));
+      const newPortStatus = (existing && existing.manuallyEditedStatus) ? normalizePortStatus(existing.newPortStatus) : defaultPortStatus;
+      const newDescription = (existing && existing.manuallyEditedDesc) ? existing.newDescription : (isFail ? '' : oldDesc);
       const newLabel = existing?.newLabel !== undefined ? existing.newLabel : oldLabel;
 
       return {
@@ -354,10 +356,14 @@ export default function ReplaceDevicePage() {
         moduleName: oldIf.module?.display || oldIf.module?.name || oldIf.module_bay?.name || '',
         oldPortStatus: oldPortStatus,
         oldDescription: oldDesc,
+        isFail: isFail,
         type: oldIf.type?.label || oldIf.type?.value || 'Physical',
         untagged_vlan: oldIf.untagged_vlan?.vid ? `VLAN ${oldIf.untagged_vlan.vid}` : null,
         
         selected: isSelected,
+        manuallyToggled: existing?.manuallyToggled || false,
+        manuallyEditedDesc: existing?.manuallyEditedDesc || false,
+        manuallyEditedStatus: existing?.manuallyEditedStatus || false,
         newInterfaceName: targetName,
         newPortStatus: newPortStatus,
         newDescription: newDescription,
@@ -386,6 +392,7 @@ export default function ReplaceDevicePage() {
 
     const willBeSelected = !targetItem.selected;
     targetItem.selected = willBeSelected;
+    targetItem.manuallyToggled = true;
 
     // If selected and no target chosen yet, auto-match from available templates
     if (willBeSelected && !targetItem.newInterfaceName) {
@@ -408,6 +415,13 @@ export default function ReplaceDevicePage() {
     newMappings[index][field] = value;
     if (field === 'newInterfaceName') {
       newMappings[index].selected = Boolean(value);
+      newMappings[index].manuallyToggled = true;
+    }
+    if (field === 'newDescription') {
+      newMappings[index].manuallyEditedDesc = true;
+    }
+    if (field === 'newPortStatus') {
+      newMappings[index].manuallyEditedStatus = true;
     }
     setInterfaceMappings(newMappings);
   };
