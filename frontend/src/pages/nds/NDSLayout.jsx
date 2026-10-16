@@ -5,13 +5,13 @@ const menuItems = [
   { label: 'Site Management', value: 'sites', path: '/nds/sites' },
   { label: 'Devices', value: 'devices', path: '/nds/devices' },
   { label: 'Device Types', value: 'device-types', path: '/nds/device-types' },
-  { label: 'Module Types', value: 'module-types', path: '/nds/module-types' },
-  { label: 'Sync Interfaces', value: 'sync-interfaces', path: '/nds/sync-interfaces' },
   { label: 'Module Bays', value: 'module-bays', path: '/nds/module-bays' },
-  { label: 'Replace Device', value: 'replace-device', path: '/nds/replace-device' },
-  { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
+  { label: 'Module Types', value: 'module-types', path: '/nds/module-types' },
   { label: 'Domains', value: 'domains', path: '/nds/domains' },
   { label: 'VLANs', value: 'vlans', path: '/nds/vlans' },
+  { label: 'Sync Interfaces', value: 'sync-interfaces', path: '/nds/sync-interfaces' },
+  { label: 'Replace Device', value: 'replace-device', path: '/nds/replace-device' },
+  // { label: 'IP Management (Prefix)', value: 'prefixes', path: '/nds/prefixes' },
 ];
 
 export default function NDSLayout() {
