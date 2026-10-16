@@ -55,16 +55,17 @@ const deviceSnapshots = {};
 
 /**
  * Normalizes port_status value to match NetBox custom field choice set
+ * NetBox ChoiceSet defines: Use:Use, Reserve:Reserve, Vacant:Vacant, Fail:Fail
  */
 function normalizePortStatus(val) {
   if (!val) return null;
   const s = String(val).trim().toLowerCase();
-  if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') return null;
-  if (s === 'use' || s === 'active' || s === 'up' || s.includes('occup') || s.includes('in use') || s.includes('in-use')) return 'use';
-  if (s.includes('reserv') || s.includes('hold')) return 'reserver';
-  if (s.includes('fail') || s.includes('disable') || s.includes('down') || s.includes('shutdown') || s.includes('broken')) return 'fail';
-  if (s.includes('plan') || s.includes('spare')) return 'planed';
-  return null;
+  if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') return 'Vacant';
+  if (s === 'use' || s === 'active' || s === 'up' || s.includes('occup') || s.includes('in use') || s.includes('in-use')) return 'Use';
+  if (s.includes('reserv') || s.includes('hold')) return 'Reserve';
+  if (s.includes('fail') || s.includes('disable') || s.includes('down') || s.includes('shutdown') || s.includes('broken')) return 'Fail';
+  if (s.includes('plan') || s.includes('spare')) return 'Reserve';
+  return val;
 }
 
 const CACHE_TTL = 5 * 60 * 1000; // เก็บแคชไว้ 5 นาที เพื่อประสิทธิภาพสูงสุดและความเร็วสูงสุดในการเปิดหน้าเว็บ
@@ -237,73 +238,46 @@ async function getNetboxPortStatusChoices() {
   return [];
 }
 
+const DEFAULT_NETBOX_PORT_STATUS_CHOICES = [
+  { value: 'Use', label: 'Use' },
+  { value: 'Reserve', label: 'Reserve' },
+  { value: 'Vacant', label: 'Vacant' },
+  { value: 'Fail', label: 'Fail' }
+];
+
 async function mapStatusToNetboxChoice(canonicalStatus) {
-  if (!canonicalStatus) return null;
-  const s = String(canonicalStatus).toLowerCase().trim();
+  const s = String(canonicalStatus || '').toLowerCase().trim();
   if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') {
-    return null;
+    return 'Vacant';
   }
 
-  const choices = await getNetboxPortStatusChoices();
-  console.log(`[REPLACE-DEBUG] mapStatusToNetboxChoice input: "${canonicalStatus}", available choices:`, JSON.stringify(choices));
-
-  if (choices && choices.length > 0) {
-    // 1. Exact match on value
-    const exactVal = choices.find(c => String(c.value).toLowerCase() === s);
-    if (exactVal) return exactVal.value;
-
-    // 2. Exact match on label
-    const exactLabel = choices.find(c => String(c.label).toLowerCase() === s);
-    if (exactLabel) return exactLabel.value;
-
-    // 3. Match 'use' / in-use / active / occupied / used
-    if (s === 'use' || s === 'active' || s.includes('occup') || s.includes('in use') || s.includes('in-use') || s.includes('used')) {
-      const match = choices.find(c => {
-        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
-        return v.includes('occup') || v.includes('use') || v.includes('active') || v.includes('up');
-      });
-      if (match) return match.value;
-    }
-
-    // 4. Match 'fail' / disable / broken / down
-    if (s === 'fail' || s.includes('disable') || s.includes('down') || s.includes('broken') || s.includes('shutdown')) {
-      const match = choices.find(c => {
-        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
-        return v.includes('disable') || v.includes('fail') || v.includes('broken') || v.includes('down') || v.includes('fault');
-      });
-      if (match) return match.value;
-    }
-
-    // 5. Match 'reserver' / reserve / hold
-    if (s === 'reserver' || s.includes('reserv') || s.includes('hold')) {
-      const match = choices.find(c => {
-        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
-        return v.includes('reserv') || v.includes('hold');
-      });
-      if (match) return match.value;
-    }
-
-    // 6. Match 'planed' / plan / spare
-    if (s === 'planed' || s.includes('plan') || s.includes('spare')) {
-      const match = choices.find(c => {
-        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
-        return v.includes('plan') || v.includes('spare');
-      });
-      if (match) return match.value;
-    }
-
-    // If choices are known from NetBox but nothing matched, DO NOT return an invalid string like "use" that causes HTTP 400!
-    console.warn(`[REPLACE-DEBUG] Could not map status "${canonicalStatus}" to any choice in:`, choices.map(c => c.value));
-    return null;
+  // 1. Primary check: exact match against known NetBox choices (Use, Reserve, Vacant, Fail)
+  if (s === 'use' || s === 'active' || s === 'up' || s.includes('occup') || s.includes('in use') || s.includes('in-use') || s.includes('used')) {
+    return 'Use';
+  }
+  if (s.includes('reserv') || s.includes('hold') || s.includes('plan') || s.includes('spare')) {
+    return 'Reserve';
+  }
+  if (s.includes('fail') || s.includes('disable') || s.includes('down') || s.includes('broken') || s.includes('shutdown') || s.includes('fault')) {
+    return 'Fail';
+  }
+  if (s.includes('vacant')) {
+    return 'Vacant';
   }
 
-  // Fallback when choice list could not be fetched from API
-  if (s === 'use') return 'USE';
-  if (s === 'reserver' || s === 'reserve') return 'reserve';
-  if (s === 'fail') return 'fail';
-  if (s === 'planed' || s === 'plan') return 'plan';
+  // 2. Dynamic check if custom choice names are configured on NetBox
+  try {
+    const choices = await getNetboxPortStatusChoices();
+    if (choices && choices.length > 0) {
+      const exactVal = choices.find(c => String(c.value).toLowerCase() === s);
+      if (exactVal) return exactVal.value;
 
-  return canonicalStatus;
+      const exactLabel = choices.find(c => String(c.label).toLowerCase() === s);
+      if (exactLabel) return exactLabel.value;
+    }
+  } catch (err) {}
+
+  return 'Vacant';
 }
 
 // ==================== DEVICES ====================
@@ -1994,7 +1968,7 @@ async function syncDeviceInterfaces(deviceId, options = {}) {
         const availableCFs = await getAvailableCustomFields();
         if (availableCFs.includes('port_status')) {
           if (hasConnection(existing)) {
-            payload.custom_fields = { port_status: 'use' };
+            payload.custom_fields = { port_status: 'Use' };
           }
         }
       } catch (cfErr) {}
