@@ -161,6 +161,151 @@ async function fetchAllPages(endpointPath) {
   return results;
 }
 
+let cachedNetboxPortStatusChoices = null;
+
+async function getNetboxPortStatusChoices() {
+  if (cachedNetboxPortStatusChoices && cachedNetboxPortStatusChoices.length > 0) {
+    return cachedNetboxPortStatusChoices;
+  }
+  try {
+    // 1. Try custom-field-choice-sets endpoint (NetBox 3.5+)
+    const choiceSets = await fetchAllPages('/extras/custom-field-choice-sets/');
+    console.log('[REPLACE-DEBUG] NetBox all choiceSets count:', (choiceSets || []).length);
+    const targetSet = (choiceSets || []).find(cs => 
+      (cs.name || '').toLowerCase() === 'port_status' || 
+      (cs.key || '').toLowerCase() === 'port_status'
+    );
+    if (targetSet) {
+      console.log('[REPLACE-DEBUG] Found target choiceSet port_status:', JSON.stringify(targetSet, null, 2));
+      const raw = targetSet.extra_choices || targetSet.choices || [];
+      const parsed = raw.map(c => Array.isArray(c) ? { value: c[0], label: c[1] } : { value: c.value || c, label: c.label || c });
+      if (parsed.length > 0) {
+        cachedNetboxPortStatusChoices = parsed;
+        return cachedNetboxPortStatusChoices;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch custom-field-choice-sets:', err.message);
+  }
+
+  try {
+    // 2. Try custom-fields endpoint
+    const fields = await fetchAllPages('/extras/custom-fields/?name=port_status');
+    const field = (fields || []).find(f => f.name === 'port_status');
+    if (field) {
+      console.log('[REPLACE-DEBUG] Found custom-field port_status:', JSON.stringify(field, null, 2));
+      if (field.choice_set?.id) {
+        const cs = await getSingle(`/extras/custom-field-choice-sets/${field.choice_set.id}/`);
+        console.log('[REPLACE-DEBUG] Fetched choiceSet by id:', JSON.stringify(cs, null, 2));
+        const raw = cs.extra_choices || cs.choices || [];
+        const parsed = raw.map(c => Array.isArray(c) ? { value: c[0], label: c[1] } : { value: c.value || c, label: c.label || c });
+        if (parsed.length > 0) {
+          cachedNetboxPortStatusChoices = parsed;
+          return cachedNetboxPortStatusChoices;
+        }
+      }
+      if (Array.isArray(field.choices) && field.choices.length > 0) {
+        cachedNetboxPortStatusChoices = field.choices.map(c => typeof c === 'object' ? { value: c.value, label: c.label } : { value: c, label: c });
+        return cachedNetboxPortStatusChoices;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch custom-fields port_status:', err.message);
+  }
+
+  try {
+    // 3. Fallback: Check sample interfaces to discover valid port_status values in use
+    const sampleIfaces = await fetchAllPages('/dcim/interfaces/?limit=50');
+    const discovered = new Set();
+    for (const ifc of (sampleIfaces || [])) {
+      const ps = ifc.custom_fields?.port_status || ifc.custom_fields?.cf_port_status;
+      if (ps && typeof ps === 'string' && ps.trim()) {
+        discovered.add(ps.trim());
+      } else if (ps && typeof ps === 'object' && ps.value) {
+        discovered.add(ps.value);
+      }
+    }
+    if (discovered.size > 0) {
+      console.log('[REPLACE-DEBUG] Discovered port_status values from sample interfaces:', Array.from(discovered));
+      cachedNetboxPortStatusChoices = Array.from(discovered).map(v => ({ value: v, label: v }));
+      return cachedNetboxPortStatusChoices;
+    }
+  } catch (sampleErr) {
+    console.warn('Could not sample interfaces for port_status:', sampleErr.message);
+  }
+
+  return [];
+}
+
+async function mapStatusToNetboxChoice(canonicalStatus) {
+  if (!canonicalStatus) return null;
+  const s = String(canonicalStatus).toLowerCase().trim();
+  if (!s || s === 'none' || s === 'null' || s === '-' || s === 'vacant' || s === 'free' || s === 'empty' || s === 'port ว่าง') {
+    return null;
+  }
+
+  const choices = await getNetboxPortStatusChoices();
+  console.log(`[REPLACE-DEBUG] mapStatusToNetboxChoice input: "${canonicalStatus}", available choices:`, JSON.stringify(choices));
+
+  if (choices && choices.length > 0) {
+    // 1. Exact match on value
+    const exactVal = choices.find(c => String(c.value).toLowerCase() === s);
+    if (exactVal) return exactVal.value;
+
+    // 2. Exact match on label
+    const exactLabel = choices.find(c => String(c.label).toLowerCase() === s);
+    if (exactLabel) return exactLabel.value;
+
+    // 3. Match 'use' / in-use / active / occupied / used
+    if (s === 'use' || s === 'active' || s.includes('occup') || s.includes('in use') || s.includes('in-use') || s.includes('used')) {
+      const match = choices.find(c => {
+        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
+        return v.includes('occup') || v.includes('use') || v.includes('active') || v.includes('up');
+      });
+      if (match) return match.value;
+    }
+
+    // 4. Match 'fail' / disable / broken / down
+    if (s === 'fail' || s.includes('disable') || s.includes('down') || s.includes('broken') || s.includes('shutdown')) {
+      const match = choices.find(c => {
+        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
+        return v.includes('disable') || v.includes('fail') || v.includes('broken') || v.includes('down') || v.includes('fault');
+      });
+      if (match) return match.value;
+    }
+
+    // 5. Match 'reserver' / reserve / hold
+    if (s === 'reserver' || s.includes('reserv') || s.includes('hold')) {
+      const match = choices.find(c => {
+        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
+        return v.includes('reserv') || v.includes('hold');
+      });
+      if (match) return match.value;
+    }
+
+    // 6. Match 'planed' / plan / spare
+    if (s === 'planed' || s.includes('plan') || s.includes('spare')) {
+      const match = choices.find(c => {
+        const v = (String(c.value) + ' ' + String(c.label)).toLowerCase();
+        return v.includes('plan') || v.includes('spare');
+      });
+      if (match) return match.value;
+    }
+
+    // If choices are known from NetBox but nothing matched, DO NOT return an invalid string like "use" that causes HTTP 400!
+    console.warn(`[REPLACE-DEBUG] Could not map status "${canonicalStatus}" to any choice in:`, choices.map(c => c.value));
+    return null;
+  }
+
+  // Fallback when choice list could not be fetched from API
+  if (s === 'use') return 'USE';
+  if (s === 'reserver' || s === 'reserve') return 'reserve';
+  if (s === 'fail') return 'fail';
+  if (s === 'planed' || s === 'plan') return 'plan';
+
+  return canonicalStatus;
+}
+
 // ==================== DEVICES ====================
 
 /**
@@ -613,29 +758,6 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
       return data.results[0].id;
     }
   }
-  
-  let templateType = type;
-  let templateLabel = label;
-  try {
-    const devRes = await fetch(`${baseUrl}/dcim/devices/${deviceId}/`, {
-      headers: { 'Authorization': getAuthHeader(token), 'Accept': 'application/json' }
-    });
-    if (devRes.ok) {
-      const devData = await devRes.json();
-      const deviceTypeId = devData.device_type?.id;
-      if (deviceTypeId) {
-        const templates = await getInterfaceTemplates(deviceTypeId);
-        const cleanName = String(name).replace(/\s+/g, '').toLowerCase();
-        const match = templates.find(t => String(t.name).replace(/\s+/g, '').toLowerCase() === cleanName);
-        if (match) {
-          templateType = match.type?.value || match.type || type;
-          templateLabel = match.label || label;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`Failed to resolve template for interface ${name}:`, err.message);
-  }
 
   const createRes = await fetch(`${baseUrl}/dcim/interfaces/`, {
     method: 'POST',
@@ -647,8 +769,8 @@ async function getOrCreateInterface(deviceId, name, type = 'virtual', label = ''
     body: JSON.stringify({
       device: deviceId,
       name: name,
-      type: templateType,
-      ...(templateLabel ? { label: templateLabel } : {}),
+      type: type || '1000base-t',
+      ...(label ? { label: label } : {}),
       ...(parentId ? { parent: parentId } : {})
     })
   });
@@ -2115,62 +2237,51 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
         // User explicitly chose NOT to migrate this port to the new device!
         // We must completely release its dependencies and DELETE it.
         try {
-          console.log(`[REPLACE-DEBUG] Step 1.2 Cleaning up unselected interface ${iface.name} (id=${iface.id})`);
-
-          // 1. Disconnect any attached cable
           const cableId = iface.cable?.id || (typeof iface.cable === 'number' ? iface.cable : null);
           if (cableId) {
             await fetchNetboxApi(`/dcim/cables/${cableId}/`, 'DELETE').catch(() => {});
-          } else {
-            const attachedCables = await fetchAllPages(`/dcim/cables/?interface_id=${iface.id}`).catch(() => []);
-            for (const c of attachedCables) {
-              await fetchNetboxApi(`/dcim/cables/${c.id}/`, 'DELETE').catch(() => {});
-            }
           }
 
-          // 2. Unbind or delete any child sub-interfaces
-          const childSubs = allDeviceIfaces.filter(ci => ci.parent?.id === iface.id || (ci.name && ci.name.startsWith(`${iface.name}.`)));
-          for (const sub of childSubs) {
-            try {
-              if (sub.cable?.id) await fetchNetboxApi(`/dcim/cables/${sub.cable.id}/`, 'DELETE').catch(() => {});
-              await fetchNetboxApi(`/dcim/interfaces/${sub.id}/`, 'DELETE');
-            } catch (sErr) {}
-          }
-
-          // 3. Unassign any bound IPs so ProtectedError doesn't block deletion
-          const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${iface.id}`).catch(() => []);
-          for (const ip of boundIps) {
-            try {
-              await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', {
-                assigned_object_type: null,
-                assigned_object_id: null
-              });
-            } catch (ipErr) {}
-          }
-
-          // 4. Remove LAG or bridge links
-          if (iface.lag?.id || iface.lag) {
-            await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', { lag: null }).catch(() => {});
-          }
-
-          // 5. DELETE the unselected interface
+          // Fast path: try to delete the interface directly
           await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
           summary.deleted = summary.deleted || [];
           summary.deleted.push(iface.name);
           console.log(`[REPLACE-DEBUG] Step 1.2 Successfully DELETED unmapped: "${iface.name}" (id=${iface.id})`);
         } catch (delErr) {
-          console.warn(`Failed to delete unselected old interface ${iface.name}:`, delErr.message);
-          // Safety Net: If DELETE failed, rename to temp dead name and clear description/status
-          // so it won't linger with "fail" description or collide with new model templates!
+          // Slow path fallback: only runs if direct delete failed due to dependencies
+          console.warn(`Step 1.2 direct delete failed for ${iface.name}, cleaning dependencies:`, delErr.message);
           try {
-            await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', {
-              name: `${iface.name}_UNMAPPED_DEAD_${Date.now()}_${tempIdx++}`,
-              description: '',
-              enabled: false,
-              custom_fields: { port_status: null }
-            });
-            console.log(`[REPLACE-DEBUG] Step 1.2 Safety Net: Renamed & cleared unmapped interface ${iface.name} (id=${iface.id})`);
-          } catch (renameErr) {}
+            const childSubs = allDeviceIfaces.filter(ci => ci.parent?.id === iface.id || (ci.name && ci.name.startsWith(`${iface.name}.`)));
+            for (const sub of childSubs) {
+              if (sub.cable?.id) await fetchNetboxApi(`/dcim/cables/${sub.cable.id}/`, 'DELETE').catch(() => {});
+              await fetchNetboxApi(`/dcim/interfaces/${sub.id}/`, 'DELETE').catch(() => {});
+            }
+
+            const boundIps = await fetchAllPages(`/ipam/ip-addresses/?interface_id=${iface.id}`).catch(() => []);
+            for (const ip of boundIps) {
+              await fetchNetboxApi(`/ipam/ip-addresses/${ip.id}/`, 'PATCH', { assigned_object_type: null, assigned_object_id: null }).catch(() => {});
+            }
+
+            if (iface.lag?.id || iface.lag) {
+              await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', { lag: null }).catch(() => {});
+            }
+
+            await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'DELETE');
+            summary.deleted = summary.deleted || [];
+            summary.deleted.push(iface.name);
+            console.log(`[REPLACE-DEBUG] Step 1.2 DELETED unmapped on retry: "${iface.name}"`);
+          } catch (retryErr) {
+            // Safety Net: If DELETE still failed, rename to dead name and clear description/status
+            try {
+              await fetchNetboxApi(`/dcim/interfaces/${iface.id}/`, 'PATCH', {
+                name: `${iface.name}_UNMAPPED_DEAD_${Date.now()}_${tempIdx++}`,
+                description: '',
+                enabled: false,
+                custom_fields: { port_status: null }
+              });
+              console.log(`[REPLACE-DEBUG] Step 1.2 Safety Net: Renamed & cleared unmapped interface ${iface.name}`);
+            } catch (renameErr) {}
+          }
         }
       }
     }
@@ -2178,12 +2289,19 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
     console.warn('Error handling old interfaces before template instantiation:', cleanPreErr.message);
   }
 
-  // 1.3 Instantiate all Interface Templates of the new DeviceType on the device (Issue 3 Fix)
+  // 1.3 Instantiate all Interface Templates of the new DeviceType on the device (Optimized)
   let newTemplates = [];
   try {
     newTemplates = await getInterfaceTemplates(newDeviceTypeId);
     if (Array.isArray(newTemplates) && newTemplates.length > 0) {
+      const currentIfaces = await fetchAllPages(`/dcim/interfaces/?device_id=${deviceId}`);
+      const existingNames = new Set(currentIfaces.map(i => (i.name || '').trim().toLowerCase()));
+
       for (const tpl of newTemplates) {
+        const tplNameLower = (tpl.name || '').trim().toLowerCase();
+        if (existingNames.has(tplNameLower)) {
+          continue; // Already exists on device, skip creating!
+        }
         try {
           await getOrCreateInterface(
             deviceId,
@@ -2191,6 +2309,7 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
             tpl.type?.value || tpl.type || '1000base-t',
             tpl.label || ''
           );
+          existingNames.add(tplNameLower);
         } catch (instErr) {
           console.warn(`Could not instantiate template interface ${tpl.name}:`, instErr.message);
         }
@@ -2424,17 +2543,38 @@ async function replaceDeviceModel(deviceId, newDeviceTypeId, interfaceMappings, 
       }
 
       // 3. Update Custom Fields (port_status)
-      try {
-        await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
-          custom_fields: { port_status: targetPortStatusVal }
-        });
-      } catch (cfErr) {
-        console.warn(`Failed to set port_status custom field for ${targetName}:`, cfErr.message);
+      const validNetboxPortStatus = await mapStatusToNetboxChoice(targetPortStatusVal);
+      console.log(`[REPLACE-DEBUG] FIX3 "${targetName}" mapped port_status: "${targetPortStatusVal}" → "${validNetboxPortStatus}"`);
+
+      if (validNetboxPortStatus !== undefined && validNetboxPortStatus !== null) {
         try {
           await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
-            custom_fields: { cf_port_status: targetPortStatusVal }
+            custom_fields: { port_status: validNetboxPortStatus }
           });
-        } catch (cfErr2) {}
+        } catch (cfErr) {
+          console.warn(`Failed to set port_status (${validNetboxPortStatus}) for ${targetName}:`, cfErr.message);
+          // Try casing fallback: if uppercase, try lowercase; if lowercase, try uppercase
+          const altStatus = validNetboxPortStatus === validNetboxPortStatus.toUpperCase()
+            ? validNetboxPortStatus.toLowerCase()
+            : validNetboxPortStatus.toUpperCase();
+          try {
+            await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
+              custom_fields: { port_status: altStatus }
+            });
+          } catch (altErr) {
+            try {
+              await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
+                custom_fields: { cf_port_status: validNetboxPortStatus }
+              });
+            } catch (cfErr2) {}
+          }
+        }
+      } else if (validNetboxPortStatus === null) {
+        try {
+          await fetchNetboxApi(`/dcim/interfaces/${newIfaceId}/`, 'PATCH', {
+            custom_fields: { port_status: null }
+          });
+        } catch (clearErr) {}
       }
 
       // 4. Update Network Configurations (Mode, VLANs, MAC, Speed, Duplex, MTU, etc.)
@@ -3000,7 +3140,7 @@ async function rollbackDevice(snapshotId) {
     if (bIface.custom_fields) {
       patchPayload.custom_fields = { ...bIface.custom_fields };
       if (patchPayload.custom_fields.port_status !== undefined) {
-        patchPayload.custom_fields.port_status = normalizePortStatus(patchPayload.custom_fields.port_status);
+        patchPayload.custom_fields.port_status = await mapStatusToNetboxChoice(normalizePortStatus(patchPayload.custom_fields.port_status));
       }
     }
 
